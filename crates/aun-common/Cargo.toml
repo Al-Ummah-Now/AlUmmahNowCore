@@ -8,6 +8,8 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+# Same URL parser reqwest uses, so the security check and the request agree on the host.
+url = "2.5"
 thiserror.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -6,25 +6,30 @@ use crate::{Error, Result};
 /// in-process mock servers used by tests). Anything else is refused so tokens, codes and
 /// uploads are never sent in cleartext.
 pub fn ensure_secure_url(url: &str) -> Result<()> {
-    let lower = url.trim().to_ascii_lowercase();
-    if lower.starts_with("https://") {
-        return Ok(());
+    let refuse = || {
+        Error::InvalidInput(format!(
+            "refusing insecure URL {url:?}: use https (http is only allowed for localhost)"
+        ))
+    };
+    let parsed = url::Url::parse(url.trim()).map_err(|_| refuse())?;
+    if is_secure(&parsed) { Ok(()) } else { Err(refuse()) }
+}
+
+/// The parsed-URL form of [`ensure_secure_url`] (used for redirects).
+pub fn is_secure(url: &url::Url) -> bool {
+    match url.scheme() {
+        "https" => url.host().is_some(),
+        "http" => match url.host() {
+            Some(url::Host::Domain(d)) => {
+                let d = d.to_ascii_lowercase();
+                d == "localhost" || d.ends_with(".localhost")
+            }
+            Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+            Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+            None => false,
+        },
+        _ => false,
     }
-    if let Some(rest) = lower.strip_prefix("http://") {
-        let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
-        let host_port = authority.rsplit('@').next().unwrap_or("");
-        let host = if let Some(v6) = host_port.strip_prefix('[') {
-            v6.split(']').next().unwrap_or("")
-        } else {
-            host_port.split(':').next().unwrap_or("")
-        };
-        if matches!(host, "localhost" | "127.0.0.1" | "::1") || host.ends_with(".localhost") {
-            return Ok(());
-        }
-    }
-    Err(Error::InvalidInput(format!(
-        "refusing insecure URL {url:?}: use https (http is only allowed for localhost)"
-    )))
 }
 
 #[cfg(test)]
@@ -40,6 +45,7 @@ mod tests {
             "http://localhost",
             "http://[::1]:9/x",
             "http://app.localhost:3000",
+            "http://127.0.0.2:8080",
         ] {
             assert!(ensure_secure_url(ok).is_ok(), "{ok}");
         }
@@ -47,6 +53,8 @@ mod tests {
             "http://videos.api.alummahnow.net",
             "http://127.0.0.1.evil.example/",
             "http://localhost@evil.example/",
+            "http://evil.example\\@localhost/",
+            "https://",
             "http://evil.example?localhost",
             "ftp://localhost",
             "//localhost",

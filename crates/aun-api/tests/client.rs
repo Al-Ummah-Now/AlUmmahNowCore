@@ -402,3 +402,22 @@ fn refuses_cleartext_base_url() {
     assert!(ApiClient::new(ApiConfig::new("http://127.0.0.1:9")).is_ok());
     assert!(ApiClient::new(ApiConfig::new("https://videos.api.example.com")).is_ok());
 }
+
+#[tokio::test]
+async fn refuses_redirect_to_cleartext() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(302).insert_header("Location", "http://videos.example.com/leak"))
+        .mount(&server)
+        .await;
+    let client = ApiClient::new(config(&server)).unwrap();
+    let err = client
+        .execute(aun_api::RequestSpec::new(
+            reqwest::Method::GET,
+            "/x".into(),
+            "test",
+        ))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::Network(_)), "{err:?}");
+}
