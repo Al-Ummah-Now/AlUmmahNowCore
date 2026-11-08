@@ -14,6 +14,8 @@ FFI; such changes are listed under **Breaking**.
   and data saver, rate 0.5–2×, ±10 s skip, A–B loop, repeat-N, bookmarks, the sleep timer and chapter
   navigation. Spec in `docs/PLAYER_BEHAVIOUR.md`; 38 JSON conformance scenarios
   (`crates/aun-player/conformance/`) with a Rust runner, and native wrappers can replay them.
+- `aun-media`: container/codec probing, EBU R128 loudness, silence and scene detection, waveform
+  peaks, scene-aware thumbnail timestamps.
 
 ## [0.1.0] - 2026-11-08
 
