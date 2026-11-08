@@ -24,6 +24,14 @@ FFI; such changes are listed under **Breaking**.
 - `aun-media`: versioned EDL project format (`schemas/edl/v1.json`), migrations, validation, ripple
   delete/split/trim, and render planning that decides stream copy versus re-encode per segment.
 - `aun-media`: bidi-aware text shaping and line breaking for titles and burned-in captions.
+- `aun-i18n`: the `I18n` catalog. It switches locales at runtime with `LocaleListener` callbacks,
+  resolves keys along the fallback chain (`ar-EG` → `ar` → `en`), formats messages with named
+  arguments (`{{name}}`, `{name}`, ICU `plural`/`select`/`number`) and supports i18next plural keys.
+  CLDR plural rules cover Arabic (six forms), English, Urdu, Turkish, Indonesian, Malay, French and
+  more. Also: Eastern Arabic / Persian digits, number and duration formatting, and bidi helpers
+  (direction detection, FSI/PDI isolation of mixed-direction arguments). Bundles sync from
+  `/api/i18n/config|metadata|translations/{locale}` into an atomic on-disk cache validated by
+  checksums. Built-in bundles cover offline first launch. Bundle schema in `schemas/i18n/`.
 - `aun-api`: client generated from the api-videos OpenAPI (`spec/openapi/api-videos.json`,
   `tools/codegen/openapi_to_rust.py`): typed params/bodies/responses for every operation,
   request builders, retries with jittered backoff (idempotent requests or an `Idempotency-Key`),
