@@ -11,14 +11,15 @@
 //! i18next plural keys (`key_one`, `key_other`, …) are resolved by [`crate::I18n`] before formatting.
 //! Apostrophes are plain text: there is no ICU quoting, because bundles contain natural apostrophes.
 //! A placeholder whose argument is missing is left as written, so the bug is visible but nothing
-//! crashes. Text arguments are wrapped in FSI…PDI when their direction differs from the message
+//! crashes. Bidi control characters are stripped from text arguments, which are then wrapped in
+//! FSI…PDI when their direction differs from the message
 //! locale's direction (see [`crate::bidi::needs_isolation`]).
 
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::bidi::{isolate, needs_isolation};
+use crate::bidi::{isolate, needs_isolation, strip_bidi_controls};
 use crate::locale::locale_direction;
 use crate::numbers::{NumberFormatOptions, NumeralSystem, format_number};
 use crate::plural::{PluralCategory, PluralOperands, plural_category};
@@ -93,10 +94,16 @@ fn format_value(arg: &FormatArg, ctx: &FormatContext<'_>) -> String {
         FormatArg::Int(v) => crate::numbers::format_integer(*v, ctx.locale, ctx.numerals),
         FormatArg::Float(v) => format_number(*v, ctx.locale, ctx.numerals, NumberFormatOptions::default()),
         FormatArg::Text(s) => {
-            if ctx.bidi_isolation && needs_isolation(s, locale_direction(ctx.locale)) {
-                isolate(s)
+            if !ctx.bidi_isolation {
+                return s.clone();
+            }
+            // User content may carry its own controls (RLO, stray PDI) that would escape the
+            // isolate or reorder the rest of the message ("Trojan source"): drop them first.
+            let clean = strip_bidi_controls(s);
+            if needs_isolation(&clean, locale_direction(ctx.locale)) {
+                isolate(&clean)
             } else {
-                s.clone()
+                clean
             }
         }
     }
@@ -393,6 +400,16 @@ mod tests {
             },
         );
         assert_eq!(s, "٥ فيديوهات");
+    }
+
+    #[test]
+    fn bidi_controls_in_arguments_cannot_escape() {
+        // A stray PDI would close our isolate early; an RLO would reverse the rest of the line.
+        let evil = format!("abc{PDI}\u{202E}gpj.exe");
+        let s = fmt("ar", "ملف {name} جاهز", &[("name", evil.into())]);
+        assert_eq!(s, format!("ملف {FSI}abcgpj.exe{PDI} جاهز"));
+        let s = fmt("en", "File {name} ready", &[("name", "x\u{202E}y".into())]);
+        assert_eq!(s, "File xy ready");
     }
 
     #[test]
