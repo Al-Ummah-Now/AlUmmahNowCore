@@ -101,10 +101,7 @@ fn thumbnails_catalog_and_subtitles() {
 fn edl_migrates_and_validates() {
     let migrated = edl_load_project(EDL_V0.into()).unwrap();
     let v: serde_json::Value = serde_json::from_str(&migrated).unwrap();
-    assert_eq!(
-        v["schemaVersion"].as_u64(),
-        Some(u64::from(edl_schema_version()))
-    );
+    assert_eq!(v["schemaVersion"].as_u64(), Some(u64::from(edl_schema_version())));
     // Loading the migrated output again is stable.
     assert_eq!(edl_load_project(migrated.clone()).unwrap(), migrated);
     assert!(edl_validate(migrated.clone()).unwrap().is_empty());
