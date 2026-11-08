@@ -11,6 +11,10 @@ publish.workspace = true
 default = ["harfbuzz"]
 # Pure-Rust HarfBuzz-compatible text shaping for titles and burned-in captions.
 harfbuzz = ["dep:harfrust", "dep:unicode-bidi", "dep:unicode-linebreak", "dep:unicode-script"]
+# Real transcription via whisper.cpp. Needs cmake and a C++ toolchain, so it is off by default.
+whisper = ["dep:whisper-rs"]
+# A reqwest-based ModelFetcher. Off by default; native apps can supply their own fetcher.
+http-download = ["dep:reqwest"]
 
 [dependencies]
 aun-common.workspace = true
@@ -24,10 +28,16 @@ harfrust = { workspace = true, optional = true }
 unicode-bidi = { workspace = true, optional = true }
 unicode-linebreak = { workspace = true, optional = true }
 unicode-script = { workspace = true, optional = true }
+async-trait.workspace = true
+sha2.workspace = true
+reqwest = { workspace = true, optional = true }
+whisper-rs = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile.workspace = true
 jsonschema.workspace = true
+wiremock.workspace = true
+aun-media = { path = ".", features = ["http-download"] }
 
 [lints]
 workspace = true

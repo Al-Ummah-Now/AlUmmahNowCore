@@ -37,6 +37,10 @@ unicode-linebreak = "0.1"
 unicode-script = "0.5"
 tempfile = "3"
 jsonschema = { version = "0.33", default-features = false }
+sha2 = "0.10"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+whisper-rs = "0.16"
+wiremock = "0.6"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
