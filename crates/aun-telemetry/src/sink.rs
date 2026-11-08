@@ -44,6 +44,8 @@ pub struct HttpSink {
 impl HttpSink {
     /// Uses the shared rustls client from `aun-api` (same TLS setup on every target).
     pub fn new(url: &str, user_agent: Option<&str>) -> Result<Self> {
+        // Batches may carry auth headers: never send them in cleartext.
+        aun_common::security::ensure_secure_url(url)?;
         if !(url.starts_with("https://") || url.starts_with("http://")) {
             return Err(Error::InvalidInput(format!(
                 "telemetry URL must be http(s): {url}"

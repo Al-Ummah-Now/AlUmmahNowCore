@@ -104,6 +104,8 @@ async fn http_sink_maps_errors() {
         Error::InvalidInput("schema".into())
     );
     assert!(HttpSink::new("ftp://x", None).is_err());
+    assert!(HttpSink::new("http://telemetry.example.com/ingest", None).is_err());
+    assert!(HttpSink::new("https://telemetry.example.com/ingest", None).is_ok());
     let dead = HttpSink::new("http://127.0.0.1:9/x", None).unwrap();
     assert!(matches!(dead.send(&batch).await, Err(Error::Network(_))));
 }

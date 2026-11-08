@@ -40,6 +40,7 @@ FFI; such changes are listed under **Breaking**.
   flush with retry/drop semantics. `QoeTracker` measures startup time, rebuffer count/duration/ratio,
   bitrate switches and stable playback error codes. Sinks: `HttpSink` (JSON batches to a
   configurable URL), `ApiPerformanceSink` (QoE to `POST /api/analytics/events`), `NoopSink`.
+  `HttpSink` refuses non-HTTPS URLs (plain `http` only for loopback).
 - `aun-api`: client generated from the api-videos OpenAPI (`spec/openapi/api-videos.json`,
   `tools/codegen/openapi_to_rust.py`): typed params/bodies/responses for every operation,
   request builders, retries with jittered backoff (idempotent requests or an `Idempotency-Key`),
