@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Al-Ummah-Now/AlUmmahNowCore/schemas/i18n/bundle.schema.json",
+  "title": "Translation bundle",
+  "description": "The `translations` object of GET /api/i18n/translations/{locale}, shared with the web app and accepted by aun-i18n (I18n::add_builtin_bundle). Nested objects become dotted keys. Plural variants use i18next suffixes (`key_zero`, `key_one`, `key_two`, `key_few`, `key_many`, `key_other`, selected by the `count` argument with CLDR rules) or ICU `{count, plural, ...}` inside a message. Placeholders: `{{name}}` or `{name}`.",
+  "$defs": {
+    "node": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "number" },
+        { "type": "boolean" },
+        { "type": "array", "items": { "$ref": "#/$defs/node" } },
+        { "type": "object", "additionalProperties": { "$ref": "#/$defs/node" } }
+      ]
+    }
+  },
+  "type": "object",
+  "additionalProperties": { "$ref": "#/$defs/node" },
+  "examples": [
+    {
+      "common": { "save": "حفظ", "welcome": "أهلاً {{name}}!" },
+      "videos": {
+        "count_zero": "لا توجد فيديوهات",
+        "count_one": "فيديو واحد",
+        "count_two": "فيديوهان",
+        "count_few": "{{count}} فيديوهات",
+        "count_many": "{{count}} فيديو",
+        "count_other": "{{count}} فيديو"
+      }
+    }
+  ]
+}
