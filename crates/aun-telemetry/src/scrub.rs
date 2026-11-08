@@ -102,6 +102,28 @@ fn key_segments(key: &str) -> Vec<String> {
 
 /// Whether a property key (or the key of a `key=value` pair in text) names sensitive data.
 pub fn is_sensitive_key(key: &str) -> bool {
+    // Substring fallback for high-value names that segmenting can miss (`awsaccesskeyid`).
+    let squashed: String = key
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    const HIGH_VALUE: &[&str] = &[
+        "apikey",
+        "accesskey",
+        "secret",
+        "token",
+        "password",
+        "passwd",
+        "credential",
+        "authorization",
+        "privatekey",
+        "cookie",
+        "signature",
+    ];
+    if HIGH_VALUE.iter().any(|h| squashed.contains(h)) {
+        return true;
+    }
     let segs = key_segments(key);
     segs.iter().any(|s| SENSITIVE_SEGMENTS.contains(&s.as_str()))
         || segs
@@ -229,22 +251,77 @@ fn scrub_segment(seg: &str, pending: &mut Pending, out: &mut String) -> String {
     core.to_owned()
 }
 
-/// Scrubs a whitespace-free word, splitting it on `=`, `&`, `:`, `,` and `;` so that
-/// `token=…`, `a=1&password=…` and `Authorization:Bearer…` are all caught.
+fn is_auth_scheme(word: &str) -> bool {
+    word.eq_ignore_ascii_case("bearer") || word.eq_ignore_ascii_case("basic")
+}
+
+/// Byte index where a URL scheme ending at `idx` (the `://`) starts; char-boundary safe.
+fn scheme_start(word: &str, idx: usize) -> usize {
+    let mut start = idx;
+    for (i, c) in word[..idx].char_indices().rev() {
+        if c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.') {
+            start = i;
+        } else {
+            break;
+        }
+    }
+    start
+}
+
+/// Writes the redaction label for a sensitive value that starts at `word[from..]` and runs to the
+/// next pair separator (`&` or `;`) or the end of the word; returns where scanning resumes. An
+/// auth scheme word (`Bearer`) ending the word is kept and the *next* word is redacted instead.
+fn redact_value(
+    word: &str,
+    from: usize,
+    label: &'static str,
+    pending: &mut Pending,
+    out: &mut String,
+) -> usize {
+    let end = word[from..].find(['&', ';']).map_or(word.len(), |i| from + i);
+    let value = &word[from..end];
+    if value.is_empty() {
+        // `api_key=` then whitespace or a URL: the next thing is the value.
+        pending.0 = Some(label);
+    } else if end == word.len() && is_auth_scheme(value) {
+        out.push_str(value);
+        pending.0 = Some("[token]");
+    } else {
+        out.push_str(label);
+        pending.0 = None;
+    }
+    end
+}
+
+/// Scrubs a whitespace-free word. It is split on `=`, `&`, `:`, `,` and `;`; a value after a
+/// sensitive key (`token=…`, `password:…`) is redacted up to the next `&`/`;`, so `,` or `:` inside
+/// the value cannot end the redaction early.
 fn scrub_word(word: &str, pending: &mut Pending, out: &mut String) {
-    if let Some(idx) = word.find("://") {
-        let start = word[..idx]
-            .rfind(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.')))
-            .map(|i| i + 1)
-            .unwrap_or(0);
-        let (prefix, url) = word.split_at(start);
+    let mut pos = 0;
+    if let Some(label) = pending.0 {
+        if is_auth_scheme(word) {
+            out.push_str(word);
+            pending.0 = Some("[token]");
+            return;
+        }
+        pending.0 = None;
+        pos = redact_value(word, 0, label, pending, out);
+        if pos == word.len() {
+            return;
+        }
+    }
+    let rest = &word[pos..];
+    if let Some(idx) = rest.find("://") {
+        let start = scheme_start(rest, idx);
+        let (prefix, url) = rest.split_at(start);
         if !prefix.is_empty() {
             scrub_word(prefix, pending, out);
         }
         let end = url
-            .rfind(|c: char| !matches!(c, ')' | ']' | '>' | '"' | '\'' | ',' | ';' | '.' | '!'))
-            .map(|i| i + url[i..].chars().next().map_or(1, char::len_utf8))
-            .unwrap_or(url.len());
+            .char_indices()
+            .rev()
+            .find(|(_, c)| !matches!(c, ')' | ']' | '>' | '"' | '\'' | ',' | ';' | '.' | '!'))
+            .map_or(url.len(), |(i, c)| i + c.len_utf8());
         if pending.0.take().is_some() {
             out.push_str(REDACTED);
         } else {
@@ -253,16 +330,23 @@ fn scrub_word(word: &str, pending: &mut Pending, out: &mut String) {
         out.push_str(&url[end..]);
         return;
     }
-    let mut seg_start = 0;
-    for (i, c) in word.char_indices() {
+    let mut seg_start = pos;
+    let mut i = pos;
+    while i < word.len() {
+        let Some(c) = word[i..].chars().next() else {
+            break;
+        };
         if matches!(c, '=' | '&' | ':' | ',' | ';') {
             let core = scrub_segment(&word[seg_start..i], pending, out);
             out.push(c);
+            i += c.len_utf8();
             if matches!(c, '=' | ':') && (is_sensitive_key(&core) || introduces_secret(&core)) {
-                pending.0 = Some(secret_label(&core));
+                i = redact_value(word, i, secret_label(&core), pending, out);
             }
-            seg_start = i + c.len_utf8();
+            seg_start = i;
+            continue;
         }
+        i += c.len_utf8();
     }
     let core = scrub_segment(&word[seg_start..], pending, out);
     if introduces_secret(&core) {
@@ -305,11 +389,23 @@ fn scrub_url(url: &str) -> String {
     let scrubbed: Vec<String> = rest
         .split('/')
         .map(|seg| {
-            if is_opaque_secret(seg) || is_jwt(seg) || is_email(seg) {
+            // Matrix parameters (`;jsessionid=…`) are dropped entirely.
+            let (seg, matrix) = match seg.split_once(';') {
+                Some((s, _)) => (s, true),
+                None => (seg, false),
+            };
+            let mut out = if is_opaque_secret(seg) || is_jwt(seg) || is_email(seg) {
                 REDACTED.to_owned()
+            } else if let Some((k, _)) = seg.split_once('=').filter(|(k, _)| is_sensitive_key(k)) {
+                format!("{k}={REDACTED}")
             } else {
                 seg.to_owned()
+            };
+            if matrix {
+                out.push(';');
+                out.push_str(REDACTED);
             }
+            out
         })
         .collect();
     let mut s = format!("{scheme}://{}", scrubbed.join("/"));
@@ -442,6 +538,41 @@ mod tests {
         );
         assert_eq!(scrub_text("api_key=https://x.net/a"), "api_key=[redacted]");
         assert_eq!(scrub_text("code=42 status:ok"), "code=42 status:ok");
+        // A value containing ':' or ',' is redacted as a whole, up to the next pair separator.
+        assert_eq!(scrub_text("password=a:b,c&x=1"), "password=[redacted]&x=1");
+        assert_eq!(scrub_text("secret:part1:part2"), "secret:[redacted]");
+        // Multi-byte characters right before a scheme must not panic.
+        assert_eq!(scrub_text("é://x"), "é://x");
+        assert_eq!(
+            scrub_text("ملفhttps://x.net/a?b=1"),
+            "ملفhttps://x.net/a?[redacted]"
+        );
+        assert_eq!(
+            scrub_text("https://x.net/a;jsessionid=abc/token=zzz/v"),
+            "https://x.net/a;[redacted]/token=[redacted]/v"
+        );
+    }
+
+    #[test]
+    fn never_panics_on_mixed_input() {
+        let alphabet: Vec<char> = "aZ9é ع😀:/=&;,?#@.()[]\"'\t\nhtps-_+".chars().collect();
+        let mut state = 0x2545_F491_4F6C_DD1Du64;
+        for _ in 0..5_000 {
+            let len = (state % 24) as usize;
+            let mut text = String::new();
+            for _ in 0..len {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                text.push(alphabet[(state % alphabet.len() as u64) as usize]);
+            }
+            if state % 5 == 0 {
+                text.push_str("://");
+            }
+            let _ = scrub_text(&text);
+            let _ = is_sensitive_key(&text);
+            state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        }
     }
 
     #[test]
