@@ -81,6 +81,11 @@ FFI; such changes are listed under **Breaking**.
 - FFI: `UploadEngine`, `UploadListener`, `UploadRequest`/`UploadConfig`/`UploadInfo`/`UploadState`,
   `upload_config_default()`; `UploadEngine.watch_folder` on macOS/Windows/Linux (throws
   `Unsupported` on mobile/TV).
+- FFI for `aun-media`: `media_probe_json`, `media_keyframes`, `media_measure_loudness`,
+  `media_gain_to_target_db`, `media_detect_silence`, `media_generate_waveform`,
+  `media_select_thumbnail_timestamps`, `transcription_model_catalog`, `transcript_to_webvtt`/`_srt`,
+  `edl_schema_version`, `edl_load_project` (migrates to the current schema), `edl_validate`,
+  `edl_chapters_json`, `MediaCancel`; config defaults. Long operations run off the caller's thread.
 
 ## [0.1.0] - 2026-11-08
 

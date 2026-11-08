@@ -112,4 +112,19 @@ final class SmokeTests: XCTestCase {
         engine.setBandwidthLimit(bytesPerSec: 1_000_000)
         engine.shutdown()
     }
+
+    func testMediaSurface() async throws {
+        XCTAssertGreaterThanOrEqual(edlSchemaVersion(), 1)
+        XCTAssertTrue(transcriptionModelCatalog().contains { $0.tier == .tiny })
+        let stamps = mediaSelectThumbnailTimestamps(durationMs: 60_000, scenes: [], config: thumbnailConfigDefault())
+        XCTAssertFalse(stamps.isEmpty)
+        let vtt = try transcriptToWebvtt(
+            transcriptJson: #"{"language":"ar","segments":[{"start_ms":0,"end_ms":1500,"text":"بسم الله","words":[]}]}"#,
+            options: subtitleOptionsDefault())
+        XCTAssertTrue(vtt.hasPrefix("WEBVTT"))
+        do {
+            _ = try await mediaProbeJson(path: "/nonexistent.mp4")
+            XCTFail("expected an error")
+        } catch is AunError {}
+    }
 }

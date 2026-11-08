@@ -25,6 +25,8 @@ aun-common.workspace = true
 aun-api.workspace = true
 aun-auth.workspace = true
 aun-upload.workspace = true
+aun-media.workspace = true
+serde.workspace = true
 tracing.workspace = true
 async-trait.workspace = true
 serde_json.workspace = true
@@ -39,6 +41,7 @@ aun-upload = { workspace = true, features = ["watch"] }
 
 [dev-dependencies]
 tokio = { workspace = true }
+tempfile = "3"
 
 [lints.rust]
 missing_debug_implementations = "warn"

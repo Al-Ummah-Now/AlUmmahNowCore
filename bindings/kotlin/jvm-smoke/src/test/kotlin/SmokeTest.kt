@@ -77,4 +77,17 @@ class SmokeTest {
         engine.setBandwidthLimit(1_000_000uL)
         engine.shutdown()
     }
+
+    @Test fun mediaSurface() = runBlocking {
+        assertTrue(edlSchemaVersion() >= 1u)
+        assertTrue(transcriptionModelCatalog().any { it.tier == ModelTier.TINY })
+        assertTrue(mediaSelectThumbnailTimestamps(60_000uL, emptyList(), thumbnailConfigDefault()).isNotEmpty())
+        val vtt = transcriptToWebvtt(
+            """{"language":"ar","segments":[{"start_ms":0,"end_ms":1500,"text":"بسم الله","words":[]}]}""",
+            subtitleOptionsDefault(),
+        )
+        assertTrue(vtt.startsWith("WEBVTT"))
+        assertFails { mediaProbeJson("/nonexistent.mp4") }
+        Unit
+    }
 }

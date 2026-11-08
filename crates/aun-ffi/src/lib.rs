@@ -10,6 +10,7 @@ mod api;
 mod auth;
 mod diagnostics;
 mod error;
+mod media;
 mod platform;
 mod upload;
 
@@ -17,6 +18,7 @@ pub use api::*;
 pub use auth::*;
 pub use diagnostics::*;
 pub use error::AunError;
+pub use media::*;
 pub use platform::*;
 pub use upload::*;
 
