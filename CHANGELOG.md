@@ -8,6 +8,7 @@ FFI; such changes are listed under **Breaking**.
 ## [Unreleased]
 
 ### Added
+- `aun-media`: `UploadHandoff` record and builder linking a finished job to `aun-upload`.
 - `aun-media`: Whisper model manager (resumable, SHA-256 verified downloads), WebVTT and SRT writers,
   chapter suggestions, and whisper.cpp transcription behind the `whisper` feature.
 - `aun-player`: platform-neutral player behaviour model for the Epic 13 native players. It is a
