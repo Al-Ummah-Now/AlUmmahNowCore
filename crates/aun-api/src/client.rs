@@ -201,6 +201,8 @@ pub struct ApiClient {
     config: Arc<ApiConfig>,
     http: reqwest::Client,
     auth: Option<Arc<dyn AuthProvider>>,
+    /// The account this client acts as, when bound to one.
+    account_id: Option<String>,
 }
 
 impl std::fmt::Debug for ApiClient {
@@ -208,6 +210,7 @@ impl std::fmt::Debug for ApiClient {
         f.debug_struct("ApiClient")
             .field("base_url", &self.config.base_url)
             .field("auth", &self.auth.is_some())
+            .field("account_id", &self.account_id)
             .finish()
     }
 }
@@ -226,6 +229,7 @@ impl ApiClient {
             config: Arc::new(config),
             http,
             auth: None,
+            account_id: None,
         })
     }
 
@@ -233,6 +237,17 @@ impl ApiClient {
     pub fn with_auth(mut self, auth: Arc<dyn AuthProvider>) -> Self {
         self.auth = Some(auth);
         self
+    }
+
+    /// Records which account this client authenticates as. The offline queue refuses to replay
+    /// one account's writes through a client bound to another.
+    pub fn with_account(mut self, account_id: impl Into<String>) -> Self {
+        self.account_id = Some(account_id.into());
+        self
+    }
+
+    pub fn account_id(&self) -> Option<&str> {
+        self.account_id.as_deref()
     }
 
     pub fn config(&self) -> &ApiConfig {

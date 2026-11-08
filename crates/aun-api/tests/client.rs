@@ -383,6 +383,10 @@ async fn queue_never_replays_another_accounts_writes() {
     assert_eq!(reqs.len(), 1);
     assert_eq!(reqs[0].url.path(), "/api/videos/from-b/likes");
 
+    // A client bound to A can't drain B's queue.
+    let client_a = ApiClient::new(config(&server)).unwrap().with_account("user-a");
+    assert!(matches!(b.flush(&client_a).await, Err(Error::Unauthorized(_))));
+
     // A's write is still stored until A signs out.
     assert_eq!(b.purge_account("user-a").unwrap(), 1);
     assert!(store.load().unwrap().is_empty());

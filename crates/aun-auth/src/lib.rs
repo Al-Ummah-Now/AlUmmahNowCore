@@ -3,8 +3,9 @@
 //! accounts per device with an active account and channel, and tokens kept only in the OS secure
 //! store through the [`aun_common::platform::SecureStorage`] adapter.
 //!
-//! [`AuthManager`] implements [`aun_api::AuthProvider`], so an `ApiClient` built with it always
-//! sends a fresh token and refreshes once on a 401 (single-flight, refresh-token-rotation safe).
+//! [`AccountTokens`] (one fixed account) implements [`aun_api::AuthProvider`], so an `ApiClient`
+//! built with it always sends a fresh token for that account and refreshes once on a 401
+//! (single-flight, refresh-token-rotation safe).
 
 pub mod accounts;
 pub mod manager;
@@ -12,5 +13,5 @@ pub mod oauth;
 pub mod pkce;
 
 pub use accounts::{AccountInfo, AccountStore, MAX_ACCOUNTS};
-pub use manager::{AuthEvent, AuthListener, AuthManager, DeviceLogin, REFRESH_SKEW_MS};
+pub use manager::{AccountTokens, AuthEvent, AuthListener, AuthManager, DeviceLogin, REFRESH_SKEW_MS};
 pub use oauth::{DeviceAuthorization, DevicePoll, OAuthClient, OAuthConfig, PendingAuthorization, TokenSet};

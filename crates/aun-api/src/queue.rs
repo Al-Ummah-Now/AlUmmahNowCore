@@ -256,6 +256,11 @@ impl OfflineQueue {
     /// Replays due writes in order. Safe to call often (on reconnect, app foreground, timer):
     /// concurrent calls are serialised.
     pub async fn flush(&self, client: &ApiClient) -> Result<FlushReport> {
+        if client.account_id().is_some_and(|a| a != self.account_id) {
+            return Err(Error::Unauthorized(
+                "this API client is signed in as a different account than the queue".into(),
+            ));
+        }
         let _guard = self.flushing.lock().await;
         let mut report = FlushReport::default();
         loop {

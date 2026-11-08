@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
+use crate::AunError;
 use crate::api::{ApiClient, ApiClientConfig};
 use crate::platform::{ForeignSecureStorage, SecureStorage};
-use crate::AunError;
 
 /// OAuth settings for one registered public client (Epic 9.1).
 #[derive(Debug, Clone, uniffi::Record)]
@@ -125,7 +125,9 @@ pub struct AuthManager {
 }
 
 fn http() -> Result<reqwest::Client, AunError> {
-    Ok(aun_api::http_client(&aun_api::ApiConfig::new("https://localhost"))?)
+    Ok(aun_api::http_client(&aun_api::ApiConfig::new(
+        "https://localhost",
+    ))?)
 }
 
 /// Builds an [`AuthManager`] from the issuer's `/.well-known/oauth-authorization-server`.
@@ -226,11 +228,33 @@ impl AuthManager {
         Ok(self.inner.access_token().await?)
     }
 
-    /// An API client that authenticates as the active account and refreshes on 401.
-    pub fn api_client(&self, config: ApiClientConfig) -> Result<Arc<ApiClient>, AunError> {
+    /// An API client bound to one account (`user_id`, or the active account when `None`): it
+    /// keeps acting as that account after an account switch, and refreshes on 401. Create a new
+    /// client after switching accounts.
+    pub fn api_client(
+        &self,
+        config: ApiClientConfig,
+        user_id: Option<String>,
+    ) -> Result<Arc<ApiClient>, AunError> {
+        let user_id = match user_id {
+            Some(u) => u,
+            None => {
+                self.inner
+                    .active_account()?
+                    .map(|a| a.user_id)
+                    .ok_or_else(|| AunError::Unauthorized {
+                        detail: "no signed-in account".into(),
+                    })?
+            }
+        };
         let client = ApiClient::new(config, None)?;
+        let tokens = aun_auth::AccountTokens::new(self.inner.clone(), user_id.clone());
         Ok(Arc::new(ApiClient {
-            inner: client.inner.clone().with_auth(self.inner.clone()),
+            inner: client
+                .inner
+                .clone()
+                .with_auth(Arc::new(tokens))
+                .with_account(user_id),
         }))
     }
 }

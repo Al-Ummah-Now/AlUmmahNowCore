@@ -427,3 +427,18 @@ async fn device_flow_unsupported_without_endpoint() {
         Error::Unsupported(_)
     ));
 }
+
+#[tokio::test]
+async fn account_bound_tokens_ignore_account_switches() {
+    let server = MockServer::start().await;
+    let m = Arc::new(manager(&server, Arc::new(ManualClock::new(0))));
+    sign_in(&m, &server, "u1").await;
+    sign_in(&m, &server, "u2").await; // u2 is now active
+    let u1 = aun_auth::AccountTokens::new(m.clone(), "u1");
+    use aun_api::AuthProvider;
+    assert_eq!(u1.access_token().await.as_deref(), Some("at-u1"));
+    m.switch_account("u2").unwrap();
+    assert_eq!(u1.access_token().await.as_deref(), Some("at-u1"));
+    m.sign_out("u1").unwrap();
+    assert_eq!(u1.access_token().await, None);
+}

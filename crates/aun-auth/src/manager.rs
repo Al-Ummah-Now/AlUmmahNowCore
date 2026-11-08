@@ -238,6 +238,11 @@ impl AuthManager {
         self.token_for(&id, true).await
     }
 
+    /// A valid access token for a specific account (not necessarily the active one).
+    pub async fn token_for_account(&self, user_id: &str, force_refresh: bool) -> Result<Option<String>> {
+        self.token_for(user_id, force_refresh).await
+    }
+
     async fn token_for(&self, user_id: &str, force: bool) -> Result<Option<String>> {
         let snapshot = self.store.get(user_id)?;
         let Some(a) = snapshot else { return Ok(None) };
@@ -285,6 +290,38 @@ impl AuthManager {
     }
 }
 
+/// Tokens for one fixed account. API clients use this so an account switch elsewhere in the app
+/// can never change which user a client (or its offline queue) acts as.
+#[derive(Debug, Clone)]
+pub struct AccountTokens {
+    manager: Arc<AuthManager>,
+    user_id: String,
+}
+
+impl AccountTokens {
+    pub fn new(manager: Arc<AuthManager>, user_id: impl Into<String>) -> Self {
+        Self {
+            manager,
+            user_id: user_id.into(),
+        }
+    }
+
+    pub fn user_id(&self) -> &str {
+        &self.user_id
+    }
+}
+
+#[async_trait::async_trait]
+impl aun_api::AuthProvider for AccountTokens {
+    async fn access_token(&self) -> Option<String> {
+        self.manager.token_for(&self.user_id, false).await.ok().flatten()
+    }
+    async fn refresh(&self) -> Result<Option<String>> {
+        self.manager.token_for(&self.user_id, true).await
+    }
+}
+
+/// Follows the *active* account. Prefer [`AccountTokens`] for API clients.
 #[async_trait::async_trait]
 impl aun_api::AuthProvider for AuthManager {
     async fn access_token(&self) -> Option<String> {

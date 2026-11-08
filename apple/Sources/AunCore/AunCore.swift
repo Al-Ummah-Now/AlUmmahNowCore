@@ -927,9 +927,11 @@ public protocol AuthManagerProtocol: AnyObject, Sendable {
     func addListener(listener: AuthListener) 
     
     /**
-     * An API client that authenticates as the active account and refreshes on 401.
+     * An API client bound to one account (`user_id`, or the active account when `None`): it
+     * keeps acting as that account after an account switch, and refreshes on 401. Create a new
+     * client after switching accounts.
      */
-    func apiClient(config: ApiClientConfig) throws  -> ApiClient
+    func apiClient(config: ApiClientConfig, userId: String?) throws  -> ApiClient
     
     /**
      * Starts a device-code sign-in. Throws `Unsupported` until the auth server ships RFC 8628.
@@ -1068,13 +1070,16 @@ open func addListener(listener: AuthListener)  {try! rustCall() {
 }
     
     /**
-     * An API client that authenticates as the active account and refreshes on 401.
+     * An API client bound to one account (`user_id`, or the active account when `None`): it
+     * keeps acting as that account after an account switch, and refreshes on 401. Create a new
+     * client after switching accounts.
      */
-open func apiClient(config: ApiClientConfig)throws  -> ApiClient  {
+open func apiClient(config: ApiClientConfig, userId: String?)throws  -> ApiClient  {
     return try  FfiConverterTypeApiClient_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
     uniffi_aun_core_fn_method_authmanager_api_client(
             self.uniffiCloneHandle(),
-        FfiConverterTypeApiClientConfig_lower(config),$0
+        FfiConverterTypeApiClientConfig_lower(config),
+        FfiConverterOptionString.lower(userId),$0
     )
 })
 }
@@ -4087,7 +4092,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_method_authmanager_add_listener() != 11266) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_aun_core_checksum_method_authmanager_api_client() != 8997) {
+    if (uniffi_aun_core_checksum_method_authmanager_api_client() != 38979) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_authmanager_begin_device_login() != 55977) {
