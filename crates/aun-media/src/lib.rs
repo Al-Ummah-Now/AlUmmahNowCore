@@ -1,11 +1,22 @@
-//! Studio media engine (Epic 30): probe/analyse, encode job graph, proxies, transcription, EDL, text shaping.
+//! Studio media engine (Epic 30). Everything here is plain Rust: `aun-ffi` wraps it for the apps.
 //!
-//! Scaffolding only; see `docs/PLAN.md` §9 for the build order.
+//! | Module | Epic | What it does |
+//! |---|---|---|
+//! | [`probe`] | 30.1 | container/codec probing (ISO BMFF parser, Symphonia for audio) |
+//! | [`audio`] | 30.1 | streaming audio decode |
+//! | [`analysis`] | 30.1 | EBU R128 loudness, silence and scene-change detection |
+//! | [`waveform`] | 30.3 | multi-resolution min/max peaks |
+//! | [`thumbnails`] | 30.3 | scene-aware filmstrip timestamps |
+//!
+//! Durations and timestamps are `u64` milliseconds. Long operations take a
+//! [`CancellationToken`](tokio_util::sync::CancellationToken) and are blocking: callers run them on
+//! `spawn_blocking`.
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn links_common() {
-        assert!(!aun_common::VERSION.is_empty());
-    }
-}
+pub mod analysis;
+pub mod audio;
+mod isobmff;
+pub mod probe;
+pub mod thumbnails;
+pub mod waveform;
+
+pub use tokio_util::sync::CancellationToken;

@@ -9,7 +9,14 @@ publish.workspace = true
 
 [dependencies]
 aun-common.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio-util.workspace = true
+symphonia.workspace = true
+ebur128.workspace = true
 
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true
