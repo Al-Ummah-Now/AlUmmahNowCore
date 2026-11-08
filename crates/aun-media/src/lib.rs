@@ -6,6 +6,7 @@
 //! | [`audio`] | 30.1 | streaming audio decode |
 //! | [`analysis`] | 30.1 | EBU R128 loudness, silence and scene-change detection |
 //! | [`edl`] | 30.5 | versioned edit project, operations, render planning |
+//! | [`handoff`] | 30.7 | the record `aun-upload` consumes after a finished job |
 //! | [`job`] | 30.2 | presets, `JobPlan` DAG, runner, backends, conformance suite |
 //! | [`transcribe`] | 30.4 | model management, subtitles, chapter suggestions, whisper (feature `whisper`) |
 //! | [`waveform`] | 30.3 | multi-resolution min/max peaks |
@@ -19,6 +20,7 @@
 pub mod analysis;
 pub mod audio;
 pub mod edl;
+pub mod handoff;
 mod isobmff;
 pub mod job;
 pub mod probe;
