@@ -566,7 +566,7 @@ mod tests {
                 state ^= state << 17;
                 text.push(alphabet[(state % alphabet.len() as u64) as usize]);
             }
-            if state % 5 == 0 {
+            if state.is_multiple_of(5) {
                 text.push_str("://");
             }
             let _ = scrub_text(&text);
