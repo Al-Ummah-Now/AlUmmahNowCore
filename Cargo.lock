@@ -118,6 +118,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "aun-player"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "aun-sync"
 version = "0.1.0"
 dependencies = [

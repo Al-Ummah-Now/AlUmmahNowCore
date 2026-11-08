@@ -1,0 +1,851 @@
+{
+  "scenarios": [
+    {
+      "name": "pause_and_play",
+      "description": "Pause saves the position; Play resumes.",
+      "steps": [
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "load_queue",
+            "items": [
+              {
+                "id": "a",
+                "duration_ms": 600000
+              }
+            ],
+            "start_index": 0,
+            "play_when_ready": true
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "a",
+              "start_position_ms": 0,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            }
+          ]
+        },
+        {
+          "at_ms": 1000,
+          "input": {
+            "type": "tick",
+            "position_ms": 1000
+          },
+          "expect": []
+        },
+        {
+          "at_ms": 1001,
+          "input": {
+            "type": "pause"
+          },
+          "expect": [
+            {
+              "type": "pause"
+            },
+            {
+              "type": "save_position",
+              "item_id": "a",
+              "position_ms": 1000,
+              "duration_ms": 600000,
+              "completed": false
+            }
+          ],
+          "expect_state": {
+            "state": "paused"
+          }
+        },
+        {
+          "at_ms": 1002,
+          "input": {
+            "type": "pause"
+          },
+          "expect": []
+        },
+        {
+          "at_ms": 2000,
+          "input": {
+            "type": "play"
+          },
+          "expect": [
+            {
+              "type": "play"
+            }
+          ],
+          "expect_state": {
+            "state": "playing"
+          }
+        }
+      ]
+    },
+    {
+      "name": "skip_ten_seconds",
+      "description": "Skip moves 10 s and clamps to [0, duration].",
+      "steps": [
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "load_queue",
+            "items": [
+              {
+                "id": "a",
+                "duration_ms": 15000
+              }
+            ],
+            "start_index": 0,
+            "play_when_ready": true
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "a",
+              "start_position_ms": 0,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            }
+          ]
+        },
+        {
+          "at_ms": 5000,
+          "input": {
+            "type": "tick",
+            "position_ms": 5000
+          },
+          "expect": []
+        },
+        {
+          "at_ms": 5001,
+          "input": {
+            "type": "skip_backward"
+          },
+          "expect": [
+            {
+              "type": "seek_to",
+              "position_ms": 0
+            },
+            {
+              "type": "save_position",
+              "item_id": "a",
+              "position_ms": 0,
+              "duration_ms": 15000,
+              "completed": false
+            }
+          ]
+        },
+        {
+          "at_ms": 5002,
+          "input": {
+            "type": "skip_forward"
+          },
+          "expect": [
+            {
+              "type": "seek_to",
+              "position_ms": 10000
+            },
+            {
+              "type": "save_position",
+              "item_id": "a",
+              "position_ms": 10000,
+              "duration_ms": 15000,
+              "completed": false
+            }
+          ]
+        },
+        {
+          "at_ms": 5003,
+          "input": {
+            "type": "skip_forward"
+          },
+          "expect": [
+            {
+              "type": "seek_to",
+              "position_ms": 15000
+            },
+            {
+              "type": "save_position",
+              "item_id": "a",
+              "position_ms": 15000,
+              "duration_ms": 15000,
+              "completed": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "playback_rate_clamped_and_kept",
+      "description": "Rate is clamped to 0.5–2× and re-applied after every load.",
+      "steps": [
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "load_queue",
+            "items": [
+              {
+                "id": "a",
+                "duration_ms": 600000
+              },
+              {
+                "id": "b",
+                "duration_ms": 600000
+              }
+            ],
+            "start_index": 0,
+            "play_when_ready": true
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "a",
+              "start_position_ms": 0,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            }
+          ]
+        },
+        {
+          "at_ms": 1,
+          "input": {
+            "type": "set_rate",
+            "rate": 1.5
+          },
+          "expect": [
+            {
+              "type": "set_rate",
+              "rate": 1.5
+            }
+          ],
+          "expect_state": {
+            "rate": 1.5
+          }
+        },
+        {
+          "at_ms": 2,
+          "input": {
+            "type": "set_rate",
+            "rate": 4.0
+          },
+          "expect": [
+            {
+              "type": "set_rate",
+              "rate": 2.0
+            }
+          ]
+        },
+        {
+          "at_ms": 3,
+          "input": {
+            "type": "set_rate",
+            "rate": 2.0
+          },
+          "expect": []
+        },
+        {
+          "at_ms": 4,
+          "input": {
+            "type": "set_rate",
+            "rate": 0.25
+          },
+          "expect": [
+            {
+              "type": "set_rate",
+              "rate": 0.5
+            }
+          ]
+        },
+        {
+          "at_ms": 5,
+          "input": {
+            "type": "next"
+          },
+          "expect": [
+            {
+              "type": "save_position",
+              "item_id": "a",
+              "position_ms": 0,
+              "duration_ms": 600000,
+              "completed": false
+            },
+            {
+              "type": "load",
+              "item_id": "b",
+              "start_position_ms": 0,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            },
+            {
+              "type": "set_rate",
+              "rate": 0.5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "periodic_save_every_15s",
+      "description": "While playing, positions are saved at most every 15 s.",
+      "steps": [
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "load_queue",
+            "items": [
+              {
+                "id": "a",
+                "duration_ms": 600000
+              }
+            ],
+            "start_index": 0,
+            "play_when_ready": true
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "a",
+              "start_position_ms": 0,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            }
+          ]
+        },
+        {
+          "at_ms": 5000,
+          "input": {
+            "type": "tick",
+            "position_ms": 5000
+          },
+          "expect": []
+        },
+        {
+          "at_ms": 10000,
+          "input": {
+            "type": "tick",
+            "position_ms": 10000
+          },
+          "expect": []
+        },
+        {
+          "at_ms": 15000,
+          "input": {
+            "type": "tick",
+            "position_ms": 15000
+          },
+          "expect": [
+            {
+              "type": "save_position",
+              "item_id": "a",
+              "position_ms": 15000,
+              "duration_ms": 600000,
+              "completed": false
+            }
+          ]
+        },
+        {
+          "at_ms": 20000,
+          "input": {
+            "type": "tick",
+            "position_ms": 20000
+          },
+          "expect": []
+        },
+        {
+          "at_ms": 30000,
+          "input": {
+            "type": "tick",
+            "position_ms": 30000
+          },
+          "expect": [
+            {
+              "type": "save_position",
+              "item_id": "a",
+              "position_ms": 30000,
+              "duration_ms": 600000,
+              "completed": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "system_interruption",
+      "description": "A pause by the system saves; a resume by the system emits nothing.",
+      "steps": [
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "load_queue",
+            "items": [
+              {
+                "id": "a",
+                "duration_ms": 600000
+              }
+            ],
+            "start_index": 0,
+            "play_when_ready": true
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "a",
+              "start_position_ms": 0,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            }
+          ]
+        },
+        {
+          "at_ms": 4000,
+          "input": {
+            "type": "tick",
+            "position_ms": 4000
+          },
+          "expect": []
+        },
+        {
+          "at_ms": 4001,
+          "input": {
+            "type": "playback_paused"
+          },
+          "expect": [
+            {
+              "type": "save_position",
+              "item_id": "a",
+              "position_ms": 4000,
+              "duration_ms": 600000,
+              "completed": false
+            }
+          ],
+          "expect_state": {
+            "state": "paused"
+          }
+        },
+        {
+          "at_ms": 9000,
+          "input": {
+            "type": "playback_started"
+          },
+          "expect": [],
+          "expect_state": {
+            "state": "playing"
+          }
+        }
+      ]
+    },
+    {
+      "name": "stop_then_play_reloads",
+      "description": "Stop saves and releases; Play reloads at the same position.",
+      "steps": [
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "load_queue",
+            "items": [
+              {
+                "id": "a",
+                "duration_ms": 600000
+              }
+            ],
+            "start_index": 0,
+            "play_when_ready": true
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "a",
+              "start_position_ms": 0,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            }
+          ]
+        },
+        {
+          "at_ms": 42000,
+          "input": {
+            "type": "tick",
+            "position_ms": 42000
+          },
+          "expect": [
+            {
+              "type": "save_position",
+              "item_id": "a",
+              "position_ms": 42000,
+              "duration_ms": 600000,
+              "completed": false
+            }
+          ]
+        },
+        {
+          "at_ms": 42001,
+          "input": {
+            "type": "stop"
+          },
+          "expect": [
+            {
+              "type": "save_position",
+              "item_id": "a",
+              "position_ms": 42000,
+              "duration_ms": 600000,
+              "completed": false
+            },
+            {
+              "type": "stop"
+            }
+          ],
+          "expect_state": {
+            "state": "stopped"
+          }
+        },
+        {
+          "at_ms": 42002,
+          "input": {
+            "type": "stop"
+          },
+          "expect": []
+        },
+        {
+          "at_ms": 50000,
+          "input": {
+            "type": "play"
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "a",
+              "start_position_ms": 42000,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            }
+          ],
+          "expect_state": {
+            "state": "playing"
+          }
+        }
+      ]
+    },
+    {
+      "name": "failure_then_retry",
+      "description": "A failure saves; Play retries by reloading at the position.",
+      "steps": [
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "load_queue",
+            "items": [
+              {
+                "id": "a",
+                "duration_ms": 600000
+              }
+            ],
+            "start_index": 0,
+            "play_when_ready": true
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "a",
+              "start_position_ms": 0,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            }
+          ]
+        },
+        {
+          "at_ms": 7000,
+          "input": {
+            "type": "tick",
+            "position_ms": 7000
+          },
+          "expect": []
+        },
+        {
+          "at_ms": 7001,
+          "input": {
+            "type": "failed",
+            "code": "network"
+          },
+          "expect": [
+            {
+              "type": "save_position",
+              "item_id": "a",
+              "position_ms": 7000,
+              "duration_ms": 600000,
+              "completed": false
+            }
+          ],
+          "expect_state": {
+            "state": "failed"
+          }
+        },
+        {
+          "at_ms": 9000,
+          "input": {
+            "type": "play"
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "a",
+              "start_position_ms": 7000,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "seek_clamped_and_ends_pause",
+      "description": "Seeks clamp to the duration; seeking after the end leaves the player paused.",
+      "steps": [
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "load_queue",
+            "items": [
+              {
+                "id": "a",
+                "duration_ms": 60000
+              }
+            ],
+            "start_index": 0,
+            "play_when_ready": true
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "a",
+              "start_position_ms": 0,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            }
+          ]
+        },
+        {
+          "at_ms": 1,
+          "input": {
+            "type": "seek_to",
+            "position_ms": 999999
+          },
+          "expect": [
+            {
+              "type": "seek_to",
+              "position_ms": 60000
+            },
+            {
+              "type": "save_position",
+              "item_id": "a",
+              "position_ms": 60000,
+              "duration_ms": 60000,
+              "completed": true
+            }
+          ]
+        },
+        {
+          "at_ms": 60000,
+          "input": {
+            "type": "ended"
+          },
+          "expect": [
+            {
+              "type": "save_position",
+              "item_id": "a",
+              "position_ms": 60000,
+              "duration_ms": 60000,
+              "completed": true
+            },
+            {
+              "type": "queue_ended"
+            }
+          ]
+        },
+        {
+          "at_ms": 60001,
+          "input": {
+            "type": "seek_to",
+            "position_ms": 1000
+          },
+          "expect": [
+            {
+              "type": "seek_to",
+              "position_ms": 1000
+            },
+            {
+              "type": "save_position",
+              "item_id": "a",
+              "position_ms": 1000,
+              "duration_ms": 60000,
+              "completed": false
+            }
+          ],
+          "expect_state": {
+            "state": "paused"
+          }
+        }
+      ]
+    },
+    {
+      "name": "bookmark_at_position",
+      "description": "A bookmark is created at the current position.",
+      "steps": [
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "load_queue",
+            "items": [
+              {
+                "id": "a",
+                "duration_ms": 600000
+              }
+            ],
+            "start_index": 0,
+            "play_when_ready": true
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "a",
+              "start_position_ms": 0,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            }
+          ]
+        },
+        {
+          "at_ms": 1000,
+          "input": {
+            "type": "tick",
+            "position_ms": 42000
+          },
+          "expect": []
+        },
+        {
+          "at_ms": 1001,
+          "input": {
+            "type": "add_bookmark",
+            "label": "Key point"
+          },
+          "expect": [
+            {
+              "type": "create_bookmark",
+              "item_id": "a",
+              "position_ms": 42000,
+              "label": "Key point"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "duration_learned_from_tick",
+      "description": "An unknown duration is learned from ticks and used for completion.",
+      "steps": [
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "load_queue",
+            "items": [
+              {
+                "id": "a",
+                "duration_ms": 0
+              }
+            ],
+            "start_index": 0,
+            "play_when_ready": true
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "a",
+              "start_position_ms": 0,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            }
+          ]
+        },
+        {
+          "at_ms": 15000,
+          "input": {
+            "type": "tick",
+            "position_ms": 96000,
+            "duration_ms": 100000
+          },
+          "expect": [
+            {
+              "type": "save_position",
+              "item_id": "a",
+              "position_ms": 96000,
+              "duration_ms": 100000,
+              "completed": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -7,6 +7,14 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+### Added
+- `aun-player`: platform-neutral player behaviour model for the Epic 13 native players. It is a
+  deterministic state machine (inputs + wall-clock → commands) covering the queue with autoplay,
+  seeded shuffle and repeat, resume rules (30 s / 95 %), ABR quality caps per device class, network
+  and data saver, rate 0.5–2×, ±10 s skip, A–B loop, repeat-N, bookmarks, the sleep timer and chapter
+  navigation. Spec in `docs/PLAYER_BEHAVIOUR.md`; 38 JSON conformance scenarios
+  (`crates/aun-player/conformance/`) with a Rust runner, and native wrappers can replay them.
+
 ## [0.1.0] - 2026-11-08
 
 ### Added

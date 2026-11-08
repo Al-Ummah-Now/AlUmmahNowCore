@@ -1,0 +1,313 @@
+{
+  "scenarios": [
+    {
+      "name": "sleep_after_duration",
+      "description": "The timer pauses playback once its wall-clock deadline passes while playing.",
+      "steps": [
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "load_queue",
+            "items": [
+              {
+                "id": "a",
+                "duration_ms": 3600000
+              }
+            ],
+            "start_index": 0,
+            "play_when_ready": true
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "a",
+              "start_position_ms": 0,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            }
+          ]
+        },
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "set_sleep_timer",
+            "timer": {
+              "kind": "after",
+              "duration_ms": 600000
+            }
+          },
+          "expect": []
+        },
+        {
+          "at_ms": 599999,
+          "input": {
+            "type": "tick",
+            "position_ms": 599999
+          },
+          "expect": [
+            {
+              "type": "save_position",
+              "item_id": "a",
+              "position_ms": 599999,
+              "duration_ms": 3600000,
+              "completed": false
+            }
+          ]
+        },
+        {
+          "at_ms": 600000,
+          "input": {
+            "type": "tick",
+            "position_ms": 600000
+          },
+          "expect": [
+            {
+              "type": "pause"
+            },
+            {
+              "type": "save_position",
+              "item_id": "a",
+              "position_ms": 600000,
+              "duration_ms": 3600000,
+              "completed": false
+            },
+            {
+              "type": "sleep_timer_fired"
+            }
+          ],
+          "expect_state": {
+            "state": "paused",
+            "sleep_timer": {
+              "kind": "off"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "sleep_at_end_of_item",
+      "description": "End-of-item stops after the current item instead of autoplaying.",
+      "steps": [
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "load_queue",
+            "items": [
+              {
+                "id": "a",
+                "duration_ms": 60000
+              },
+              {
+                "id": "b",
+                "duration_ms": 60000
+              }
+            ],
+            "start_index": 0,
+            "play_when_ready": true
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "a",
+              "start_position_ms": 0,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            }
+          ]
+        },
+        {
+          "at_ms": 1,
+          "input": {
+            "type": "set_sleep_timer",
+            "timer": {
+              "kind": "end_of_item"
+            }
+          },
+          "expect": []
+        },
+        {
+          "at_ms": 60000,
+          "input": {
+            "type": "ended"
+          },
+          "expect": [
+            {
+              "type": "save_position",
+              "item_id": "a",
+              "position_ms": 60000,
+              "duration_ms": 60000,
+              "completed": true
+            },
+            {
+              "type": "sleep_timer_fired"
+            }
+          ],
+          "expect_state": {
+            "state": "ended",
+            "current_item_id": "a"
+          }
+        }
+      ]
+    },
+    {
+      "name": "sleep_timer_cancelled",
+      "description": "Turning the timer off cancels it.",
+      "steps": [
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "load_queue",
+            "items": [
+              {
+                "id": "a",
+                "duration_ms": 600000
+              }
+            ],
+            "start_index": 0,
+            "play_when_ready": true
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "a",
+              "start_position_ms": 0,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            }
+          ]
+        },
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "set_sleep_timer",
+            "timer": {
+              "kind": "after",
+              "duration_ms": 1000
+            }
+          },
+          "expect": []
+        },
+        {
+          "at_ms": 1,
+          "input": {
+            "type": "set_sleep_timer",
+            "timer": {
+              "kind": "off"
+            }
+          },
+          "expect": []
+        },
+        {
+          "at_ms": 5000,
+          "input": {
+            "type": "tick",
+            "position_ms": 5000
+          },
+          "expect": []
+        }
+      ]
+    },
+    {
+      "name": "sleep_deadline_passed_while_paused",
+      "description": "A deadline that passes while paused is dropped when playback resumes.",
+      "steps": [
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "load_queue",
+            "items": [
+              {
+                "id": "a",
+                "duration_ms": 600000
+              }
+            ],
+            "start_index": 0,
+            "play_when_ready": true
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "a",
+              "start_position_ms": 0,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            }
+          ]
+        },
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "set_sleep_timer",
+            "timer": {
+              "kind": "after",
+              "duration_ms": 60000
+            }
+          },
+          "expect": []
+        },
+        {
+          "at_ms": 1000,
+          "input": {
+            "type": "pause"
+          },
+          "expect": [
+            {
+              "type": "pause"
+            },
+            {
+              "type": "save_position",
+              "item_id": "a",
+              "position_ms": 0,
+              "duration_ms": 600000,
+              "completed": false
+            }
+          ]
+        },
+        {
+          "at_ms": 120000,
+          "input": {
+            "type": "play"
+          },
+          "expect": [
+            {
+              "type": "play"
+            }
+          ],
+          "expect_state": {
+            "sleep_timer": {
+              "kind": "off"
+            }
+          }
+        },
+        {
+          "at_ms": 125000,
+          "input": {
+            "type": "tick",
+            "position_ms": 5000
+          },
+          "expect": []
+        }
+      ]
+    }
+  ]
+}

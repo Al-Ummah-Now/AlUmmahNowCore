@@ -1,0 +1,189 @@
+{
+  "scenarios": [
+    {
+      "name": "network_and_data_saver_caps",
+      "description": "Cellular caps at 720p/2.5 Mbps, data saver at 480p/1 Mbps; the device class bounds the rest.",
+      "steps": [
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "set_network",
+            "network": "cellular"
+          },
+          "expect": []
+        },
+        {
+          "at_ms": 1,
+          "input": {
+            "type": "load_queue",
+            "items": [
+              {
+                "id": "a",
+                "duration_ms": 600000
+              }
+            ],
+            "start_index": 0,
+            "play_when_ready": true
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "a",
+              "start_position_ms": 0,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 720,
+                "max_bitrate_bps": 2500000
+              }
+            }
+          ]
+        },
+        {
+          "at_ms": 2,
+          "input": {
+            "type": "set_network",
+            "network": "cellular"
+          },
+          "expect": []
+        },
+        {
+          "at_ms": 3,
+          "input": {
+            "type": "set_network",
+            "network": "wifi"
+          },
+          "expect": [
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            }
+          ]
+        },
+        {
+          "at_ms": 4,
+          "input": {
+            "type": "set_quality_settings",
+            "settings": {
+              "data_saver": true
+            }
+          },
+          "expect": [
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 480,
+                "max_bitrate_bps": 1000000
+              }
+            }
+          ]
+        },
+        {
+          "at_ms": 5,
+          "input": {
+            "type": "set_device_class",
+            "device": "tv"
+          },
+          "expect": []
+        },
+        {
+          "at_ms": 6,
+          "input": {
+            "type": "set_quality_settings",
+            "settings": {
+              "data_saver": false
+            }
+          },
+          "expect": [
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 2160
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "user_choice_lowers_cap",
+      "description": "A fixed quality chosen by the user lowers the cap but never raises it.",
+      "steps": [
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "set_device_class",
+            "device": "tablet"
+          },
+          "expect": []
+        },
+        {
+          "at_ms": 1,
+          "input": {
+            "type": "load_queue",
+            "items": [
+              {
+                "id": "a",
+                "duration_ms": 600000
+              }
+            ],
+            "start_index": 0,
+            "play_when_ready": true
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "a",
+              "start_position_ms": 0,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1440
+              }
+            }
+          ]
+        },
+        {
+          "at_ms": 2,
+          "input": {
+            "type": "set_quality_settings",
+            "settings": {
+              "user_max_height": 360
+            }
+          },
+          "expect": [
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 360
+              }
+            }
+          ]
+        },
+        {
+          "at_ms": 3,
+          "input": {
+            "type": "set_quality_settings",
+            "settings": {
+              "user_max_height": 4320
+            }
+          },
+          "expect": [
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1440
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
