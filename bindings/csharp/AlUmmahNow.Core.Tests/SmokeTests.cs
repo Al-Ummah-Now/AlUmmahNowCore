@@ -58,4 +58,14 @@ public class SmokeTests
     [Fact]
     public void ConnectivityAdapter() =>
         Assert.Equal(new NetworkState(false, true), AunCoreMethods.SelftestConnectivity(new Offline()));
+
+    [Fact]
+    public async Task ApiClientSurface()
+    {
+        Assert.Contains(AunCoreMethods.ApiOperations(), o => o.Path == "/api/videos/upload/initiate");
+        var client = new ApiClient(new ApiClientConfig("http://127.0.0.1:9", "smoke", "ar", 2000, 1), null);
+        var call = new ApiCall("get_GetI18nConfigEndpoint", new Dictionary<string, string>(), new Dictionary<string, string>(), new Dictionary<string, string>(), null, null);
+        var e = await Assert.ThrowsAnyAsync<AunException>(() => client.Request(call));
+        Assert.True(e is AunException.Network || e is AunException.InvalidInput, e.ToString());
+    }
 }

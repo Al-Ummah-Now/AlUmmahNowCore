@@ -24,7 +24,7 @@ cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo deny check licenses            # licence policy (deny.toml)
-python3 tools/codegen/openapi_to_rust.py spec/openapi/api-videos.json crates/aun-api/src/generated.rs
+python3 tools/codegen/openapi_to_rust.py spec/openapi/api-videos.json crates/aun-api/src/generated.rs && cargo fmt -p aun-api
 scripts/gen-bindings.sh              # Swift/Kotlin/C# bindings into bindings/*/generated
 scripts/build-xcframework.sh         # macOS only
 ```
@@ -34,6 +34,8 @@ If Homebrew's `cargo` shadows rustup's: `export PATH="$(dirname "$(rustup which 
 ## Conventions
 
 - Timestamps `i64` Unix ms, durations `u64` ms at the FFI boundary.
+- Integration test files start with `#![allow(clippy::unwrap_used, clippy::expect_used)]`
+  (clippy only exempts `#[test]` fns, not helpers).
 - Every crate has unit tests; network code is tested against `wiremock`/in-process servers, never
   against QA/prod in CI.
 - Feature flags: `aun-media/whisper` (cmake, whisper.cpp), `aun-upload/watch` (desktop folder watch).

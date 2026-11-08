@@ -557,6 +557,152 @@ fileprivate struct FfiConverterData: FfiConverterRustBuffer {
 
 
 /**
+ * The api-videos client. Share one per account.
+ */
+public protocol ApiClientProtocol: AnyObject, Sendable {
+    
+    /**
+     * Calls any operation by id. Throws `AunError` for non-2xx responses.
+     */
+    func request(call: ApiCall) async throws  -> ApiResponse
+    
+}
+/**
+ * The api-videos client. Share one per account.
+ */
+open class ApiClient: ApiClientProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aun_core_fn_clone_apiclient(self.handle, $0) }
+    }
+public convenience init(config: ApiClientConfig, tokens: TokenSource?)throws  {
+    let handle =
+        try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_constructor_apiclient_new(
+        FfiConverterTypeApiClientConfig_lower(config),
+        FfiConverterOptionTypeTokenSource.lower(tokens),$0
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aun_core_fn_free_apiclient(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * Calls any operation by id. Throws `AunError` for non-2xx responses.
+     */
+open func request(call: ApiCall)async throws  -> ApiResponse  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_request(
+                    self.uniffiCloneHandle(),
+                    FfiConverterTypeApiCall_lower(call)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeApiResponse_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeApiClient: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = ApiClient
+
+    public static func lift(_ handle: UInt64) throws -> ApiClient {
+        return ApiClient(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: ApiClient) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ApiClient {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: ApiClient, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeApiClient_lift(_ handle: UInt64) throws -> ApiClient {
+    return try FfiConverterTypeApiClient.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeApiClient_lower(_ value: ApiClient) -> UInt64 {
+    return FfiConverterTypeApiClient.lower(value)
+}
+
+
+
+
+
+
+/**
  * Connectivity reported by NWPathMonitor / ConnectivityManager / NetworkInformation.
  */
 public protocol Connectivity: AnyObject, Sendable {
@@ -739,6 +885,212 @@ public func FfiConverterTypeConnectivity_lift(_ handle: UInt64) throws -> Connec
 #endif
 public func FfiConverterTypeConnectivity_lower(_ value: Connectivity) -> UInt64 {
     return FfiConverterTypeConnectivity.lower(value)
+}
+
+
+
+
+
+
+/**
+ * Persistent offline write queue (likes, comments, notes made while offline).
+ */
+public protocol OfflineQueueProtocol: AnyObject, Sendable {
+    
+    /**
+     * Queues a write; writes with the same `coalesce_key` replace each other. Returns its id.
+     */
+    func enqueue(call: ApiCall, coalesceKey: String?) throws  -> String
+    
+    /**
+     * Replays due writes in order. Call on reconnect, foreground and from a periodic task.
+     */
+    func flush(client: ApiClient) async throws  -> QueueFlushReport
+    
+    func pendingCount()  -> UInt32
+    
+    /**
+     * Deletes every queued write of `account_id` (sign-out / account removal). Returns the count.
+     */
+    func purgeAccount(accountId: String) throws  -> UInt32
+    
+    func remove(id: String) throws  -> Bool
+    
+}
+/**
+ * Persistent offline write queue (likes, comments, notes made while offline).
+ */
+open class OfflineQueue: OfflineQueueProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aun_core_fn_clone_offlinequeue(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aun_core_fn_free_offlinequeue(handle, $0) }
+    }
+
+    
+    /**
+     * Opens (or creates) the queue persisted at `file_path` (app support directory) for
+     * `account_id` (the signed-in user id). Only that account's writes are replayed.
+     */
+public static func `open`(filePath: String, accountId: String)throws  -> OfflineQueue  {
+    return try  FfiConverterTypeOfflineQueue_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_constructor_offlinequeue_open(
+        FfiConverterString.lower(filePath),
+        FfiConverterString.lower(accountId),$0
+    )
+})
+}
+    
+
+    
+    /**
+     * Queues a write; writes with the same `coalesce_key` replace each other. Returns its id.
+     */
+open func enqueue(call: ApiCall, coalesceKey: String?)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinequeue_enqueue(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeApiCall_lower(call),
+        FfiConverterOptionString.lower(coalesceKey),$0
+    )
+})
+}
+    
+    /**
+     * Replays due writes in order. Call on reconnect, foreground and from a periodic task.
+     */
+open func flush(client: ApiClient)async throws  -> QueueFlushReport  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_offlinequeue_flush(
+                    self.uniffiCloneHandle(),
+                    FfiConverterTypeApiClient_lower(client)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeQueueFlushReport_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+open func pendingCount() -> UInt32  {
+    return try!  FfiConverterUInt32.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_offlinequeue_pending_count(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * Deletes every queued write of `account_id` (sign-out / account removal). Returns the count.
+     */
+open func purgeAccount(accountId: String)throws  -> UInt32  {
+    return try  FfiConverterUInt32.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinequeue_purge_account(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(accountId),$0
+    )
+})
+}
+    
+open func remove(id: String)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinequeue_remove(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),$0
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOfflineQueue: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = OfflineQueue
+
+    public static func lift(_ handle: UInt64) throws -> OfflineQueue {
+        return OfflineQueue(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: OfflineQueue) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OfflineQueue {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: OfflineQueue, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineQueue_lift(_ handle: UInt64) throws -> OfflineQueue {
+    return try FfiConverterTypeOfflineQueue.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineQueue_lower(_ value: OfflineQueue) -> UInt64 {
+    return FfiConverterTypeOfflineQueue.lower(value)
 }
 
 
@@ -1250,6 +1602,555 @@ public func FfiConverterTypeSelfTestListener_lower(_ value: SelfTestListener) ->
 
 
 
+
+
+/**
+ * Supplies tokens to the API client. `aun-auth`'s `AuthManager` provides one; apps can also
+ * implement it natively. Called from a background thread.
+ */
+public protocol TokenSource: AnyObject, Sendable {
+    
+    func accessToken()  -> String?
+    
+    /**
+     * Refresh after a 401; return the new token or `None` when sign-in is required.
+     */
+    func refresh() throws  -> String?
+    
+}
+/**
+ * Supplies tokens to the API client. `aun-auth`'s `AuthManager` provides one; apps can also
+ * implement it natively. Called from a background thread.
+ */
+open class TokenSourceImpl: TokenSource, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aun_core_fn_clone_tokensource(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aun_core_fn_free_tokensource(handle, $0) }
+    }
+
+    
+
+    
+open func accessToken() -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_tokensource_access_token(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * Refresh after a 401; return the new token or `None` when sign-in is required.
+     */
+open func refresh()throws  -> String?  {
+    return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_tokensource_refresh(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+
+    
+}
+
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfaceTokenSource {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    //
+    // This creates 1-element array, since this seems to be the only way to construct a const
+    // pointer that we can pass to the Rust code.
+    static let vtable: [UniffiVTableCallbackInterfaceTokenSource] = [UniffiVTableCallbackInterfaceTokenSource(
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            do {
+                try FfiConverterTypeTokenSource.handleMap.remove(handle: uniffiHandle)
+            } catch {
+                print("Uniffi callback interface TokenSource: handle missing in uniffiFree")
+            }
+        },
+        uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
+            do {
+                return try FfiConverterTypeTokenSource.handleMap.clone(handle: uniffiHandle)
+            } catch {
+                fatalError("Uniffi callback interface TokenSource: handle missing in uniffiClone")
+            }
+        },
+        accessToken: { (
+            uniffiHandle: UInt64,
+            uniffiOutReturn: UnsafeMutablePointer<RustBuffer>,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> String? in
+                guard let uniffiObj = try? FfiConverterTypeTokenSource.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return uniffiObj.accessToken(
+                )
+            }
+
+            
+            let writeReturn = { uniffiOutReturn.pointee = FfiConverterOptionString.lower($0) }
+            uniffiTraitInterfaceCall(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn
+            )
+        },
+        refresh: { (
+            uniffiHandle: UInt64,
+            uniffiOutReturn: UnsafeMutablePointer<RustBuffer>,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> String? in
+                guard let uniffiObj = try? FfiConverterTypeTokenSource.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try uniffiObj.refresh(
+                )
+            }
+
+            
+            let writeReturn = { uniffiOutReturn.pointee = FfiConverterOptionString.lower($0) }
+            uniffiTraitInterfaceCallWithError(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn,
+                lowerError: FfiConverterTypeAunError_lower
+            )
+        }
+    )]
+}
+
+private func uniffiCallbackInitTokenSource() {
+    uniffi_aun_core_fn_init_callback_vtable_tokensource(UniffiCallbackInterfaceTokenSource.vtable)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTokenSource: FfiConverter {
+    fileprivate static let handleMap = UniffiHandleMap<TokenSource>()
+
+    typealias FfiType = UInt64
+    typealias SwiftType = TokenSource
+
+    public static func lift(_ handle: UInt64) throws -> TokenSource {
+        if ((handle & 1) == 0) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return TokenSourceImpl(unsafeFromHandle: handle)
+        } else {
+            // Swift-generated handle, get the object from the handle map
+            return try handleMap.remove(handle: handle)
+        }
+    }
+
+    public static func lower(_ value: TokenSource) -> UInt64 {
+         if let rustImpl = value as? TokenSourceImpl {
+             // Rust-implemented object.  Clone the handle and return it
+            return rustImpl.uniffiCloneHandle()
+         } else {
+            // Swift object, generate a new vtable handle and return that.
+            return handleMap.insert(obj: value)
+         }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TokenSource {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: TokenSource, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTokenSource_lift(_ handle: UInt64) throws -> TokenSource {
+    return try FfiConverterTypeTokenSource.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTokenSource_lower(_ value: TokenSource) -> UInt64 {
+    return FfiConverterTypeTokenSource.lower(value)
+}
+
+
+
+
+/**
+ * A call to one OpenAPI operation.
+ */
+public struct ApiCall: Equatable, Hashable {
+    /**
+     * The OpenAPI operation id, e.g. `get_VideoGet` (see `api_operations()`).
+     */
+    public var operationId: String
+    public var pathParams: [String: String]
+    public var query: [String: String]
+    public var headers: [String: String]
+    /**
+     * JSON request body.
+     */
+    public var bodyJson: String?
+    /**
+     * Makes a POST/PATCH safe to retry.
+     */
+    public var idempotencyKey: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The OpenAPI operation id, e.g. `get_VideoGet` (see `api_operations()`).
+         */operationId: String, pathParams: [String: String], query: [String: String], headers: [String: String], 
+        /**
+         * JSON request body.
+         */bodyJson: String?, 
+        /**
+         * Makes a POST/PATCH safe to retry.
+         */idempotencyKey: String?) {
+        self.operationId = operationId
+        self.pathParams = pathParams
+        self.query = query
+        self.headers = headers
+        self.bodyJson = bodyJson
+        self.idempotencyKey = idempotencyKey
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ApiCall: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeApiCall: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ApiCall {
+        return
+            try ApiCall(
+                operationId: FfiConverterString.read(from: &buf), 
+                pathParams: FfiConverterDictionaryStringString.read(from: &buf), 
+                query: FfiConverterDictionaryStringString.read(from: &buf), 
+                headers: FfiConverterDictionaryStringString.read(from: &buf), 
+                bodyJson: FfiConverterOptionString.read(from: &buf), 
+                idempotencyKey: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ApiCall, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.operationId, into: &buf)
+        FfiConverterDictionaryStringString.write(value.pathParams, into: &buf)
+        FfiConverterDictionaryStringString.write(value.query, into: &buf)
+        FfiConverterDictionaryStringString.write(value.headers, into: &buf)
+        FfiConverterOptionString.write(value.bodyJson, into: &buf)
+        FfiConverterOptionString.write(value.idempotencyKey, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeApiCall_lift(_ buf: RustBuffer) throws -> ApiCall {
+    return try FfiConverterTypeApiCall.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeApiCall_lower(_ value: ApiCall) -> RustBuffer {
+    return FfiConverterTypeApiCall.lower(value)
+}
+
+
+/**
+ * Configuration for an [`ApiClient`].
+ */
+public struct ApiClientConfig: Equatable, Hashable {
+    /**
+     * e.g. `https://videos.api.qa.alummahnow.net`
+     */
+    public var baseUrl: String
+    /**
+     * App identifier prefix for the User-Agent, e.g. `AlUmmahNow-iOS/1.2.0`.
+     */
+    public var userAgent: String?
+    /**
+     * `Accept-Language`, e.g. `ar`.
+     */
+    public var locale: String?
+    /**
+     * Request timeout; default 30 000 ms.
+     */
+    public var timeoutMs: UInt64?
+    /**
+     * Attempts including the first for idempotent requests; default 4.
+     */
+    public var maxAttempts: UInt32?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * e.g. `https://videos.api.qa.alummahnow.net`
+         */baseUrl: String, 
+        /**
+         * App identifier prefix for the User-Agent, e.g. `AlUmmahNow-iOS/1.2.0`.
+         */userAgent: String?, 
+        /**
+         * `Accept-Language`, e.g. `ar`.
+         */locale: String?, 
+        /**
+         * Request timeout; default 30 000 ms.
+         */timeoutMs: UInt64?, 
+        /**
+         * Attempts including the first for idempotent requests; default 4.
+         */maxAttempts: UInt32?) {
+        self.baseUrl = baseUrl
+        self.userAgent = userAgent
+        self.locale = locale
+        self.timeoutMs = timeoutMs
+        self.maxAttempts = maxAttempts
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ApiClientConfig: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeApiClientConfig: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ApiClientConfig {
+        return
+            try ApiClientConfig(
+                baseUrl: FfiConverterString.read(from: &buf), 
+                userAgent: FfiConverterOptionString.read(from: &buf), 
+                locale: FfiConverterOptionString.read(from: &buf), 
+                timeoutMs: FfiConverterOptionUInt64.read(from: &buf), 
+                maxAttempts: FfiConverterOptionUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ApiClientConfig, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.baseUrl, into: &buf)
+        FfiConverterOptionString.write(value.userAgent, into: &buf)
+        FfiConverterOptionString.write(value.locale, into: &buf)
+        FfiConverterOptionUInt64.write(value.timeoutMs, into: &buf)
+        FfiConverterOptionUInt32.write(value.maxAttempts, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeApiClientConfig_lift(_ buf: RustBuffer) throws -> ApiClientConfig {
+    return try FfiConverterTypeApiClientConfig.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeApiClientConfig_lower(_ value: ApiClientConfig) -> RustBuffer {
+    return FfiConverterTypeApiClientConfig.lower(value)
+}
+
+
+/**
+ * Static description of an operation.
+ */
+public struct ApiOperation: Equatable, Hashable {
+    public var id: String
+    public var method: String
+    public var path: String
+    public var authRequired: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, method: String, path: String, authRequired: Bool) {
+        self.id = id
+        self.method = method
+        self.path = path
+        self.authRequired = authRequired
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ApiOperation: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeApiOperation: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ApiOperation {
+        return
+            try ApiOperation(
+                id: FfiConverterString.read(from: &buf), 
+                method: FfiConverterString.read(from: &buf), 
+                path: FfiConverterString.read(from: &buf), 
+                authRequired: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ApiOperation, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.method, into: &buf)
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterBool.write(value.authRequired, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeApiOperation_lift(_ buf: RustBuffer) throws -> ApiOperation {
+    return try FfiConverterTypeApiOperation.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeApiOperation_lower(_ value: ApiOperation) -> RustBuffer {
+    return FfiConverterTypeApiOperation.lower(value)
+}
+
+
+/**
+ * A response body from [`ApiClient::request`].
+ */
+public struct ApiResponse: Equatable, Hashable {
+    public var status: UInt16
+    /**
+     * Raw body (JSON for almost every operation).
+     */
+    public var body: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(status: UInt16, 
+        /**
+         * Raw body (JSON for almost every operation).
+         */body: String) {
+        self.status = status
+        self.body = body
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ApiResponse: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeApiResponse: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ApiResponse {
+        return
+            try ApiResponse(
+                status: FfiConverterUInt16.read(from: &buf), 
+                body: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ApiResponse, into buf: inout [UInt8]) {
+        FfiConverterUInt16.write(value.status, into: &buf)
+        FfiConverterString.write(value.body, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeApiResponse_lift(_ buf: RustBuffer) throws -> ApiResponse {
+    return try FfiConverterTypeApiResponse.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeApiResponse_lower(_ value: ApiResponse) -> RustBuffer {
+    return FfiConverterTypeApiResponse.lower(value)
+}
+
+
 /**
  * Network state from the OS.
  */
@@ -1304,6 +2205,135 @@ public func FfiConverterTypeNetworkState_lift(_ buf: RustBuffer) throws -> Netwo
 #endif
 public func FfiConverterTypeNetworkState_lower(_ value: NetworkState) -> RustBuffer {
     return FfiConverterTypeNetworkState.lower(value)
+}
+
+
+/**
+ * What a queue flush did.
+ */
+public struct QueueFlushReport: Equatable, Hashable {
+    public var sentIds: [String]
+    public var rejected: [RejectedWrite]
+    public var remaining: UInt32
+    /**
+     * Why the flush stopped early (offline, rate limited, sign-in needed).
+     */
+    public var stoppedBy: AunError?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(sentIds: [String], rejected: [RejectedWrite], remaining: UInt32, 
+        /**
+         * Why the flush stopped early (offline, rate limited, sign-in needed).
+         */stoppedBy: AunError?) {
+        self.sentIds = sentIds
+        self.rejected = rejected
+        self.remaining = remaining
+        self.stoppedBy = stoppedBy
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension QueueFlushReport: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeQueueFlushReport: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> QueueFlushReport {
+        return
+            try QueueFlushReport(
+                sentIds: FfiConverterSequenceString.read(from: &buf), 
+                rejected: FfiConverterSequenceTypeRejectedWrite.read(from: &buf), 
+                remaining: FfiConverterUInt32.read(from: &buf), 
+                stoppedBy: FfiConverterOptionTypeAunError.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: QueueFlushReport, into buf: inout [UInt8]) {
+        FfiConverterSequenceString.write(value.sentIds, into: &buf)
+        FfiConverterSequenceTypeRejectedWrite.write(value.rejected, into: &buf)
+        FfiConverterUInt32.write(value.remaining, into: &buf)
+        FfiConverterOptionTypeAunError.write(value.stoppedBy, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQueueFlushReport_lift(_ buf: RustBuffer) throws -> QueueFlushReport {
+    return try FfiConverterTypeQueueFlushReport.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQueueFlushReport_lower(_ value: QueueFlushReport) -> RustBuffer {
+    return FfiConverterTypeQueueFlushReport.lower(value)
+}
+
+
+public struct RejectedWrite: Equatable, Hashable {
+    public var id: String
+    public var operationId: String
+    public var error: AunError
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, operationId: String, error: AunError) {
+        self.id = id
+        self.operationId = operationId
+        self.error = error
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension RejectedWrite: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRejectedWrite: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RejectedWrite {
+        return
+            try RejectedWrite(
+                id: FfiConverterString.read(from: &buf), 
+                operationId: FfiConverterString.read(from: &buf), 
+                error: FfiConverterTypeAunError.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RejectedWrite, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.operationId, into: &buf)
+        FfiConverterTypeAunError.write(value.error, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRejectedWrite_lift(_ buf: RustBuffer) throws -> RejectedWrite {
+    return try FfiConverterTypeRejectedWrite.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRejectedWrite_lower(_ value: RejectedWrite) -> RustBuffer {
+    return FfiConverterTypeRejectedWrite.lower(value)
 }
 
 
@@ -1512,6 +2542,30 @@ public func FfiConverterTypeAunError_lower(_ value: AunError) -> RustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionUInt32: FfiConverterRustBuffer {
+    typealias SwiftType = UInt32?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterUInt32.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterUInt32.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionUInt64: FfiConverterRustBuffer {
     typealias SwiftType = UInt64?
 
@@ -1584,6 +2638,54 @@ fileprivate struct FfiConverterOptionData: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeTokenSource: FfiConverterRustBuffer {
+    typealias SwiftType = TokenSource?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeTokenSource.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeTokenSource.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeAunError: FfiConverterRustBuffer {
+    typealias SwiftType = AunError?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeAunError.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeAunError.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
     typealias SwiftType = [String]
 
@@ -1603,6 +2705,82 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
             seq.append(try FfiConverterString.read(from: &buf))
         }
         return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeApiOperation: FfiConverterRustBuffer {
+    typealias SwiftType = [ApiOperation]
+
+    public static func write(_ value: [ApiOperation], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeApiOperation.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ApiOperation] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ApiOperation]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeApiOperation.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeRejectedWrite: FfiConverterRustBuffer {
+    typealias SwiftType = [RejectedWrite]
+
+    public static func write(_ value: [RejectedWrite], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRejectedWrite.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RejectedWrite] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [RejectedWrite]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeRejectedWrite.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterDictionaryStringString: FfiConverterRustBuffer {
+    public static func write(_ value: [String: String], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for (key, value) in value {
+            FfiConverterString.write(key, into: &buf)
+            FfiConverterString.write(value, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [String: String] {
+        let len: Int32 = try readInt(&buf)
+        var dict = [String: String]()
+        dict.reserveCapacity(Int(len))
+        for _ in 0..<len {
+            let key = try FfiConverterString.read(from: &buf)
+            let value = try FfiConverterString.read(from: &buf)
+            dict[key] = value
+        }
+        return dict
     }
 }
 private let UNIFFI_RUST_FUTURE_POLL_READY: Int8 = 0
@@ -1659,6 +2837,15 @@ fileprivate func uniffiFutureContinuationCallback(handle: UInt64, pollResult: In
 public func coreVersion() -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
     uniffi_aun_core_fn_func_core_version($0
+    )
+})
+}
+/**
+ * Every operation the client knows (from the pinned OpenAPI document).
+ */
+public func apiOperations() -> [ApiOperation]  {
+    return try!  FfiConverterSequenceTypeApiOperation.lift(try! rustCall() {
+    uniffi_aun_core_fn_func_api_operations($0
     )
 })
 }
@@ -1748,6 +2935,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_func_core_version() != 31198) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_func_api_operations() != 5225) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aun_core_checksum_func_selftest_async_echo() != 26577) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -1761,6 +2951,30 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_func_selftest_throw() != 9695) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_request() != 46776) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinequeue_enqueue() != 34998) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinequeue_flush() != 26340) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinequeue_pending_count() != 15008) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinequeue_purge_account() != 36641) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinequeue_remove() != 2329) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_tokensource_access_token() != 30281) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_tokensource_refresh() != 51879) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_selftestlistener_on_event() != 53827) {
@@ -1781,10 +2995,17 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_method_securestorage_list() != 12307) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_constructor_apiclient_new() != 27430) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_constructor_offlinequeue_open() != 47580) {
+        return InitializationResult.apiChecksumMismatch
+    }
 
     uniffiCallbackInitConnectivity()
     uniffiCallbackInitSecureStorage()
     uniffiCallbackInitSelfTestListener()
+    uniffiCallbackInitTokenSource()
     return InitializationResult.ok
 }()
 
