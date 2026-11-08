@@ -224,6 +224,7 @@ pub struct RawResponse {
 
 impl ApiClient {
     pub fn new(config: ApiConfig) -> Result<Self> {
+        aun_common::security::ensure_secure_url(&config.base_url)?;
         let http = crate::tls::http_client(&config)?;
         Ok(Self {
             config: Arc::new(config),

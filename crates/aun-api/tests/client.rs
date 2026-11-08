@@ -392,3 +392,13 @@ async fn queue_never_replays_another_accounts_writes() {
     assert!(store.load().unwrap().is_empty());
     assert!(OfflineQueue::open(store, "").is_err());
 }
+
+#[test]
+fn refuses_cleartext_base_url() {
+    assert!(matches!(
+        ApiClient::new(ApiConfig::new("http://videos.api.example.com")),
+        Err(Error::InvalidInput(_))
+    ));
+    assert!(ApiClient::new(ApiConfig::new("http://127.0.0.1:9")).is_ok());
+    assert!(ApiClient::new(ApiConfig::new("https://videos.api.example.com")).is_ok());
+}

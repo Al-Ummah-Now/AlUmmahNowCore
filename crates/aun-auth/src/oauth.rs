@@ -3,6 +3,7 @@
 
 use std::time::Duration;
 
+use aun_common::security::ensure_secure_url;
 use aun_common::{Error, Result};
 use serde::{Deserialize, Serialize};
 
@@ -41,6 +42,7 @@ impl OAuthConfig {
         redirect_uri: impl Into<String>,
         scopes: Vec<String>,
     ) -> Result<Self> {
+        ensure_secure_url(issuer)?;
         let url = format!(
             "{}/.well-known/oauth-authorization-server",
             issuer.trim_end_matches('/')
@@ -54,6 +56,11 @@ impl OAuthConfig {
             ));
         }
         let m: Metadata = resp.json().await.map_err(net)?;
+        ensure_secure_url(&m.authorization_endpoint)?;
+        ensure_secure_url(&m.token_endpoint)?;
+        if let Some(d) = &m.device_authorization_endpoint {
+            ensure_secure_url(d)?;
+        }
         Ok(Self {
             issuer: m.issuer,
             authorization_endpoint: m.authorization_endpoint,
@@ -177,6 +184,7 @@ impl OAuthClient {
 
     /// Builds the authorization URL with a fresh `state` and PKCE S256 challenge.
     pub fn authorize(&self, extra: &[(&str, &str)]) -> Result<PendingAuthorization> {
+        ensure_secure_url(&self.config.authorization_endpoint)?;
         let pkce = Pkce::generate()?;
         let state = random_token(16)?;
         let scope = self.config.scopes.join(" ");
@@ -275,6 +283,7 @@ impl OAuthClient {
                     "the auth server has no device_authorization_endpoint yet (Epic 9.2)".into(),
                 )
             })?;
+        ensure_secure_url(endpoint)?;
         let scope = self.config.scopes.join(" ");
         let mut form = vec![("client_id", self.config.client_id.as_str())];
         if !scope.is_empty() {
@@ -296,6 +305,7 @@ impl OAuthClient {
             ("device_code", device_code),
             ("client_id", self.config.client_id.as_str()),
         ];
+        ensure_secure_url(&self.config.token_endpoint)?;
         let resp = self
             .http
             .post(&self.config.token_endpoint)
@@ -320,6 +330,7 @@ impl OAuthClient {
     }
 
     async fn token_request(&self, form: &[(&str, &str)], now_ms: i64) -> Result<TokenSet> {
+        ensure_secure_url(&self.config.token_endpoint)?;
         let resp = self
             .http
             .post(&self.config.token_endpoint)

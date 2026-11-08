@@ -38,6 +38,8 @@ FFI; such changes are listed under **Breaking**.
   `aun_api::AuthProvider`.
 - FFI: `AuthManager` (+ `auth_manager_discover`), `DeviceLogin`, `AuthListener`/`AuthEvent`,
   `AccountInfo`, `AuthManager.api_client()`.
+- Security: API clients and OAuth endpoints refuse non-HTTPS URLs (plain `http` only for
+  loopback), so tokens and codes are never sent in cleartext (`aun_common::security`).
 
 ### Changed
 

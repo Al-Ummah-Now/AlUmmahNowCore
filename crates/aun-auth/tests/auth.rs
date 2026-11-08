@@ -470,3 +470,27 @@ async fn account_bound_tokens_ignore_account_switches() {
     m.sign_out("u1").unwrap();
     assert_eq!(u1.access_token().await, None);
 }
+
+#[tokio::test]
+async fn refuses_cleartext_endpoints() {
+    let server = MockServer::start().await;
+    let mut cfg = config(&server, true);
+    cfg.authorization_endpoint = "http://auth.example.com/authorize".into();
+    cfg.token_endpoint = "http://auth.example.com/token".into();
+    cfg.device_authorization_endpoint = Some("http://auth.example.com/device".into());
+    let c = OAuthClient::new(cfg, http());
+    assert!(matches!(c.authorize(&[]), Err(Error::InvalidInput(_))));
+    assert!(matches!(c.refresh("rt", 0).await, Err(Error::InvalidInput(_))));
+    assert!(matches!(
+        c.device_authorization().await,
+        Err(Error::InvalidInput(_))
+    ));
+    assert!(matches!(
+        OAuthConfig::discover(&http(), "http://auth.example.com", "c", "x://cb", vec![]).await,
+        Err(Error::InvalidInput(_))
+    ));
+    assert!(
+        server.received_requests().await.unwrap().is_empty(),
+        "nothing was sent"
+    );
+}
