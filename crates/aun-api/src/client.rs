@@ -175,17 +175,19 @@ impl RequestSpec {
     }
 }
 
-/// Percent-encodes one path segment. Empty segments are rejected and dot-only segments (`.`,
-/// `..`) are fully encoded, so a parameter value can never change which route is called.
+/// Percent-encodes one path segment. Empty and dot-only segments (`.`, `..`, `...`) are
+/// rejected: URL parsers normalise `%2E%2E` back to `..`, so encoding them is not enough to stop
+/// a parameter value from changing which route is called.
 pub fn encode_path(segment: &str) -> Result<String> {
     if segment.is_empty() {
         return Err(Error::InvalidInput("empty path parameter".into()));
     }
-    let dots_only = segment.bytes().all(|b| b == b'.');
+    if segment.bytes().all(|b| b == b'.') {
+        return Err(Error::InvalidInput(format!("invalid path parameter {segment:?}")));
+    }
     let mut out = String::with_capacity(segment.len());
     for b in segment.bytes() {
         match b {
-            b'.' if dots_only => out.push_str("%2E"),
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
             _ => out.push_str(&format!("%{b:02X}")),
         }
@@ -432,9 +434,16 @@ mod tests {
         assert_eq!(encode_path("a b/c").unwrap(), "a%20b%2Fc");
         assert_eq!(encode_path("سلام").unwrap(), "%D8%B3%D9%84%D8%A7%D9%85");
         assert_eq!(encode_path("v1.mp4").unwrap(), "v1.mp4");
-        assert_eq!(encode_path("..").unwrap(), "%2E%2E");
-        assert_eq!(encode_path(".").unwrap(), "%2E");
-        assert!(encode_path("").is_err());
+        for bad in ["", ".", "..", "..."] {
+            assert!(matches!(encode_path(bad), Err(Error::InvalidInput(_))), "{bad:?}");
+        }
+        // Encoded separators stay inside the segment once parsed as a URL.
+        let url = reqwest::Url::parse(&format!(
+            "https://h/api/videos/{}/likes",
+            encode_path("../x").unwrap()
+        ))
+        .unwrap();
+        assert_eq!(url.path(), "/api/videos/..%2Fx/likes");
     }
 
     #[test]

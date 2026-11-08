@@ -291,7 +291,10 @@ mod tests {
             ..Default::default()
         };
         traversal.path_params.insert("id".into(), "..".into());
-        assert_eq!(build_request(traversal).unwrap().path, "/api/videos/%2E%2E/likes");
+        assert!(matches!(
+            build_request(traversal),
+            Err(AunError::InvalidInput { .. })
+        ));
         assert_eq!(r.query, vec![("a".into(), "1".into()), ("b".into(), "2".into())]);
     }
 
