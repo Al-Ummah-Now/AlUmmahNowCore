@@ -1,0 +1,62 @@
+name: media
+
+# Real whisper.cpp inference, kept apart from ci.yml because it needs cmake and a model download.
+on:
+  pull_request:
+    paths:
+      - "crates/aun-media/**"
+      - ".github/workflows/media.yml"
+      - "Cargo.lock"
+  push:
+    branches: [main]
+    paths:
+      - "crates/aun-media/**"
+      - ".github/workflows/media.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: media-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  MODEL_FILE: ggml-tiny.bin
+  MODEL_SHA256: be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21
+
+jobs:
+  whisper:
+    name: whisper inference (tiny model)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install build tools and espeak-ng
+        run: sudo apt-get update && sudo apt-get install -y cmake clang libclang-dev espeak-ng
+      - uses: actions/cache@v4
+        with:
+          path: models
+          key: whisper-${{ env.MODEL_FILE }}-${{ env.MODEL_SHA256 }}
+      - name: Download the model and check its SHA-256
+        run: |
+          mkdir -p models
+          if [ ! -f "models/$MODEL_FILE" ]; then
+            curl -fsSL -o "models/$MODEL_FILE" \
+              "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$MODEL_FILE"
+          fi
+          echo "$MODEL_SHA256  models/$MODEL_FILE" | sha256sum --check
+      - name: Generate speech clips
+        run: |
+          mkdir -p clips
+          espeak-ng -v en -s 130 -w clips/en.wav "Good morning everyone. Welcome to the lecture."
+          espeak-ng -v ar -s 120 -w clips/ar.wav "بسم الله الرحمن الرحيم. مرحبا بكم في هذه المحاضرة."
+      - name: Run inference tests
+        env:
+          AUN_WHISPER_MODEL: ${{ github.workspace }}/models/ggml-tiny.bin
+          AUN_CLIP_EN: ${{ github.workspace }}/clips/en.wav
+          AUN_CLIP_AR: ${{ github.workspace }}/clips/ar.wav
+        run: cargo test --release -p aun-media --features whisper --test whisper_inference -- --ignored --test-threads=1

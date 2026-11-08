@@ -8,6 +8,8 @@ FFI; such changes are listed under **Breaking**.
 ## [Unreleased]
 
 ### Added
+- `aun-media`: Whisper model manager (resumable, SHA-256 verified downloads), WebVTT and SRT writers,
+  chapter suggestions, and whisper.cpp transcription behind the `whisper` feature.
 - `aun-player`: platform-neutral player behaviour model for the Epic 13 native players. It is a
   deterministic state machine (inputs + wall-clock → commands) covering the queue with autoplay,
   seeded shuffle and repeat, resume rules (30 s / 95 %), ABR quality caps per device class, network

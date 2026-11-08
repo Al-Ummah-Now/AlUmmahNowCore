@@ -7,6 +7,7 @@
 //! | [`analysis`] | 30.1 | EBU R128 loudness, silence and scene-change detection |
 //! | [`edl`] | 30.5 | versioned edit project, operations, render planning |
 //! | [`job`] | 30.2 | presets, `JobPlan` DAG, runner, backends, conformance suite |
+//! | [`transcribe`] | 30.4 | model management, subtitles, chapter suggestions, whisper (feature `whisper`) |
 //! | [`waveform`] | 30.3 | multi-resolution min/max peaks |
 //! | [`thumbnails`] | 30.3 | scene-aware filmstrip timestamps |
 //! | [`text`] | 30.6 | bidi, line breaking and Arabic-correct shaping (feature `harfbuzz`) |
@@ -25,6 +26,7 @@ mod refcontainer;
 #[cfg(feature = "harfbuzz")]
 pub mod text;
 pub mod thumbnails;
+pub mod transcribe;
 pub mod waveform;
 
 pub use tokio_util::sync::CancellationToken;
