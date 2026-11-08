@@ -273,7 +273,7 @@ def generate(spec: dict) -> str:
             fmt = path
             for p in path_params:
                 fmt = fmt.replace("{" + p["name"] + "}", "{}")
-            fmt_args = ", ".join(f"crate::client::encode_path(&params.{p['_ident']}.to_string())" for p in path_params)
+            fmt_args = ", ".join(f"crate::client::encode_path(&params.{p['_ident']}.to_string())?" for p in path_params)
             body.append(f"        let path = format!(\"{fmt}\", {fmt_args});")
         else:
             body.append(f"        let path = \"{path}\".to_owned();")

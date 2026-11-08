@@ -128,7 +128,7 @@ pub(crate) fn build_request(call: ApiCall) -> Result<RequestSpec, AunError> {
         let value = call.path_params.get(name).ok_or_else(|| AunError::InvalidInput {
             detail: format!("{} needs path parameter {name}", op.id),
         })?;
-        path.push_str(&aun_api::client::encode_path(value));
+        path.push_str(&aun_api::client::encode_path(value)?);
         rest = &rest[end + 1..];
     }
     path.push_str(rest);
@@ -218,13 +218,19 @@ pub struct OfflineQueue {
 
 #[uniffi::export(async_runtime = "tokio")]
 impl OfflineQueue {
-    /// Opens (or creates) the queue persisted at `file_path` (app support directory).
+    /// Opens (or creates) the queue persisted at `file_path` (app support directory) for
+    /// `account_id` (the signed-in user id). Only that account's writes are replayed.
     #[uniffi::constructor]
-    pub fn open(file_path: String) -> Result<Arc<Self>, AunError> {
+    pub fn open(file_path: String, account_id: String) -> Result<Arc<Self>, AunError> {
         let store = Arc::new(aun_api::queue::FileQueueStore::new(file_path));
         Ok(Arc::new(Self {
-            inner: aun_api::queue::OfflineQueue::open(store)?,
+            inner: aun_api::queue::OfflineQueue::open(store, account_id)?,
         }))
+    }
+
+    /// Deletes every queued write of `account_id` (sign-out / account removal). Returns the count.
+    pub fn purge_account(&self, account_id: String) -> Result<u32, AunError> {
+        Ok(self.inner.purge_account(&account_id)? as u32)
     }
 
     /// Queues a write; writes with the same `coalesce_key` replace each other. Returns its id.
@@ -280,6 +286,12 @@ mod tests {
         let r = build_request(call).unwrap();
         assert_eq!(r.path, "/api/videos/v%201/likes");
         assert_eq!(r.method, reqwest::Method::POST);
+        let mut traversal = ApiCall {
+            operation_id: "post_LikeCreate".into(),
+            ..Default::default()
+        };
+        traversal.path_params.insert("id".into(), "..".into());
+        assert_eq!(build_request(traversal).unwrap().path, "/api/videos/%2E%2E/likes");
         assert_eq!(r.query, vec![("a".into(), "1".into()), ("b".into(), "2".into())]);
     }
 

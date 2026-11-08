@@ -175,16 +175,22 @@ impl RequestSpec {
     }
 }
 
-/// Percent-encodes one path segment.
-pub fn encode_path(segment: &str) -> String {
+/// Percent-encodes one path segment. Empty segments are rejected and dot-only segments (`.`,
+/// `..`) are fully encoded, so a parameter value can never change which route is called.
+pub fn encode_path(segment: &str) -> Result<String> {
+    if segment.is_empty() {
+        return Err(Error::InvalidInput("empty path parameter".into()));
+    }
+    let dots_only = segment.bytes().all(|b| b == b'.');
     let mut out = String::with_capacity(segment.len());
     for b in segment.bytes() {
         match b {
+            b'.' if dots_only => out.push_str("%2E"),
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
             _ => out.push_str(&format!("%{b:02X}")),
         }
     }
-    out
+    Ok(out)
 }
 
 /// The api-videos client. Cheap to clone; share one per account.
@@ -422,9 +428,13 @@ mod tests {
 
     #[test]
     fn encodes_path_segments() {
-        assert_eq!(encode_path("abc-123"), "abc-123");
-        assert_eq!(encode_path("a b/c"), "a%20b%2Fc");
-        assert_eq!(encode_path("سلام"), "%D8%B3%D9%84%D8%A7%D9%85");
+        assert_eq!(encode_path("abc-123").unwrap(), "abc-123");
+        assert_eq!(encode_path("a b/c").unwrap(), "a%20b%2Fc");
+        assert_eq!(encode_path("سلام").unwrap(), "%D8%B3%D9%84%D8%A7%D9%85");
+        assert_eq!(encode_path("v1.mp4").unwrap(), "v1.mp4");
+        assert_eq!(encode_path("..").unwrap(), "%2E%2E");
+        assert_eq!(encode_path(".").unwrap(), "%2E");
+        assert!(encode_path("").is_err());
     }
 
     #[test]

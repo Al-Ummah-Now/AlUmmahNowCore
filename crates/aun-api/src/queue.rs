@@ -8,6 +8,9 @@
 //!   list so the app can tell the user (e.g. "comment could not be posted").
 //! * Writes with the same `coalesce_key` replace each other (like → unlike → like sends one request).
 //! * Every write carries an `Idempotency-Key` so a replay after a lost response is safe.
+//! * Every write is stamped with the account that queued it. A queue handle is bound to one
+//!   account and only ever replays that account's writes, so a write can't be sent with another
+//!   user's token after an account switch. Call [`OfflineQueue::purge_account`] on sign-out.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -22,6 +25,8 @@ use crate::client::{ApiClient, Body, RequestSpec, RetryPolicy};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct QueuedWrite {
     pub id: String,
+    /// The account (user id) that queued the write.
+    pub account_id: String,
     pub operation_id: String,
     pub method: String,
     pub path: String,
@@ -112,6 +117,7 @@ pub struct FlushReport {
 
 /// The queue. Thread-safe; one per account.
 pub struct OfflineQueue {
+    account_id: String,
     store: Arc<dyn QueueStore>,
     items: Mutex<Vec<QueuedWrite>>,
     clock: Arc<dyn Clock>,
@@ -126,14 +132,24 @@ impl std::fmt::Debug for OfflineQueue {
 }
 
 impl OfflineQueue {
-    /// Loads any writes persisted by a previous run.
-    pub fn open(store: Arc<dyn QueueStore>) -> Result<Self> {
-        Self::open_with_clock(store, Arc::new(SystemClock))
+    /// Opens the queue for `account_id` (the signed-in user's id), loading writes persisted by a
+    /// previous run. Writes from other accounts stay stored but are never replayed by this handle.
+    pub fn open(store: Arc<dyn QueueStore>, account_id: impl Into<String>) -> Result<Self> {
+        Self::open_with_clock(store, account_id, Arc::new(SystemClock))
     }
 
-    pub fn open_with_clock(store: Arc<dyn QueueStore>, clock: Arc<dyn Clock>) -> Result<Self> {
+    pub fn open_with_clock(
+        store: Arc<dyn QueueStore>,
+        account_id: impl Into<String>,
+        clock: Arc<dyn Clock>,
+    ) -> Result<Self> {
+        let account_id = account_id.into();
+        if account_id.is_empty() {
+            return Err(Error::InvalidInput("offline queue needs an account id".into()));
+        }
         let items = store.load()?;
         Ok(Self {
+            account_id,
             store,
             items: Mutex::new(items),
             clock,
@@ -152,16 +168,42 @@ impl OfflineQueue {
             .map_err(|_| Error::Internal("queue lock poisoned".into()))
     }
 
+    /// Writes queued by this handle's account.
     pub fn len(&self) -> usize {
-        self.items.lock().map(|i| i.len()).unwrap_or(0)
+        self.items
+            .lock()
+            .map(|i| i.iter().filter(|w| w.account_id == self.account_id).count())
+            .unwrap_or(0)
+    }
+
+    pub fn account_id(&self) -> &str {
+        &self.account_id
     }
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    /// This account's queued writes, oldest first.
     pub fn pending(&self) -> Result<Vec<QueuedWrite>> {
-        Ok(self.lock()?.clone())
+        Ok(self
+            .lock()?
+            .iter()
+            .filter(|w| w.account_id == self.account_id)
+            .cloned()
+            .collect())
+    }
+
+    /// Deletes every queued write of `account_id` (call on sign-out or account removal).
+    pub fn purge_account(&self, account_id: &str) -> Result<usize> {
+        let mut items = self.lock()?;
+        let before = items.len();
+        items.retain(|w| w.account_id != account_id);
+        let removed = before - items.len();
+        if removed > 0 {
+            self.store.save(&items)?;
+        }
+        Ok(removed)
     }
 
     /// Queues a write built by a generated operation's request (JSON or empty bodies only).
@@ -176,6 +218,7 @@ impl OfflineQueue {
         let id = new_id(now);
         let item = QueuedWrite {
             id: id.clone(),
+            account_id: self.account_id.clone(),
             operation_id: req.operation_id,
             method: req.method.as_str().to_owned(),
             path: req.path,
@@ -191,7 +234,7 @@ impl OfflineQueue {
         };
         let mut items = self.lock()?;
         if let Some(key) = &item.coalesce_key {
-            items.retain(|i| i.coalesce_key.as_ref() != Some(key));
+            items.retain(|i| !(i.account_id == self.account_id && i.coalesce_key.as_ref() == Some(key)));
         }
         items.push(item);
         self.store.save(&items)?;
@@ -202,7 +245,7 @@ impl OfflineQueue {
     pub fn remove(&self, id: &str) -> Result<bool> {
         let mut items = self.lock()?;
         let before = items.len();
-        items.retain(|i| i.id != id);
+        items.retain(|i| !(i.id == id && i.account_id == self.account_id));
         let removed = items.len() != before;
         if removed {
             self.store.save(&items)?;
@@ -219,7 +262,7 @@ impl OfflineQueue {
             let now = self.clock.now_ms();
             let next = {
                 let items = self.lock()?;
-                match items.first() {
+                match items.iter().find(|i| i.account_id == self.account_id) {
                     Some(i) if i.next_attempt_at_ms <= now => i.clone(),
                     _ => break,
                 }

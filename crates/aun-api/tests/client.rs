@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use aun_api::queue::{FileQueueStore, MemoryQueueStore, OfflineQueue};
+use aun_api::queue::{FileQueueStore, MemoryQueueStore, OfflineQueue, QueueStore};
 use aun_api::{
     ApiClient, ApiConfig, AuthProvider, Error, OPERATIONS, PostLikeCreateParams,
     PostUploadInitiateEndpointBody, PostUploadInitiateEndpointParams, Result, RetryPolicy, requests,
@@ -282,7 +282,7 @@ fn like(video: &str) -> aun_api::RequestSpec {
 async fn queue_coalesces_replays_in_order_and_persists() {
     let dir = tempfile::tempdir().unwrap();
     let store = Arc::new(FileQueueStore::new(dir.path().join("queue.json")));
-    let q = OfflineQueue::open(store.clone()).unwrap();
+    let q = OfflineQueue::open(store.clone(), "user-a").unwrap();
     q.enqueue(like("v1"), Some("like:v1".into())).unwrap();
     q.enqueue(like("v2"), None).unwrap();
     q.enqueue(like("v1"), Some("like:v1".into())).unwrap(); // replaces the first
@@ -290,7 +290,7 @@ async fn queue_coalesces_replays_in_order_and_persists() {
     drop(q);
 
     // A new process picks the queue up from disk.
-    let q = OfflineQueue::open(store).unwrap();
+    let q = OfflineQueue::open(store, "user-a").unwrap();
     let pending = q.pending().unwrap();
     assert_eq!(
         pending.iter().map(|w| w.path.as_str()).collect::<Vec<_>>(),
@@ -332,7 +332,8 @@ async fn queue_stops_on_retryable_and_drops_rejected() {
     cfg.retry = RetryPolicy::none();
     let client = ApiClient::new(cfg).unwrap().with_auth(tokens("t", None));
     let clock = Arc::new(ManualClock::new(1_000_000));
-    let q = OfflineQueue::open_with_clock(Arc::new(MemoryQueueStore::default()), clock.clone()).unwrap();
+    let q = OfflineQueue::open_with_clock(Arc::new(MemoryQueueStore::default()), "user-a", clock.clone())
+        .unwrap();
     q.enqueue(like("gone"), None).unwrap();
     q.enqueue(like("busy"), None).unwrap();
     q.enqueue(like("later"), None).unwrap();
@@ -355,4 +356,35 @@ async fn queue_stops_on_retryable_and_drops_rejected() {
     clock.advance(60 * 60 * 1000);
     let report = q.flush(&client).await.unwrap();
     assert!(report.stopped_by.is_some()); // still 503
+}
+
+#[tokio::test]
+async fn queue_never_replays_another_accounts_writes() {
+    let store = Arc::new(MemoryQueueStore::default());
+    let a = OfflineQueue::open(store.clone(), "user-a").unwrap();
+    a.enqueue(like("from-a"), Some("like:x".into())).unwrap();
+    drop(a);
+
+    // User B signs in on the same device: A's write must not go out with B's token.
+    let b = OfflineQueue::open(store.clone(), "user-b").unwrap();
+    assert_eq!(b.len(), 0);
+    b.enqueue(like("from-b"), Some("like:x".into())).unwrap(); // same key, different account: no coalescing across accounts
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("{}"))
+        .mount(&server)
+        .await;
+    let client = ApiClient::new(config(&server))
+        .unwrap()
+        .with_auth(tokens("token-b", None));
+    let report = b.flush(&client).await.unwrap();
+    assert_eq!(report.sent.len(), 1);
+    let reqs = server.received_requests().await.unwrap();
+    assert_eq!(reqs.len(), 1);
+    assert_eq!(reqs[0].url.path(), "/api/videos/from-b/likes");
+
+    // A's write is still stored until A signs out.
+    assert_eq!(b.purge_account("user-a").unwrap(), 1);
+    assert!(store.load().unwrap().is_empty());
+    assert!(OfflineQueue::open(store, "").is_err());
 }

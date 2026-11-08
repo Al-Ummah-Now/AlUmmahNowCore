@@ -909,6 +909,11 @@ public protocol OfflineQueueProtocol: AnyObject, Sendable {
     
     func pendingCount()  -> UInt32
     
+    /**
+     * Deletes every queued write of `account_id` (sign-out / account removal). Returns the count.
+     */
+    func purgeAccount(accountId: String) throws  -> UInt32
+    
     func remove(id: String) throws  -> Bool
     
 }
@@ -967,12 +972,14 @@ open class OfflineQueue: OfflineQueueProtocol, @unchecked Sendable {
 
     
     /**
-     * Opens (or creates) the queue persisted at `file_path` (app support directory).
+     * Opens (or creates) the queue persisted at `file_path` (app support directory) for
+     * `account_id` (the signed-in user id). Only that account's writes are replayed.
      */
-public static func `open`(filePath: String)throws  -> OfflineQueue  {
+public static func `open`(filePath: String, accountId: String)throws  -> OfflineQueue  {
     return try  FfiConverterTypeOfflineQueue_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
     uniffi_aun_core_fn_constructor_offlinequeue_open(
-        FfiConverterString.lower(filePath),$0
+        FfiConverterString.lower(filePath),
+        FfiConverterString.lower(accountId),$0
     )
 })
 }
@@ -1016,6 +1023,18 @@ open func pendingCount() -> UInt32  {
     return try!  FfiConverterUInt32.lift(try! rustCall() {
     uniffi_aun_core_fn_method_offlinequeue_pending_count(
             self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * Deletes every queued write of `account_id` (sign-out / account removal). Returns the count.
+     */
+open func purgeAccount(accountId: String)throws  -> UInt32  {
+    return try  FfiConverterUInt32.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinequeue_purge_account(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(accountId),$0
     )
 })
 }
@@ -2946,6 +2965,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_method_offlinequeue_pending_count() != 15008) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_method_offlinequeue_purge_account() != 36641) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aun_core_checksum_method_offlinequeue_remove() != 2329) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2976,7 +2998,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_constructor_apiclient_new() != 27430) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_aun_core_checksum_constructor_offlinequeue_open() != 18333) {
+    if (uniffi_aun_core_checksum_constructor_offlinequeue_open() != 47580) {
         return InitializationResult.apiChecksumMismatch
     }
 

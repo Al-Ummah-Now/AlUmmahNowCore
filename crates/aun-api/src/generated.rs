@@ -8782,7 +8782,7 @@ pub mod requests {
     pub fn delete_channel_delete(params: &DeleteChannelDeleteParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/channels/{}",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::DELETE, path, "delete_ChannelDelete");
         if let Some(v) = &params.new_main_channel_id {
@@ -8799,8 +8799,8 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/channels/{}/sections/{}",
-            crate::client::encode_path(&params.channel_id.to_string()),
-            crate::client::encode_path(&params.section_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?,
+            crate::client::encode_path(&params.section_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::DELETE, path, "delete_ChannelSectionDelete");
         req.auth = crate::client::AuthMode::Required;
@@ -8826,8 +8826,8 @@ pub mod requests {
     pub fn delete_comment_delete(params: &DeleteCommentDeleteParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/comments/{}",
-            crate::client::encode_path(&params.id.to_string()),
-            crate::client::encode_path(&params.cid.to_string())
+            crate::client::encode_path(&params.id.to_string())?,
+            crate::client::encode_path(&params.cid.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::DELETE, path, "delete_CommentDelete");
         req.headers
@@ -8843,8 +8843,8 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/comments/{}/dislikes",
-            crate::client::encode_path(&params.id.to_string()),
-            crate::client::encode_path(&params.cid.to_string())
+            crate::client::encode_path(&params.id.to_string())?,
+            crate::client::encode_path(&params.cid.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::DELETE, path, "delete_CommentDislikeDelete");
         if let Some(v) = &params.header_channel_id {
@@ -8859,8 +8859,8 @@ pub mod requests {
     pub fn delete_comment_like_delete(params: &DeleteCommentLikeDeleteParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/comments/{}/likes",
-            crate::client::encode_path(&params.id.to_string()),
-            crate::client::encode_path(&params.cid.to_string())
+            crate::client::encode_path(&params.id.to_string())?,
+            crate::client::encode_path(&params.cid.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::DELETE, path, "delete_CommentLikeDelete");
         if let Some(v) = &params.header_channel_id {
@@ -8877,8 +8877,8 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/community/channels/{}/posts/{}",
-            crate::client::encode_path(&params.channel_id.to_string()),
-            crate::client::encode_path(&params.post_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?,
+            crate::client::encode_path(&params.post_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::DELETE, path, "delete_DeleteCommunityPost");
         req.auth = crate::client::AuthMode::Required;
@@ -8893,9 +8893,9 @@ pub mod requests {
     pub fn delete_delete_post_comment(params: &DeleteDeletePostCommentParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/community/channels/{}/posts/{}/comments/{}",
-            crate::client::encode_path(&params.channel_id.to_string()),
-            crate::client::encode_path(&params.post_id.to_string()),
-            crate::client::encode_path(&params.comment_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?,
+            crate::client::encode_path(&params.post_id.to_string())?,
+            crate::client::encode_path(&params.comment_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::DELETE, path, "delete_DeletePostComment");
         req.auth = crate::client::AuthMode::Required;
@@ -8913,7 +8913,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/upload-defaults/{}",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(
             reqwest::Method::DELETE,
@@ -8932,7 +8932,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/watch-history/{}",
-            crate::client::encode_path(&params.video_id.to_string())
+            crate::client::encode_path(&params.video_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::DELETE, path, "delete_DeleteWatchHistory");
         req.auth = crate::client::AuthMode::Required;
@@ -8948,7 +8948,7 @@ pub mod requests {
     pub fn delete_dislike_delete(params: &DeleteDislikeDeleteParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/dislikes",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::DELETE, path, "delete_DislikeDelete");
         if let Some(v) = &params.header_channel_id {
@@ -8963,7 +8963,7 @@ pub mod requests {
     pub fn delete_like_delete(params: &DeleteLikeDeleteParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/likes",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::DELETE, path, "delete_LikeDelete");
         if let Some(v) = &params.header_channel_id {
@@ -8980,7 +8980,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/notifications/{}",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::DELETE, path, "delete_NotificationsDelete");
         if let Some(v) = &params.header_channel_id {
@@ -8995,7 +8995,7 @@ pub mod requests {
     pub fn delete_playlist_delete(params: &DeletePlaylistDeleteParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/playlists/{}",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::DELETE, path, "delete_PlaylistDelete");
         req.headers
@@ -9011,8 +9011,8 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/playlists/{}/videos/{}",
-            crate::client::encode_path(&params.id.to_string()),
-            crate::client::encode_path(&params.video_id.to_string())
+            crate::client::encode_path(&params.id.to_string())?,
+            crate::client::encode_path(&params.video_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::DELETE, path, "delete_PlaylistRemoveVideo");
         req.headers
@@ -9046,7 +9046,7 @@ pub mod requests {
     pub fn delete_saved_post_remove(params: &DeleteSavedPostRemoveParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/library/saved-posts/{}",
-            crate::client::encode_path(&params.post_id.to_string())
+            crate::client::encode_path(&params.post_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::DELETE, path, "delete_SavedPostRemove");
         if let Some(v) = &params.header_channel_id {
@@ -9061,7 +9061,7 @@ pub mod requests {
     pub fn delete_subscription_delete(params: &DeleteSubscriptionDeleteParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/channels/{}/subscriptions",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::DELETE, path, "delete_SubscriptionDelete");
         req.headers
@@ -9075,8 +9075,8 @@ pub mod requests {
     pub fn delete_subtitles_delete(params: &DeleteSubtitlesDeleteParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/subtitles/{}",
-            crate::client::encode_path(&params.video_id.to_string()),
-            crate::client::encode_path(&params.language.to_string())
+            crate::client::encode_path(&params.video_id.to_string())?,
+            crate::client::encode_path(&params.language.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::DELETE, path, "delete_SubtitlesDelete");
         req.auth = crate::client::AuthMode::Required;
@@ -9094,9 +9094,9 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/community/channels/{}/posts/{}/comments/{}/heart",
-            crate::client::encode_path(&params.channel_id.to_string()),
-            crate::client::encode_path(&params.post_id.to_string()),
-            crate::client::encode_path(&params.comment_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?,
+            crate::client::encode_path(&params.post_id.to_string())?,
+            crate::client::encode_path(&params.comment_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::DELETE, path, "delete_UnheartPostComment");
         req.auth = crate::client::AuthMode::Required;
@@ -9111,8 +9111,8 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/community/channels/{}/posts/{}/like",
-            crate::client::encode_path(&params.channel_id.to_string()),
-            crate::client::encode_path(&params.post_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?,
+            crate::client::encode_path(&params.post_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::DELETE, path, "delete_UnlikeCommunityPost");
         req.auth = crate::client::AuthMode::Required;
@@ -9128,9 +9128,9 @@ pub mod requests {
     pub fn delete_unlike_post_comment(params: &DeleteUnlikePostCommentParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/community/channels/{}/posts/{}/comments/{}/like",
-            crate::client::encode_path(&params.channel_id.to_string()),
-            crate::client::encode_path(&params.post_id.to_string()),
-            crate::client::encode_path(&params.comment_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?,
+            crate::client::encode_path(&params.post_id.to_string())?,
+            crate::client::encode_path(&params.comment_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::DELETE, path, "delete_UnlikePostComment");
         req.auth = crate::client::AuthMode::Required;
@@ -9146,9 +9146,9 @@ pub mod requests {
     pub fn delete_unpin_post_comment(params: &DeleteUnpinPostCommentParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/community/channels/{}/posts/{}/comments/{}/pin",
-            crate::client::encode_path(&params.channel_id.to_string()),
-            crate::client::encode_path(&params.post_id.to_string()),
-            crate::client::encode_path(&params.comment_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?,
+            crate::client::encode_path(&params.post_id.to_string())?,
+            crate::client::encode_path(&params.comment_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::DELETE, path, "delete_UnpinPostComment");
         req.auth = crate::client::AuthMode::Required;
@@ -9161,7 +9161,7 @@ pub mod requests {
     pub fn delete_video_delete(params: &DeleteVideoDeleteParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::DELETE, path, "delete_VideoDelete");
         req.headers
@@ -9177,7 +9177,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/schedule",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::DELETE, path, "delete_VideoScheduleDelete");
         req.auth = crate::client::AuthMode::Required;
@@ -9193,7 +9193,7 @@ pub mod requests {
     pub fn delete_watch_later_remove(params: &DeleteWatchLaterRemoveParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/library/watch-later/{}",
-            crate::client::encode_path(&params.video_id.to_string())
+            crate::client::encode_path(&params.video_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::DELETE, path, "delete_WatchLaterRemove");
         if let Some(v) = &params.header_channel_id {
@@ -9208,7 +9208,7 @@ pub mod requests {
     pub fn get_analytics_channel_get(params: &GetAnalyticsChannelGetParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/analytics/channels/{}",
-            crate::client::encode_path(&params.channel_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_AnalyticsChannelGet");
         req.auth = crate::client::AuthMode::Required;
@@ -9299,7 +9299,7 @@ pub mod requests {
     pub fn get_analytics_video_get(params: &GetAnalyticsVideoGetParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/analytics/videos/{}",
-            crate::client::encode_path(&params.video_id.to_string())
+            crate::client::encode_path(&params.video_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_AnalyticsVideoGet");
         req.auth = crate::client::AuthMode::Required;
@@ -9320,7 +9320,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/sections/by-category/{}",
-            crate::client::encode_path(&params.category.to_string())
+            crate::client::encode_path(&params.category.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_CategoryVideosSection");
         if let Some(v) = &params.limit {
@@ -9344,7 +9344,7 @@ pub mod requests {
     pub fn get_channel_about(params: &GetChannelAboutParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/channels/{}/about",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_ChannelAbout");
         Ok(req)
@@ -9356,7 +9356,7 @@ pub mod requests {
     pub fn get_channel_bell_get(params: &GetChannelBellGetParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/notifications/channels/{}/bell",
-            crate::client::encode_path(&params.channel_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_ChannelBellGet");
         if let Some(v) = &params.header_channel_id {
@@ -9371,7 +9371,7 @@ pub mod requests {
     pub fn get_channel_by_handle_fetch(params: &GetChannelByHandleFetchParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/channels/by-handle/{}",
-            crate::client::encode_path(&params.handle.to_string())
+            crate::client::encode_path(&params.handle.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_ChannelByHandleFetch");
         Ok(req)
@@ -9383,7 +9383,7 @@ pub mod requests {
     pub fn get_channel_fetch(params: &GetChannelFetchParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/channels/{}",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_ChannelFetch");
         if let Some(v) = &params.header_channel_id {
@@ -9400,7 +9400,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/channels/handles/{}/availability",
-            crate::client::encode_path(&params.handle.to_string())
+            crate::client::encode_path(&params.handle.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_ChannelHandleAvailability");
         if let Some(v) = &params.channel_id {
@@ -9415,7 +9415,7 @@ pub mod requests {
     pub fn get_channel_live_list(params: &GetChannelLiveListParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/channels/{}/live",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_ChannelLiveList");
         if let Some(v) = &params.limit {
@@ -9439,7 +9439,7 @@ pub mod requests {
     pub fn get_channel_playlists_list(params: &GetChannelPlaylistsListParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/channels/{}/playlists",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_ChannelPlaylistsList");
         if let Some(v) = &params.limit {
@@ -9460,8 +9460,8 @@ pub mod requests {
     pub fn get_channel_section_fetch(params: &GetChannelSectionFetchParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/channels/{}/sections/{}",
-            crate::client::encode_path(&params.channel_id.to_string()),
-            crate::client::encode_path(&params.section_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?,
+            crate::client::encode_path(&params.section_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_ChannelSectionFetch");
         if let Some(v) = &params.header_channel_id {
@@ -9476,7 +9476,7 @@ pub mod requests {
     pub fn get_channel_sections_list(params: &GetChannelSectionsListParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/channels/{}/sections",
-            crate::client::encode_path(&params.channel_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_ChannelSectionsList");
         if let Some(v) = &params.limit {
@@ -9502,7 +9502,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/channels/{}/sections/populated",
-            crate::client::encode_path(&params.channel_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_ChannelSectionsListPopulated");
         if let Some(v) = &params.populate {
@@ -9529,7 +9529,7 @@ pub mod requests {
     pub fn get_channel_shorts_list(params: &GetChannelShortsListParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/channels/{}/shorts",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_ChannelShortsList");
         if let Some(v) = &params.limit {
@@ -9553,7 +9553,7 @@ pub mod requests {
     pub fn get_channel_tabs_fetch(params: &GetChannelTabsFetchParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/channels/{}/tabs",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_ChannelTabsFetch");
         if let Some(v) = &params.header_channel_id {
@@ -9568,7 +9568,7 @@ pub mod requests {
     pub fn get_channel_videos_list(params: &GetChannelVideosListParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/channels/{}/videos",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_ChannelVideosList");
         if let Some(v) = &params.limit {
@@ -9613,7 +9613,7 @@ pub mod requests {
     pub fn get_comment_list(params: &GetCommentListParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/comments",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_CommentList");
         if let Some(v) = &params.limit {
@@ -9634,8 +9634,8 @@ pub mod requests {
     pub fn get_comment_replies_list(params: &GetCommentRepliesListParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/comments/{}/replies",
-            crate::client::encode_path(&params.id.to_string()),
-            crate::client::encode_path(&params.cid.to_string())
+            crate::client::encode_path(&params.id.to_string())?,
+            crate::client::encode_path(&params.cid.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_CommentRepliesList");
         if let Some(v) = &params.limit {
@@ -9665,8 +9665,8 @@ pub mod requests {
     pub fn get_get_community_post(params: &GetGetCommunityPostParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/community/channels/{}/posts/{}",
-            crate::client::encode_path(&params.channel_id.to_string()),
-            crate::client::encode_path(&params.post_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?,
+            crate::client::encode_path(&params.post_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_GetCommunityPost");
         Ok(req)
@@ -9696,8 +9696,8 @@ pub mod requests {
     pub fn get_get_poll_results(params: &GetGetPollResultsParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/community/channels/{}/posts/{}/results",
-            crate::client::encode_path(&params.channel_id.to_string()),
-            crate::client::encode_path(&params.post_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?,
+            crate::client::encode_path(&params.post_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_GetPollResults");
         Ok(req)
@@ -9711,7 +9711,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/i18n/translations/{}",
-            crate::client::encode_path(&params.locale.to_string())
+            crate::client::encode_path(&params.locale.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_GetTranslationsEndpoint");
         if let Some(v) = &params.header_if_none_match {
@@ -9728,7 +9728,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/upload-defaults/{}",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_GetUploadDefaultEndpoint");
         req.auth = crate::client::AuthMode::Required;
@@ -9754,7 +9754,7 @@ pub mod requests {
     pub fn get_get_watch_progress(params: &GetGetWatchProgressParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/watch-history/{}/progress",
-            crate::client::encode_path(&params.video_id.to_string())
+            crate::client::encode_path(&params.video_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_GetWatchProgress");
         req.auth = crate::client::AuthMode::Required;
@@ -9788,7 +9788,7 @@ pub mod requests {
     pub fn get_list_community_posts(params: &GetListCommunityPostsParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/community/channels/{}/posts",
-            crate::client::encode_path(&params.channel_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_ListCommunityPosts");
         if let Some(v) = &params.page {
@@ -9814,9 +9814,9 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/community/channels/{}/posts/{}/comments/{}/replies",
-            crate::client::encode_path(&params.channel_id.to_string()),
-            crate::client::encode_path(&params.post_id.to_string()),
-            crate::client::encode_path(&params.comment_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?,
+            crate::client::encode_path(&params.post_id.to_string())?,
+            crate::client::encode_path(&params.comment_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_ListPostCommentReplies");
         if let Some(v) = &params.limit {
@@ -9834,8 +9834,8 @@ pub mod requests {
     pub fn get_list_post_comments(params: &GetListPostCommentsParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/community/channels/{}/posts/{}/comments",
-            crate::client::encode_path(&params.channel_id.to_string()),
-            crate::client::encode_path(&params.post_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?,
+            crate::client::encode_path(&params.post_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_ListPostComments");
         if let Some(v) = &params.limit {
@@ -9981,7 +9981,7 @@ pub mod requests {
     pub fn get_playlist_fetch(params: &GetPlaylistFetchParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/playlists/{}",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_PlaylistFetch");
         if let Some(v) = &params.include_videos {
@@ -10067,7 +10067,7 @@ pub mod requests {
     pub fn get_profile_fetch(params: &GetProfileFetchParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/profiles/{}",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_ProfileFetch");
         Ok(req)
@@ -10162,7 +10162,7 @@ pub mod requests {
     pub fn get_saved_post_status(params: &GetSavedPostStatusParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/library/saved-posts/{}",
-            crate::client::encode_path(&params.post_id.to_string())
+            crate::client::encode_path(&params.post_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_SavedPostStatus");
         if let Some(v) = &params.header_channel_id {
@@ -10265,7 +10265,7 @@ pub mod requests {
     pub fn get_subscription_status(params: &GetSubscriptionStatusParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/channels/{}/subscriptions/status",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_SubscriptionStatus");
         Ok(req)
@@ -10292,8 +10292,8 @@ pub mod requests {
     pub fn get_subtitles_get(params: &GetSubtitlesGetParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/subtitles/{}",
-            crate::client::encode_path(&params.video_id.to_string()),
-            crate::client::encode_path(&params.language.to_string())
+            crate::client::encode_path(&params.video_id.to_string())?,
+            crate::client::encode_path(&params.language.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_SubtitlesGet");
         if let Some(v) = &params.format {
@@ -10311,7 +10311,7 @@ pub mod requests {
     pub fn get_subtitles_list(params: &GetSubtitlesListParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/subtitles",
-            crate::client::encode_path(&params.video_id.to_string())
+            crate::client::encode_path(&params.video_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_SubtitlesList");
         if let Some(v) = &params.header_channel_id {
@@ -10376,7 +10376,7 @@ pub mod requests {
     pub fn get_upload_resume_endpoint(params: &GetUploadResumeEndpointParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/upload/resume/{}",
-            crate::client::encode_path(&params.video_id.to_string())
+            crate::client::encode_path(&params.video_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_UploadResumeEndpoint");
         req.auth = crate::client::AuthMode::Required;
@@ -10392,7 +10392,7 @@ pub mod requests {
     pub fn get_video_chapters_get(params: &GetVideoChaptersGetParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/chapters",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_VideoChaptersGet");
         if let Some(v) = &params.regenerate {
@@ -10410,7 +10410,7 @@ pub mod requests {
     pub fn get_video_fetch(params: &GetVideoFetchParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_VideoFetch");
         if let Some(v) = &params.header_channel_id {
@@ -10425,7 +10425,7 @@ pub mod requests {
     pub fn get_video_schedule_fetch(params: &GetVideoScheduleFetchParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/schedule",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_VideoScheduleFetch");
         req.auth = crate::client::AuthMode::Required;
@@ -10511,7 +10511,7 @@ pub mod requests {
     pub fn get_video_upload_status(params: &GetVideoUploadStatusParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/upload-status",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_VideoUploadStatus");
         req.auth = crate::client::AuthMode::Required;
@@ -10592,7 +10592,7 @@ pub mod requests {
     pub fn get_watch_later_status(params: &GetWatchLaterStatusParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/library/watch-later/{}",
-            crate::client::encode_path(&params.video_id.to_string())
+            crate::client::encode_path(&params.video_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::GET, path, "get_WatchLaterStatus");
         if let Some(v) = &params.header_channel_id {
@@ -10610,7 +10610,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/channels/{}/sections/reorder",
-            crate::client::encode_path(&params.channel_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::PATCH, path, "patch_ChannelSectionReorder");
         req.auth = crate::client::AuthMode::Required;
@@ -10630,7 +10630,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/live-streams/{}",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::PATCH, path, "patch_LiveStreamUpdate");
         req.auth = crate::client::AuthMode::Required;
@@ -10650,7 +10650,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/playlists/{}",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::PATCH, path, "patch_PlaylistUpdate");
         req.headers
@@ -10668,7 +10668,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/schedule",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::PATCH, path, "patch_VideoScheduleUpdate");
         req.auth = crate::client::AuthMode::Required;
@@ -10698,7 +10698,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/channels/{}/sections",
-            crate::client::encode_path(&params.channel_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::POST, path, "post_ChannelSectionCreate");
         req.auth = crate::client::AuthMode::Required;
@@ -10727,8 +10727,8 @@ pub mod requests {
     pub fn post_comment_approve(params: &PostCommentApproveParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/comments/{}/approve",
-            crate::client::encode_path(&params.id.to_string()),
-            crate::client::encode_path(&params.cid.to_string())
+            crate::client::encode_path(&params.id.to_string())?,
+            crate::client::encode_path(&params.cid.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::POST, path, "post_CommentApprove");
         Ok(req)
@@ -10743,7 +10743,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/comments",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::POST, path, "post_CommentCreate");
         req.headers
@@ -10760,8 +10760,8 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/comments/{}/dislikes",
-            crate::client::encode_path(&params.id.to_string()),
-            crate::client::encode_path(&params.cid.to_string())
+            crate::client::encode_path(&params.id.to_string())?,
+            crate::client::encode_path(&params.cid.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::POST, path, "post_CommentDislikeCreate");
         if let Some(v) = &params.header_channel_id {
@@ -10776,8 +10776,8 @@ pub mod requests {
     pub fn post_comment_like_create(params: &PostCommentLikeCreateParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/comments/{}/likes",
-            crate::client::encode_path(&params.id.to_string()),
-            crate::client::encode_path(&params.cid.to_string())
+            crate::client::encode_path(&params.id.to_string())?,
+            crate::client::encode_path(&params.cid.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::POST, path, "post_CommentLikeCreate");
         if let Some(v) = &params.header_channel_id {
@@ -10795,7 +10795,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/community/channels/{}/posts",
-            crate::client::encode_path(&params.channel_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::POST, path, "post_CreateCommunityPost");
         req.auth = crate::client::AuthMode::Required;
@@ -10815,8 +10815,8 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/community/channels/{}/posts/{}/comments",
-            crate::client::encode_path(&params.channel_id.to_string()),
-            crate::client::encode_path(&params.post_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?,
+            crate::client::encode_path(&params.post_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::POST, path, "post_CreatePostComment");
         req.auth = crate::client::AuthMode::Required;
@@ -10846,7 +10846,7 @@ pub mod requests {
     pub fn post_dislike_create(params: &PostDislikeCreateParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/dislikes",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::POST, path, "post_DislikeCreate");
         if let Some(v) = &params.header_channel_id {
@@ -10861,9 +10861,9 @@ pub mod requests {
     pub fn post_heart_post_comment(params: &PostHeartPostCommentParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/community/channels/{}/posts/{}/comments/{}/heart",
-            crate::client::encode_path(&params.channel_id.to_string()),
-            crate::client::encode_path(&params.post_id.to_string()),
-            crate::client::encode_path(&params.comment_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?,
+            crate::client::encode_path(&params.post_id.to_string())?,
+            crate::client::encode_path(&params.comment_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::POST, path, "post_HeartPostComment");
         req.auth = crate::client::AuthMode::Required;
@@ -10876,8 +10876,8 @@ pub mod requests {
     pub fn post_like_community_post(params: &PostLikeCommunityPostParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/community/channels/{}/posts/{}/like",
-            crate::client::encode_path(&params.channel_id.to_string()),
-            crate::client::encode_path(&params.post_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?,
+            crate::client::encode_path(&params.post_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::POST, path, "post_LikeCommunityPost");
         req.auth = crate::client::AuthMode::Required;
@@ -10893,7 +10893,7 @@ pub mod requests {
     pub fn post_like_create(params: &PostLikeCreateParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/likes",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::POST, path, "post_LikeCreate");
         if let Some(v) = &params.header_channel_id {
@@ -10908,9 +10908,9 @@ pub mod requests {
     pub fn post_like_post_comment(params: &PostLikePostCommentParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/community/channels/{}/posts/{}/comments/{}/like",
-            crate::client::encode_path(&params.channel_id.to_string()),
-            crate::client::encode_path(&params.post_id.to_string()),
-            crate::client::encode_path(&params.comment_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?,
+            crate::client::encode_path(&params.post_id.to_string())?,
+            crate::client::encode_path(&params.comment_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::POST, path, "post_LikePostComment");
         req.auth = crate::client::AuthMode::Required;
@@ -10973,9 +10973,9 @@ pub mod requests {
     pub fn post_pin_post_comment(params: &PostPinPostCommentParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/community/channels/{}/posts/{}/comments/{}/pin",
-            crate::client::encode_path(&params.channel_id.to_string()),
-            crate::client::encode_path(&params.post_id.to_string()),
-            crate::client::encode_path(&params.comment_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?,
+            crate::client::encode_path(&params.post_id.to_string())?,
+            crate::client::encode_path(&params.comment_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::POST, path, "post_PinPostComment");
         req.auth = crate::client::AuthMode::Required;
@@ -10991,7 +10991,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/playlists/{}/videos",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::POST, path, "post_PlaylistAddVideo");
         req.headers
@@ -11082,7 +11082,7 @@ pub mod requests {
     pub fn post_subscription_create(params: &PostSubscriptionCreateParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/channels/{}/subscriptions",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::POST, path, "post_SubscriptionCreate");
         req.headers
@@ -11099,7 +11099,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/subtitles",
-            crate::client::encode_path(&params.video_id.to_string())
+            crate::client::encode_path(&params.video_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::POST, path, "post_SubtitlesUpload");
         req.auth = crate::client::AuthMode::Required;
@@ -11128,7 +11128,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/watch-history/{}/progress",
-            crate::client::encode_path(&params.video_id.to_string())
+            crate::client::encode_path(&params.video_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::POST, path, "post_UpdateWatchProgress");
         req.auth = crate::client::AuthMode::Required;
@@ -11286,7 +11286,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/schedule",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::POST, path, "post_VideoScheduleCreate");
         req.auth = crate::client::AuthMode::Required;
@@ -11305,7 +11305,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/publish-now",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::POST, path, "post_VideoSchedulePublishNow");
         req.auth = crate::client::AuthMode::Required;
@@ -11323,7 +11323,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/thumbnail",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::POST, path, "post_VideoThumbnailUpload");
         req.auth = crate::client::AuthMode::Required;
@@ -11359,7 +11359,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/view",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::POST, path, "post_VideoView");
         if let Some(v) = &params.header_channel_id {
@@ -11378,7 +11378,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/watch-time",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::POST, path, "post_VideoWatchTime");
         req.body = crate::client::Body::Json(serde_json::to_value(body)?);
@@ -11394,8 +11394,8 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/community/channels/{}/posts/{}/vote",
-            crate::client::encode_path(&params.channel_id.to_string()),
-            crate::client::encode_path(&params.post_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?,
+            crate::client::encode_path(&params.post_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::POST, path, "post_VoteOnPoll");
         req.auth = crate::client::AuthMode::Required;
@@ -11442,7 +11442,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/notifications/channels/{}/bell",
-            crate::client::encode_path(&params.channel_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::PUT, path, "put_ChannelBellUpdate");
         if let Some(v) = &params.header_channel_id {
@@ -11461,8 +11461,8 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/channels/{}/sections/{}",
-            crate::client::encode_path(&params.channel_id.to_string()),
-            crate::client::encode_path(&params.section_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?,
+            crate::client::encode_path(&params.section_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::PUT, path, "put_ChannelSectionUpdate");
         req.auth = crate::client::AuthMode::Required;
@@ -11482,7 +11482,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/channels/{}/tabs",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::PUT, path, "put_ChannelTabsUpdate");
         req.body = crate::client::Body::Json(serde_json::to_value(body)?);
@@ -11498,7 +11498,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/channels/{}",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::PUT, path, "put_ChannelUpdate");
         req.body = crate::client::Body::Json(serde_json::to_value(body)?);
@@ -11514,8 +11514,8 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/comments/{}",
-            crate::client::encode_path(&params.id.to_string()),
-            crate::client::encode_path(&params.cid.to_string())
+            crate::client::encode_path(&params.id.to_string())?,
+            crate::client::encode_path(&params.cid.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::PUT, path, "put_CommentUpdate");
         req.headers
@@ -11569,7 +11569,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/upload-defaults/{}/default",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::PUT, path, "put_SetDefaultTemplateEndpoint");
         req.auth = crate::client::AuthMode::Required;
@@ -11582,8 +11582,8 @@ pub mod requests {
     pub fn put_subtitles_set_default(params: &PutSubtitlesSetDefaultParams) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/subtitles/{}/default",
-            crate::client::encode_path(&params.video_id.to_string()),
-            crate::client::encode_path(&params.language.to_string())
+            crate::client::encode_path(&params.video_id.to_string())?,
+            crate::client::encode_path(&params.language.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::PUT, path, "put_SubtitlesSetDefault");
         req.auth = crate::client::AuthMode::Required;
@@ -11602,8 +11602,8 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/community/channels/{}/posts/{}",
-            crate::client::encode_path(&params.channel_id.to_string()),
-            crate::client::encode_path(&params.post_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?,
+            crate::client::encode_path(&params.post_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::PUT, path, "put_UpdateCommunityPost");
         req.auth = crate::client::AuthMode::Required;
@@ -11622,9 +11622,9 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/community/channels/{}/posts/{}/comments/{}",
-            crate::client::encode_path(&params.channel_id.to_string()),
-            crate::client::encode_path(&params.post_id.to_string()),
-            crate::client::encode_path(&params.comment_id.to_string())
+            crate::client::encode_path(&params.channel_id.to_string())?,
+            crate::client::encode_path(&params.post_id.to_string())?,
+            crate::client::encode_path(&params.comment_id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::PUT, path, "put_UpdatePostComment");
         req.auth = crate::client::AuthMode::Required;
@@ -11644,7 +11644,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/upload-defaults/{}",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::PUT, path, "put_UpdateUploadDefaultEndpoint");
         req.auth = crate::client::AuthMode::Required;
@@ -11674,7 +11674,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}/chapters",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::PUT, path, "put_VideoChaptersUpdate");
         req.auth = crate::client::AuthMode::Required;
@@ -11694,7 +11694,7 @@ pub mod requests {
     ) -> crate::Result<RequestSpec> {
         let path = format!(
             "/api/videos/{}",
-            crate::client::encode_path(&params.id.to_string())
+            crate::client::encode_path(&params.id.to_string())?
         );
         let mut req = RequestSpec::new(reqwest::Method::PUT, path, "put_VideoUpdate");
         req.auth = crate::client::AuthMode::Required;
