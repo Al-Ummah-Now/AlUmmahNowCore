@@ -44,4 +44,4 @@ Console.WriteLine(AunCoreMethods.CoreVersion());
 
 ## Develop
 
-See [`CLAUDE.md`](CLAUDE.md) for commands. Releases happen only by pushing a `vX.Y.Z` tag on `main`.
+See [`CLAUDE.md`](CLAUDE.md) for commands. Releases happen only by pushing a `vX.Y.Z` tag on `main`; see [`docs/RELEASING.md`](docs/RELEASING.md).

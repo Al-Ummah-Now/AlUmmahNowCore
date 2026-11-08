@@ -2,7 +2,8 @@
 #   1. verify the tag is on main and matches workspace.package.version
 #   2. build every target + package (build.yml), publishing the AAR and NuGet to GitHub Packages
 #   3. create the GitHub release with the XCFramework, AAR, NuGet and checksums
-#   4. commit Package.swift (release URL + checksum) + Swift sources to main and tag it X.Y.Z for SwiftPM
+#   4. create a release-only commit on top of the tag (Package.swift URL + checksum) and push ONLY
+#      the SwiftPM tag X.Y.Z pointing at it. Nothing is pushed to main or any branch (docs/RELEASING.md)
 name: release
 
 on:
@@ -57,7 +58,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: main
+          ref: ${{ github.sha }}
           fetch-depth: 0
       - uses: actions/download-artifact@v8
         with:
@@ -79,7 +80,7 @@ jobs:
           cat >> notes.md <<EOF
 
           ### Install
-          - **Swift Package:** \`.package(url: "https://github.com/${GITHUB_REPOSITORY}", exact: "$VERSION")\` (XCFramework checksum \`$XCF_CHECKSUM\`)
+          - **Swift Package:** \`.package(url: "https://github.com/${GITHUB_REPOSITORY}", from: "$VERSION")\` (XCFramework checksum \`$XCF_CHECKSUM\`)
           - **Android:** \`implementation("net.alummahnow:aun-core:$VERSION")\` from \`https://maven.pkg.github.com/${GITHUB_REPOSITORY}\`
           - **.NET:** \`dotnet add package AlUmmahNow.Core --version $VERSION\` from \`https://nuget.pkg.github.com/${GITHUB_REPOSITORY_OWNER}/index.json\`
           EOF
@@ -91,17 +92,8 @@ jobs:
           PRERELEASE=""
           [[ "$VERSION" == *-* ]] && PRERELEASE="--prerelease"
           gh release create "$TAG" dist/* --title "$TAG" --notes-file notes.md --verify-tag $PRERELEASE
-      - name: Point Package.swift at this release and tag it for SwiftPM
-        env:
-          TAG: ${{ github.ref_name }}
+      - name: Tag the SwiftPM release commit (tag only, no branch push)
         run: |
           set -euo pipefail
-          cp artifacts/apple-xcframework/apple/Sources/AunCore/AunCore.swift apple/Sources/AunCore/AunCore.swift
-          sed -i '' -E "s/^let releaseVersion = \".*\"/let releaseVersion = \"$VERSION\"/; s/^let releaseChecksum = \".*\"/let releaseChecksum = \"$XCF_CHECKSUM\"/" Package.swift
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Package.swift apple/Sources/AunCore/AunCore.swift
-          git commit -m "release: Package.swift for $TAG [skip ci]"
-          # SwiftPM prefers the plain X.Y.Z tag over vX.Y.Z, so consumers resolve this commit.
-          git tag -a "$VERSION" -m "SwiftPM release for $TAG"
-          git push origin HEAD:main "refs/tags/$VERSION"
+          scripts/swiftpm-release-tag.sh "$VERSION" "$XCF_CHECKSUM" origin \
+            artifacts/apple-xcframework/apple/Sources/AunCore/AunCore.swift

@@ -10,9 +10,11 @@ Read `docs/PLAN.md` first: layout, FFI rules, error and async model, adapters, t
 - **Only `crates/aun-ffi` uses UniFFI.** Core crates stay plain Rust; convert at the FFI edge.
 - **uniffi is pinned to `=0.31.0`** to match `uniffi-bindgen-cs v0.11.1+v0.31.0`. Bump both together.
 - Exported functions return `Result<_, AunError>`; no panics across FFI; no `unwrap()` outside tests.
-- Releases only via tag `vX.Y.Z` on `main` → `release.yml`. Never publish by hand. Update
+- Releases only via tag `vX.Y.Z` on `main` → `release.yml` (see `docs/RELEASING.md`; the workflow
+  never pushes to a branch). Never publish by hand. Update
   `CHANGELOG.md` (Unreleased) in every PR; a breaking FFI change goes under **Breaking**.
-- Small PRs into `main`, CI green, then `gh pr merge --squash --admin`.
+- Small PRs into `main` with CI green. `main` needs the owner's approval: never merge PRs yourself
+  and never use `--admin`; report green PRs as ready. Stack follow-up work on PR branches.
 - Out-of-scope work: open a GitHub issue labelled `queue`.
 
 ## Commands

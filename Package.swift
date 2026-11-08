@@ -1,6 +1,8 @@
 // swift-tools-version:5.9
-// AunCore: Swift bindings for aun-core. The release workflow rewrites `releaseVersion` and
-// `releaseChecksum` for every vX.Y.Z tag and tags that commit X.Y.Z for SwiftPM.
+// AunCore: Swift bindings for aun-core. For every vX.Y.Z tag the release workflow makes a
+// release-only commit (not on any branch) that sets `releaseVersion` and `releaseChecksum`, and
+// tags it X.Y.Z for SwiftPM. Depend on a version (`from: "X.Y.Z"`), not on main: main's values
+// point at an older release. See docs/RELEASING.md.
 // Local development: run scripts/build-xcframework.sh, then build with AUN_LOCAL_XCFRAMEWORK=1.
 import Foundation
 import PackageDescription
