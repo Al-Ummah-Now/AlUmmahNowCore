@@ -38,12 +38,11 @@ jobs:
           diff -u apple/Sources/AunCore/AunCore.swift bindings/swift/generated/AunCore.swift \
             || { echo "::error::apple/Sources/AunCore/AunCore.swift is stale: run scripts/gen-bindings.sh swift and copy it"; exit 1; }
       - name: Generated API client matches the pinned OpenAPI
-        if: hashFiles('tools/codegen/openapi_to_rust.py') != ''
         run: |
-          python3 tools/codegen/openapi_to_rust.py spec/openapi/api-videos.json /tmp/generated.rs
-          rustfmt --edition 2024 /tmp/generated.rs
-          diff -u crates/aun-api/src/generated.rs /tmp/generated.rs \
-            || { echo "::error::crates/aun-api/src/generated.rs is stale: rerun the generator"; exit 1; }
+          python3 tools/codegen/openapi_to_rust.py spec/openapi/api-videos.json crates/aun-api/src/generated.rs
+          cargo fmt -p aun-api
+          git diff --exit-code crates/aun-api/src/generated.rs \
+            || { echo "::error::crates/aun-api/src/generated.rs is stale: rerun the generator and cargo fmt"; exit 1; }
 
   test:
     name: test (${{ matrix.os }})

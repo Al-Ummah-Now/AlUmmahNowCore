@@ -22,7 +22,7 @@ cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo deny check licenses            # licence policy (deny.toml)
-python3 tools/codegen/openapi_to_rust.py spec/openapi/api-videos.json crates/aun-api/src/generated.rs
+python3 tools/codegen/openapi_to_rust.py spec/openapi/api-videos.json crates/aun-api/src/generated.rs && cargo fmt -p aun-api
 scripts/gen-bindings.sh              # Swift/Kotlin/C# bindings into bindings/*/generated
 scripts/build-xcframework.sh         # macOS only
 ```
