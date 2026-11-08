@@ -41,6 +41,11 @@ FFI; such changes are listed under **Breaking**.
   bitrate switches and stable playback error codes. Sinks: `HttpSink` (JSON batches to a
   configurable URL), `ApiPerformanceSink` (QoE to `POST /api/analytics/events`), `NoopSink`.
   `HttpSink` refuses non-HTTPS URLs (plain `http` only for loopback).
+- `aun-sync`: cross-device watch state, history, notes/bookmarks, Watch later and likes as LWW
+  registers with tombstones (commutative, idempotent `join`, property-tested). Also: a Lamport
+  floor for local writes, an atomic JSON store with outbox and download records, debounced
+  position pushes, continue-watching and history queries, change listeners, and
+  `ApiSyncTransport` over `aun-api` (server gaps in `docs/SYNC.md`, #13).
 - `aun-api`: client generated from the api-videos OpenAPI (`spec/openapi/api-videos.json`,
   `tools/codegen/openapi_to_rust.py`): typed params/bodies/responses for every operation,
   request builders, retries with jittered backoff (idempotent requests or an `Idempotency-Key`),
