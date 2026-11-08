@@ -1,0 +1,62 @@
+import XCTest
+@testable import AunCore
+
+/// Proves sync calls, async calls, errors and callbacks cross the FFI boundary from Swift.
+final class SmokeTests: XCTestCase {
+    func testVersion() {
+        XCTAssertFalse(coreVersion().isEmpty)
+    }
+
+    func testAsyncEcho() async {
+        let out = await selftestAsyncEcho(message: "سلام", delayMs: 5)
+        XCTAssertEqual(out, String("سلام".reversed()))
+    }
+
+    func testErrorsMapToAunError() {
+        XCTAssertThrowsError(try selftestThrow(kind: "rate_limited")) { error in
+            guard case AunError.RateLimited(let retryAfterMs) = error else {
+                return XCTFail("unexpected \(error)")
+            }
+            XCTAssertEqual(retryAfterMs, 1500)
+        }
+    }
+
+    final class Listener: SelfTestListener, @unchecked Sendable {
+        private let lock = NSLock()
+        private(set) var indices: [UInt32] = []
+        func onEvent(index: UInt32, message: String) {
+            lock.lock(); indices.append(index); lock.unlock()
+        }
+    }
+
+    func testCallbacks() async {
+        let listener = Listener()
+        let n = await selftestCallbacks(listener: listener, count: 4)
+        XCTAssertEqual(n, 4)
+        XCTAssertEqual(listener.indices, [0, 1, 2, 3])
+    }
+
+    final class MemoryStorage: SecureStorage, @unchecked Sendable {
+        private let lock = NSLock()
+        private var items: [String: Data] = [:]
+        func get(key: String) throws -> Data? { lock.lock(); defer { lock.unlock() }; return items[key] }
+        func set(key: String, value: Data) throws { lock.lock(); items[key] = value; lock.unlock() }
+        func delete(key: String) throws { lock.lock(); items[key] = nil; lock.unlock() }
+        func list(prefix: String) throws -> [String] {
+            lock.lock(); defer { lock.unlock() }; return items.keys.filter { $0.hasPrefix(prefix) }.sorted()
+        }
+    }
+
+    func testSecureStorageAdapter() throws {
+        let bytes = try selftestSecureStorage(storage: MemoryStorage())
+        XCTAssertEqual(String(data: bytes, encoding: .utf8), "سلام")
+    }
+
+    final class Offline: Connectivity, @unchecked Sendable {
+        func current() -> NetworkState { NetworkState(online: false, metered: true) }
+    }
+
+    func testConnectivityAdapter() {
+        XCTAssertEqual(selftestConnectivity(connectivity: Offline()), NetworkState(online: false, metered: true))
+    }
+}

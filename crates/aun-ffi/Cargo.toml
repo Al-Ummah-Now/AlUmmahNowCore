@@ -1,0 +1,37 @@
+[package]
+name = "aun-ffi"
+description = "UniFFI bindings for aun-core: the only crate that crosses the FFI boundary"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "aun_core"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["cli"]
+
+[features]
+default = []
+cli = ["uniffi/cli"]
+
+[dependencies]
+aun-common.workspace = true
+uniffi = { workspace = true, features = ["tokio"] }
+tokio.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true }
+
+[lints.rust]
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+unwrap_used = "deny"
+dbg_macro = "deny"

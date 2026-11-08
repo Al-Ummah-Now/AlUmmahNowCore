@@ -1,0 +1,15 @@
+[package]
+name = "aun-media"
+description = "Studio media engine (Epic 30): probe/analyse, encode job graph, proxies, transcription, EDL, text shaping"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+aun-common.workspace = true
+
+
+[lints]
+workspace = true

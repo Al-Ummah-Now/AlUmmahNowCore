@@ -1,0 +1,53 @@
+# Build output
+/target/
+**/target/
+/build/
+/dist/
+*.xcframework/
+*.xcframework.zip
+*.aar
+*.nupkg
+bindings/**/generated/
+bindings/swift/.build/
+bindings/swift/Sources/AunCoreFFI/
+bindings/kotlin/**/build/
+bindings/kotlin/.gradle/
+bindings/kotlin/**/jniLibs/
+bindings/csharp/**/bin/
+bindings/csharp/**/obj/
+bindings/csharp/**/runtimes/
+.swiftpm/
+DerivedData/
+
+# Secrets and signing material: never commit
+.env
+.env.*
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.mobileprovision
+*.provisionprofile
+*.snk
+secrets/
+local.properties
+gradle.properties.local
+.npmrc
+NuGet.Config.local
+
+# Whisper / ML models are downloaded at runtime, never committed
+*.bin
+*.gguf
+*.ggml
+models/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+/.build/
+.kotlin/

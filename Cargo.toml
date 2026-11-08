@@ -1,0 +1,46 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "UNLICENSED"
+repository = "https://github.com/Al-Ummah-Now/AlUmmahNowCore"
+publish = false
+
+[workspace.dependencies]
+aun-common = { path = "crates/aun-common" }
+aun-api = { path = "crates/aun-api" }
+aun-auth = { path = "crates/aun-auth" }
+aun-sync = { path = "crates/aun-sync" }
+aun-upload = { path = "crates/aun-upload" }
+aun-media = { path = "crates/aun-media" }
+aun-i18n = { path = "crates/aun-i18n" }
+aun-telemetry = { path = "crates/aun-telemetry" }
+
+uniffi = { version = "=0.31.0" }
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "io-util"] }
+tokio-util = "0.7"
+async-trait = "0.1"
+tracing = "0.1"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "warn"
+dbg_macro = "deny"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+opt-level = "s"
+strip = "debuginfo"
+panic = "unwind"

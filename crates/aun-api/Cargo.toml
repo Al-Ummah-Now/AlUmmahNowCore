@@ -1,0 +1,15 @@
+[package]
+name = "aun-api"
+description = "Typed api-videos client: generated operations, retries, auth refresh hook, offline write queue"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+aun-common.workspace = true
+
+
+[lints]
+workspace = true
