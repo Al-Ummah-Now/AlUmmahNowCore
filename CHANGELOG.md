@@ -20,6 +20,7 @@ FFI; such changes are listed under **Breaking**.
   reference backend and a backend conformance suite.
 - `aun-media`: versioned EDL project format (`schemas/edl/v1.json`), migrations, validation, ripple
   delete/split/trim, and render planning that decides stream copy versus re-encode per segment.
+- `aun-media`: bidi-aware text shaping and line breaking for titles and burned-in captions.
 
 ## [0.1.0] - 2026-11-08
 

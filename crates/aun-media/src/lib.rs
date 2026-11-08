@@ -9,6 +9,7 @@
 //! | [`job`] | 30.2 | presets, `JobPlan` DAG, runner, backends, conformance suite |
 //! | [`waveform`] | 30.3 | multi-resolution min/max peaks |
 //! | [`thumbnails`] | 30.3 | scene-aware filmstrip timestamps |
+//! | [`text`] | 30.6 | bidi, line breaking and Arabic-correct shaping (feature `harfbuzz`) |
 //!
 //! Durations and timestamps are `u64` milliseconds. Long operations take a
 //! [`CancellationToken`](tokio_util::sync::CancellationToken) and are blocking: callers run them on
@@ -21,6 +22,8 @@ mod isobmff;
 pub mod job;
 pub mod probe;
 mod refcontainer;
+#[cfg(feature = "harfbuzz")]
+pub mod text;
 pub mod thumbnails;
 pub mod waveform;
 

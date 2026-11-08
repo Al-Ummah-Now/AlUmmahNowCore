@@ -7,6 +7,11 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+default = ["harfbuzz"]
+# Pure-Rust HarfBuzz-compatible text shaping for titles and burned-in captions.
+harfbuzz = ["dep:harfrust", "dep:unicode-bidi", "dep:unicode-linebreak", "dep:unicode-script"]
+
 [dependencies]
 aun-common.workspace = true
 serde.workspace = true
@@ -15,6 +20,10 @@ tokio.workspace = true
 tokio-util.workspace = true
 symphonia.workspace = true
 ebur128.workspace = true
+harfrust = { workspace = true, optional = true }
+unicode-bidi = { workspace = true, optional = true }
+unicode-linebreak = { workspace = true, optional = true }
+unicode-script = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile.workspace = true
