@@ -59,4 +59,18 @@ final class SmokeTests: XCTestCase {
     func testConnectivityAdapter() {
         XCTAssertEqual(selftestConnectivity(connectivity: Offline()), NetworkState(online: false, metered: true))
     }
+
+    func testApiClientSurface() async throws {
+        XCTAssertTrue(apiOperations().contains { $0.path == "/api/videos/upload/initiate" })
+        let client = try ApiClient(
+            config: ApiClientConfig(baseUrl: "http://127.0.0.1:9", userAgent: "smoke", locale: "ar", timeoutMs: 2000, maxAttempts: 1),
+            tokens: nil
+        )
+        do {
+            _ = try await client.request(call: ApiCall(operationId: "get_GetI18nConfigEndpoint", pathParams: [:], query: [:], headers: [:], bodyJson: nil, idempotencyKey: nil))
+            XCTFail("expected an error")
+        } catch AunError.Network {
+        } catch AunError.InvalidInput {
+        }
+    }
 }

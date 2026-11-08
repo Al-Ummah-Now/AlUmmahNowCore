@@ -23,6 +23,13 @@ FFI; such changes are listed under **Breaking**.
 - `aun-media`: versioned EDL project format (`schemas/edl/v1.json`), migrations, validation, ripple
   delete/split/trim, and render planning that decides stream copy versus re-encode per segment.
 - `aun-media`: bidi-aware text shaping and line breaking for titles and burned-in captions.
+- `aun-api`: client generated from the api-videos OpenAPI (`spec/openapi/api-videos.json`,
+  `tools/codegen/openapi_to_rust.py`): typed params/bodies/responses for every operation,
+  request builders, retries with jittered backoff (idempotent requests or an `Idempotency-Key`),
+  `Retry-After` handling, refresh-once-on-401 via `AuthProvider`, error-body mapping, and a
+  persistent FIFO offline write queue with coalescing.
+- FFI: `ApiClient` (generic `request(ApiCall)` over every operation id), `api_operations()`,
+  `TokenSource` callback interface, `OfflineQueue` with `QueueFlushReport`.
 
 ## [0.1.0] - 2026-11-08
 

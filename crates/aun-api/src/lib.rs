@@ -1,11 +1,13 @@
-//! Typed api-videos client: generated operations, retries, auth refresh hook, offline write queue.
-//!
-//! Scaffolding only; see `docs/PLAN.md` §9 for the build order.
+//! Typed client for api-videos, generated from its OpenAPI document (`spec/openapi/api-videos.json`
+//! via `tools/codegen/openapi_to_rust.py`), plus the hand-written runtime: retries with backoff,
+//! the auth refresh hook ([`AuthProvider`]) and the persistent offline write queue ([`queue`]).
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn links_common() {
-        assert!(!aun_common::VERSION.is_empty());
-    }
-}
+pub mod client;
+pub mod generated;
+pub mod queue;
+mod tls;
+
+pub use aun_common::{Error, Result};
+pub use client::{ApiClient, ApiConfig, AuthMode, AuthProvider, Body, RawResponse, RequestSpec, RetryPolicy};
+pub use generated::*;
+pub use tls::http_client;

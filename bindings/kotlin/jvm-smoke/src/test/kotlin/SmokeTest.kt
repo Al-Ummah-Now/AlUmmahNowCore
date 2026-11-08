@@ -41,4 +41,11 @@ class SmokeTest {
         val c = object : Connectivity { override fun current() = NetworkState(online = false, metered = true) }
         assertEquals(NetworkState(online = false, metered = true), selftestConnectivity(c))
     }
+
+    @Test fun apiClientSurface() = runBlocking {
+        assertTrue(apiOperations().any { it.path == "/api/videos/upload/initiate" })
+        val client = ApiClient(ApiClientConfig("http://127.0.0.1:9", "smoke", "ar", 2000uL, 1u), null)
+        val e = assertFails { client.request(ApiCall("get_GetI18nConfigEndpoint", emptyMap(), emptyMap(), emptyMap(), null, null)) }
+        assertTrue(e is AunException.Network || e is AunException.InvalidInput, "$e")
+    }
 }

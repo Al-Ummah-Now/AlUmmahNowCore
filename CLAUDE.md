@@ -32,6 +32,8 @@ If Homebrew's `cargo` shadows rustup's: `export PATH="$(dirname "$(rustup which 
 ## Conventions
 
 - Timestamps `i64` Unix ms, durations `u64` ms at the FFI boundary.
+- Integration test files start with `#![allow(clippy::unwrap_used, clippy::expect_used)]`
+  (clippy only exempts `#[test]` fns, not helpers).
 - Every crate has unit tests; network code is tested against `wiremock`/in-process servers, never
   against QA/prod in CI.
 - Feature flags: `aun-media/whisper` (cmake, whisper.cpp), `aun-upload/watch` (desktop folder watch).
