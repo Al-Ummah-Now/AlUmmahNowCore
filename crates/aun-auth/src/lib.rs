@@ -1,11 +1,16 @@
-//! OAuth 2 + PKCE S256, device authorization (RFC 8628), multi-account, token storage adapter.
+//! OAuth 2 sign-in for the native apps (Epic 11.3, 9.1, 9.2): authorization code + PKCE S256 in
+//! the system browser, the device authorization grant (RFC 8628) for TVs and cars, multiple
+//! accounts per device with an active account and channel, and tokens kept only in the OS secure
+//! store through the [`aun_common::platform::SecureStorage`] adapter.
 //!
-//! Scaffolding only; see `docs/PLAN.md` §9 for the build order.
+//! [`AuthManager`] implements [`aun_api::AuthProvider`], so an `ApiClient` built with it always
+//! sends a fresh token and refreshes once on a 401 (single-flight, refresh-token-rotation safe).
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn links_common() {
-        assert!(!aun_common::VERSION.is_empty());
-    }
-}
+pub mod accounts;
+pub mod manager;
+pub mod oauth;
+pub mod pkce;
+
+pub use accounts::{AccountInfo, AccountStore, MAX_ACCOUNTS};
+pub use manager::{AuthEvent, AuthListener, AuthManager, DeviceLogin, REFRESH_SKEW_MS};
+pub use oauth::{DeviceAuthorization, DevicePoll, OAuthClient, OAuthConfig, PendingAuthorization, TokenSet};

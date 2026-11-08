@@ -23,6 +23,7 @@ cli = ["uniffi/cli"]
 [dependencies]
 aun-common.workspace = true
 aun-api.workspace = true
+aun-auth.workspace = true
 async-trait.workspace = true
 serde_json.workspace = true
 reqwest = { version = "0.13", default-features = false }

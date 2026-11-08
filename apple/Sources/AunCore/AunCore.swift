@@ -473,6 +473,22 @@ fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterInt64: FfiConverterPrimitive {
+    typealias FfiType = Int64
+    typealias SwiftType = Int64
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Int64 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: Int64, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterBool : FfiConverter {
     typealias FfiType = Int8
     typealias SwiftType = Bool
@@ -703,6 +719,513 @@ public func FfiConverterTypeApiClient_lower(_ value: ApiClient) -> UInt64 {
 
 
 /**
+ * Receives account events (called on a background thread).
+ */
+public protocol AuthListener: AnyObject, Sendable {
+    
+    func onEvent(event: AuthEvent) 
+    
+}
+/**
+ * Receives account events (called on a background thread).
+ */
+open class AuthListenerImpl: AuthListener, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aun_core_fn_clone_authlistener(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aun_core_fn_free_authlistener(handle, $0) }
+    }
+
+    
+
+    
+open func onEvent(event: AuthEvent)  {try! rustCall() {
+    uniffi_aun_core_fn_method_authlistener_on_event(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeAuthEvent_lower(event),$0
+    )
+}
+}
+    
+
+    
+}
+
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfaceAuthListener {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    //
+    // This creates 1-element array, since this seems to be the only way to construct a const
+    // pointer that we can pass to the Rust code.
+    static let vtable: [UniffiVTableCallbackInterfaceAuthListener] = [UniffiVTableCallbackInterfaceAuthListener(
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            do {
+                try FfiConverterTypeAuthListener.handleMap.remove(handle: uniffiHandle)
+            } catch {
+                print("Uniffi callback interface AuthListener: handle missing in uniffiFree")
+            }
+        },
+        uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
+            do {
+                return try FfiConverterTypeAuthListener.handleMap.clone(handle: uniffiHandle)
+            } catch {
+                fatalError("Uniffi callback interface AuthListener: handle missing in uniffiClone")
+            }
+        },
+        onEvent: { (
+            uniffiHandle: UInt64,
+            event: RustBuffer,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterTypeAuthListener.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return uniffiObj.onEvent(
+                     event: try FfiConverterTypeAuthEvent_lift(event)
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCall(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn
+            )
+        }
+    )]
+}
+
+private func uniffiCallbackInitAuthListener() {
+    uniffi_aun_core_fn_init_callback_vtable_authlistener(UniffiCallbackInterfaceAuthListener.vtable)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAuthListener: FfiConverter {
+    fileprivate static let handleMap = UniffiHandleMap<AuthListener>()
+
+    typealias FfiType = UInt64
+    typealias SwiftType = AuthListener
+
+    public static func lift(_ handle: UInt64) throws -> AuthListener {
+        if ((handle & 1) == 0) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return AuthListenerImpl(unsafeFromHandle: handle)
+        } else {
+            // Swift-generated handle, get the object from the handle map
+            return try handleMap.remove(handle: handle)
+        }
+    }
+
+    public static func lower(_ value: AuthListener) -> UInt64 {
+         if let rustImpl = value as? AuthListenerImpl {
+             // Rust-implemented object.  Clone the handle and return it
+            return rustImpl.uniffiCloneHandle()
+         } else {
+            // Swift object, generate a new vtable handle and return that.
+            return handleMap.insert(obj: value)
+         }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AuthListener {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: AuthListener, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAuthListener_lift(_ handle: UInt64) throws -> AuthListener {
+    return try FfiConverterTypeAuthListener.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAuthListener_lower(_ value: AuthListener) -> UInt64 {
+    return FfiConverterTypeAuthListener.lower(value)
+}
+
+
+
+
+
+
+/**
+ * Sign-in, accounts and tokens. One per app.
+ */
+public protocol AuthManagerProtocol: AnyObject, Sendable {
+    
+    /**
+     * A fresh access token for the active account (refreshes when close to expiry).
+     */
+    func accessToken() async throws  -> String?
+    
+    func accounts() throws  -> [AccountInfo]
+    
+    func activeAccount() throws  -> AccountInfo?
+    
+    func addListener(listener: AuthListener) 
+    
+    /**
+     * An API client that authenticates as the active account and refreshes on 401.
+     */
+    func apiClient(config: ApiClientConfig) throws  -> ApiClient
+    
+    /**
+     * Starts a device-code sign-in. Throws `Unsupported` until the auth server ships RFC 8628.
+     */
+    func beginDeviceLogin() async throws  -> DeviceLogin
+    
+    /**
+     * Step 1 of browser sign-in.
+     */
+    func beginLogin() throws  -> LoginRequest
+    
+    /**
+     * Polls until approved; throws `Cancelled` if denied or cancelled.
+     */
+    func completeDeviceLogin(login: DeviceLogin) async throws  -> AccountInfo
+    
+    /**
+     * Step 2: pass the full redirect URL the app received.
+     */
+    func completeLogin(redirectUrl: String) async throws  -> AccountInfo
+    
+    func setActiveChannel(channelId: String?) throws 
+    
+    func signOut(userId: String) throws 
+    
+    func switchAccount(userId: String) throws  -> AccountInfo
+    
+}
+/**
+ * Sign-in, accounts and tokens. One per app.
+ */
+open class AuthManager: AuthManagerProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aun_core_fn_clone_authmanager(self.handle, $0) }
+    }
+public convenience init(config: AuthConfig, storage: SecureStorage)throws  {
+    let handle =
+        try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_constructor_authmanager_new(
+        FfiConverterTypeAuthConfig_lower(config),
+        FfiConverterTypeSecureStorage_lower(storage),$0
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aun_core_fn_free_authmanager(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * A fresh access token for the active account (refreshes when close to expiry).
+     */
+open func accessToken()async throws  -> String?  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_authmanager_access_token(
+                    self.uniffiCloneHandle()
+                    
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterOptionString.lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+open func accounts()throws  -> [AccountInfo]  {
+    return try  FfiConverterSequenceTypeAccountInfo.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_authmanager_accounts(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func activeAccount()throws  -> AccountInfo?  {
+    return try  FfiConverterOptionTypeAccountInfo.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_authmanager_active_account(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func addListener(listener: AuthListener)  {try! rustCall() {
+    uniffi_aun_core_fn_method_authmanager_add_listener(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeAuthListener_lower(listener),$0
+    )
+}
+}
+    
+    /**
+     * An API client that authenticates as the active account and refreshes on 401.
+     */
+open func apiClient(config: ApiClientConfig)throws  -> ApiClient  {
+    return try  FfiConverterTypeApiClient_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_authmanager_api_client(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeApiClientConfig_lower(config),$0
+    )
+})
+}
+    
+    /**
+     * Starts a device-code sign-in. Throws `Unsupported` until the auth server ships RFC 8628.
+     */
+open func beginDeviceLogin()async throws  -> DeviceLogin  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_authmanager_begin_device_login(
+                    self.uniffiCloneHandle()
+                    
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_u64,
+            completeFunc: ffi_aun_core_rust_future_complete_u64,
+            freeFunc: ffi_aun_core_rust_future_free_u64,
+            liftFunc: FfiConverterTypeDeviceLogin_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+    /**
+     * Step 1 of browser sign-in.
+     */
+open func beginLogin()throws  -> LoginRequest  {
+    return try  FfiConverterTypeLoginRequest_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_authmanager_begin_login(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * Polls until approved; throws `Cancelled` if denied or cancelled.
+     */
+open func completeDeviceLogin(login: DeviceLogin)async throws  -> AccountInfo  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_authmanager_complete_device_login(
+                    self.uniffiCloneHandle(),
+                    FfiConverterTypeDeviceLogin_lower(login)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeAccountInfo_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+    /**
+     * Step 2: pass the full redirect URL the app received.
+     */
+open func completeLogin(redirectUrl: String)async throws  -> AccountInfo  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_authmanager_complete_login(
+                    self.uniffiCloneHandle(),
+                    FfiConverterString.lower(redirectUrl)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeAccountInfo_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+open func setActiveChannel(channelId: String?)throws   {try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_authmanager_set_active_channel(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionString.lower(channelId),$0
+    )
+}
+}
+    
+open func signOut(userId: String)throws   {try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_authmanager_sign_out(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(userId),$0
+    )
+}
+}
+    
+open func switchAccount(userId: String)throws  -> AccountInfo  {
+    return try  FfiConverterTypeAccountInfo_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_authmanager_switch_account(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(userId),$0
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAuthManager: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = AuthManager
+
+    public static func lift(_ handle: UInt64) throws -> AuthManager {
+        return AuthManager(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: AuthManager) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AuthManager {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: AuthManager, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAuthManager_lift(_ handle: UInt64) throws -> AuthManager {
+    return try FfiConverterTypeAuthManager.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAuthManager_lower(_ value: AuthManager) -> UInt64 {
+    return FfiConverterTypeAuthManager.lower(value)
+}
+
+
+
+
+
+
+/**
  * Connectivity reported by NWPathMonitor / ConnectivityManager / NetworkInformation.
  */
 public protocol Connectivity: AnyObject, Sendable {
@@ -885,6 +1408,169 @@ public func FfiConverterTypeConnectivity_lift(_ handle: UInt64) throws -> Connec
 #endif
 public func FfiConverterTypeConnectivity_lower(_ value: Connectivity) -> UInt64 {
     return FfiConverterTypeConnectivity.lower(value)
+}
+
+
+
+
+
+
+/**
+ * A device-code sign-in (TV, car, console): show `user_code` and a QR of
+ * `verification_uri_complete`, then await `AuthManager.complete_device_login`.
+ */
+public protocol DeviceLoginProtocol: AnyObject, Sendable {
+    
+    func cancel() 
+    
+    func expiresInMs()  -> UInt64
+    
+    func userCode()  -> String
+    
+    func verificationUri()  -> String
+    
+    func verificationUriComplete()  -> String?
+    
+}
+/**
+ * A device-code sign-in (TV, car, console): show `user_code` and a QR of
+ * `verification_uri_complete`, then await `AuthManager.complete_device_login`.
+ */
+open class DeviceLogin: DeviceLoginProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aun_core_fn_clone_devicelogin(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aun_core_fn_free_devicelogin(handle, $0) }
+    }
+
+    
+
+    
+open func cancel()  {try! rustCall() {
+    uniffi_aun_core_fn_method_devicelogin_cancel(
+            self.uniffiCloneHandle(),$0
+    )
+}
+}
+    
+open func expiresInMs() -> UInt64  {
+    return try!  FfiConverterUInt64.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_devicelogin_expires_in_ms(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func userCode() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_devicelogin_user_code(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func verificationUri() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_devicelogin_verification_uri(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func verificationUriComplete() -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_devicelogin_verification_uri_complete(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDeviceLogin: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = DeviceLogin
+
+    public static func lift(_ handle: UInt64) throws -> DeviceLogin {
+        return DeviceLogin(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: DeviceLogin) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DeviceLogin {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: DeviceLogin, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDeviceLogin_lift(_ handle: UInt64) throws -> DeviceLogin {
+    return try FfiConverterTypeDeviceLogin.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDeviceLogin_lower(_ value: DeviceLogin) -> UInt64 {
+    return FfiConverterTypeDeviceLogin.lower(value)
 }
 
 
@@ -1834,6 +2520,93 @@ public func FfiConverterTypeTokenSource_lower(_ value: TokenSource) -> UInt64 {
 
 
 /**
+ * A signed-in account (no secrets).
+ */
+public struct AccountInfo: Equatable, Hashable {
+    public var userId: String
+    public var email: String?
+    public var displayName: String?
+    public var avatarUrl: String?
+    public var activeChannelId: String?
+    /**
+     * The refresh token was rejected: prompt to sign in again.
+     */
+    public var needsReauth: Bool
+    public var addedAtMs: Int64
+    public var lastUsedAtMs: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(userId: String, email: String?, displayName: String?, avatarUrl: String?, activeChannelId: String?, 
+        /**
+         * The refresh token was rejected: prompt to sign in again.
+         */needsReauth: Bool, addedAtMs: Int64, lastUsedAtMs: Int64) {
+        self.userId = userId
+        self.email = email
+        self.displayName = displayName
+        self.avatarUrl = avatarUrl
+        self.activeChannelId = activeChannelId
+        self.needsReauth = needsReauth
+        self.addedAtMs = addedAtMs
+        self.lastUsedAtMs = lastUsedAtMs
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension AccountInfo: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAccountInfo: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AccountInfo {
+        return
+            try AccountInfo(
+                userId: FfiConverterString.read(from: &buf), 
+                email: FfiConverterOptionString.read(from: &buf), 
+                displayName: FfiConverterOptionString.read(from: &buf), 
+                avatarUrl: FfiConverterOptionString.read(from: &buf), 
+                activeChannelId: FfiConverterOptionString.read(from: &buf), 
+                needsReauth: FfiConverterBool.read(from: &buf), 
+                addedAtMs: FfiConverterInt64.read(from: &buf), 
+                lastUsedAtMs: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AccountInfo, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.userId, into: &buf)
+        FfiConverterOptionString.write(value.email, into: &buf)
+        FfiConverterOptionString.write(value.displayName, into: &buf)
+        FfiConverterOptionString.write(value.avatarUrl, into: &buf)
+        FfiConverterOptionString.write(value.activeChannelId, into: &buf)
+        FfiConverterBool.write(value.needsReauth, into: &buf)
+        FfiConverterInt64.write(value.addedAtMs, into: &buf)
+        FfiConverterInt64.write(value.lastUsedAtMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAccountInfo_lift(_ buf: RustBuffer) throws -> AccountInfo {
+    return try FfiConverterTypeAccountInfo.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAccountInfo_lower(_ value: AccountInfo) -> RustBuffer {
+    return FfiConverterTypeAccountInfo.lower(value)
+}
+
+
+/**
  * A call to one OpenAPI operation.
  */
 public struct ApiCall: Equatable, Hashable {
@@ -2148,6 +2921,166 @@ public func FfiConverterTypeApiResponse_lift(_ buf: RustBuffer) throws -> ApiRes
 #endif
 public func FfiConverterTypeApiResponse_lower(_ value: ApiResponse) -> RustBuffer {
     return FfiConverterTypeApiResponse.lower(value)
+}
+
+
+/**
+ * OAuth settings for one registered public client (Epic 9.1).
+ */
+public struct AuthConfig: Equatable, Hashable {
+    /**
+     * e.g. `https://auth.qa.alummahnow.net`
+     */
+    public var issuer: String
+    /**
+     * e.g. `viewer-mobile`, `viewer-tv`, `studio-desktop`
+     */
+    public var clientId: String
+    /**
+     * e.g. `alummahnow://auth/callback`
+     */
+    public var redirectUri: String
+    public var scopes: [String]
+    /**
+     * Endpoints; when `None`, `{issuer}/authorize` and `{issuer}/token` are used. Prefer
+     * `auth_manager_discover` which reads them from the server.
+     */
+    public var authorizationEndpoint: String?
+    public var tokenEndpoint: String?
+    public var deviceAuthorizationEndpoint: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * e.g. `https://auth.qa.alummahnow.net`
+         */issuer: String, 
+        /**
+         * e.g. `viewer-mobile`, `viewer-tv`, `studio-desktop`
+         */clientId: String, 
+        /**
+         * e.g. `alummahnow://auth/callback`
+         */redirectUri: String, scopes: [String], 
+        /**
+         * Endpoints; when `None`, `{issuer}/authorize` and `{issuer}/token` are used. Prefer
+         * `auth_manager_discover` which reads them from the server.
+         */authorizationEndpoint: String?, tokenEndpoint: String?, deviceAuthorizationEndpoint: String?) {
+        self.issuer = issuer
+        self.clientId = clientId
+        self.redirectUri = redirectUri
+        self.scopes = scopes
+        self.authorizationEndpoint = authorizationEndpoint
+        self.tokenEndpoint = tokenEndpoint
+        self.deviceAuthorizationEndpoint = deviceAuthorizationEndpoint
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension AuthConfig: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAuthConfig: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AuthConfig {
+        return
+            try AuthConfig(
+                issuer: FfiConverterString.read(from: &buf), 
+                clientId: FfiConverterString.read(from: &buf), 
+                redirectUri: FfiConverterString.read(from: &buf), 
+                scopes: FfiConverterSequenceString.read(from: &buf), 
+                authorizationEndpoint: FfiConverterOptionString.read(from: &buf), 
+                tokenEndpoint: FfiConverterOptionString.read(from: &buf), 
+                deviceAuthorizationEndpoint: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AuthConfig, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.issuer, into: &buf)
+        FfiConverterString.write(value.clientId, into: &buf)
+        FfiConverterString.write(value.redirectUri, into: &buf)
+        FfiConverterSequenceString.write(value.scopes, into: &buf)
+        FfiConverterOptionString.write(value.authorizationEndpoint, into: &buf)
+        FfiConverterOptionString.write(value.tokenEndpoint, into: &buf)
+        FfiConverterOptionString.write(value.deviceAuthorizationEndpoint, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAuthConfig_lift(_ buf: RustBuffer) throws -> AuthConfig {
+    return try FfiConverterTypeAuthConfig.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAuthConfig_lower(_ value: AuthConfig) -> RustBuffer {
+    return FfiConverterTypeAuthConfig.lower(value)
+}
+
+
+/**
+ * Open `url` in ASWebAuthenticationSession / Custom Tabs / the system browser.
+ */
+public struct LoginRequest: Equatable, Hashable {
+    public var url: String
+    public var state: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(url: String, state: String) {
+        self.url = url
+        self.state = state
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension LoginRequest: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLoginRequest: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LoginRequest {
+        return
+            try LoginRequest(
+                url: FfiConverterString.read(from: &buf), 
+                state: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LoginRequest, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.url, into: &buf)
+        FfiConverterString.write(value.state, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLoginRequest_lift(_ buf: RustBuffer) throws -> LoginRequest {
+    return try FfiConverterTypeLoginRequest.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLoginRequest_lower(_ value: LoginRequest) -> RustBuffer {
+    return FfiConverterTypeLoginRequest.lower(value)
 }
 
 
@@ -2539,6 +3472,99 @@ public func FfiConverterTypeAunError_lower(_ value: AunError) -> RustBuffer {
     return FfiConverterTypeAunError.lower(value)
 }
 
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum AuthEvent: Equatable, Hashable {
+    
+    case signedIn(account: AccountInfo
+    )
+    case signedOut(userId: String
+    )
+    case activeChanged(userId: String?
+    )
+    case reauthRequired(userId: String
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension AuthEvent: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAuthEvent: FfiConverterRustBuffer {
+    typealias SwiftType = AuthEvent
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AuthEvent {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .signedIn(account: try FfiConverterTypeAccountInfo.read(from: &buf)
+        )
+        
+        case 2: return .signedOut(userId: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 3: return .activeChanged(userId: try FfiConverterOptionString.read(from: &buf)
+        )
+        
+        case 4: return .reauthRequired(userId: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: AuthEvent, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .signedIn(account):
+            writeInt(&buf, Int32(1))
+            FfiConverterTypeAccountInfo.write(account, into: &buf)
+            
+        
+        case let .signedOut(userId):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(userId, into: &buf)
+            
+        
+        case let .activeChanged(userId):
+            writeInt(&buf, Int32(3))
+            FfiConverterOptionString.write(userId, into: &buf)
+            
+        
+        case let .reauthRequired(userId):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(userId, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAuthEvent_lift(_ buf: RustBuffer) throws -> AuthEvent {
+    return try FfiConverterTypeAuthEvent.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAuthEvent_lower(_ value: AuthEvent) -> RustBuffer {
+    return FfiConverterTypeAuthEvent.lower(value)
+}
+
+
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
@@ -2662,6 +3688,30 @@ fileprivate struct FfiConverterOptionTypeTokenSource: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeAccountInfo: FfiConverterRustBuffer {
+    typealias SwiftType = AccountInfo?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeAccountInfo.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeAccountInfo.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeAunError: FfiConverterRustBuffer {
     typealias SwiftType = AunError?
 
@@ -2703,6 +3753,31 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterString.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeAccountInfo: FfiConverterRustBuffer {
+    typealias SwiftType = [AccountInfo]
+
+    public static func write(_ value: [AccountInfo], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeAccountInfo.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [AccountInfo] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [AccountInfo]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeAccountInfo.read(from: &buf))
         }
         return seq
     }
@@ -2850,6 +3925,23 @@ public func apiOperations() -> [ApiOperation]  {
 })
 }
 /**
+ * Builds an [`AuthManager`] from the issuer's `/.well-known/oauth-authorization-server`.
+ */
+public func authManagerDiscover(issuer: String, clientId: String, redirectUri: String, scopes: [String], storage: SecureStorage)async throws  -> AuthManager  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_func_auth_manager_discover(FfiConverterString.lower(issuer),FfiConverterString.lower(clientId),FfiConverterString.lower(redirectUri),FfiConverterSequenceString.lower(scopes),FfiConverterTypeSecureStorage_lower(storage)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_u64,
+            completeFunc: ffi_aun_core_rust_future_complete_u64,
+            freeFunc: ffi_aun_core_rust_future_free_u64,
+            liftFunc: FfiConverterTypeAuthManager_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+/**
  * Waits `delay_ms` on the core's tokio runtime, then returns `message` reversed.
  */
 public func selftestAsyncEcho(message: String, delayMs: UInt64)async  -> String  {
@@ -2938,6 +4030,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_func_api_operations() != 5225) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_func_auth_manager_discover() != 24945) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aun_core_checksum_func_selftest_async_echo() != 26577) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2977,6 +4072,60 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_method_tokensource_refresh() != 51879) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_method_authlistener_on_event() != 10403) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_authmanager_access_token() != 44142) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_authmanager_accounts() != 17846) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_authmanager_active_account() != 17465) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_authmanager_add_listener() != 11266) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_authmanager_api_client() != 8997) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_authmanager_begin_device_login() != 55977) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_authmanager_begin_login() != 25035) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_authmanager_complete_device_login() != 8120) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_authmanager_complete_login() != 16882) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_authmanager_set_active_channel() != 23440) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_authmanager_sign_out() != 31761) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_authmanager_switch_account() != 40927) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_devicelogin_cancel() != 38743) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_devicelogin_expires_in_ms() != 36572) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_devicelogin_user_code() != 23547) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_devicelogin_verification_uri() != 27901) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_devicelogin_verification_uri_complete() != 24291) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aun_core_checksum_method_selftestlistener_on_event() != 53827) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3001,7 +4150,11 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_constructor_offlinequeue_open() != 47580) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_constructor_authmanager_new() != 64790) {
+        return InitializationResult.apiChecksumMismatch
+    }
 
+    uniffiCallbackInitAuthListener()
     uniffiCallbackInitConnectivity()
     uniffiCallbackInitSecureStorage()
     uniffiCallbackInitSelfTestListener()

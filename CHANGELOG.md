@@ -31,6 +31,13 @@ FFI; such changes are listed under **Breaking**.
   persistent FIFO offline write queue with coalescing.
 - FFI: `ApiClient` (generic `request(ApiCall)` over every operation id), `api_operations()`,
   `TokenSource` callback interface, `OfflineQueue` with `QueueFlushReport`.
+- `aun-auth`: OAuth 2 authorization code + PKCE S256 (state/CSRF and redirect checks),
+  discovery (RFC 8414), refresh with rotation and single-flight, RFC 8628 device flow
+  (pending/slow_down/denied/expired, cancellable), multi-account store over `SecureStorage`
+  (max 10, active account + active channel, re-auth flag), `AuthManager` implementing
+  `aun_api::AuthProvider`.
+- FFI: `AuthManager` (+ `auth_manager_discover`), `DeviceLogin`, `AuthListener`/`AuthEvent`,
+  `AccountInfo`, `AuthManager.api_client()`.
 
 ### Changed
 

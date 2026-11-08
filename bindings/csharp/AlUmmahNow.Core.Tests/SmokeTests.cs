@@ -68,4 +68,16 @@ public class SmokeTests
         var e = await Assert.ThrowsAnyAsync<AunException>(() => client.Request(call));
         Assert.True(e is AunException.Network || e is AunException.InvalidInput, e.ToString());
     }
+
+    [Fact]
+    public async Task AuthManagerSurface()
+    {
+        var auth = new AuthManager(
+            new AuthConfig("https://auth.example.invalid", "viewer-mobile", "alummahnow://auth/callback", new[] { "openid" }, null, null, null),
+            new MemoryStorage());
+        Assert.Contains("code_challenge_method=S256", auth.BeginLogin().Url);
+        Assert.Empty(auth.Accounts());
+        Assert.Null(await auth.AccessToken());
+        await Assert.ThrowsAsync<AunException.Unsupported>(() => auth.BeginDeviceLogin());
+    }
 }

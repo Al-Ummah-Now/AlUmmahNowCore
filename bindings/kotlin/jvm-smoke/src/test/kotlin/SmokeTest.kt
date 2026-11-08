@@ -26,14 +26,18 @@ class SmokeTest {
         assertEquals(listOf(0u, 1u, 2u), seen.toList())
     }
 
-    @Test fun secureStorageAdapter() {
+    private fun memoryStorage(): SecureStorage {
         val items = java.util.concurrent.ConcurrentHashMap<String, ByteArray>()
-        val storage = object : SecureStorage {
+        return object : SecureStorage {
             override fun get(key: String) = items[key]
             override fun set(key: String, value: ByteArray) { items[key] = value }
             override fun delete(key: String) { items.remove(key) }
             override fun list(prefix: String) = items.keys.filter { it.startsWith(prefix) }.sorted()
         }
+    }
+
+    @Test fun secureStorageAdapter() {
+        val storage = memoryStorage()
         assertEquals("سلام", String(selftestSecureStorage(storage), Charsets.UTF_8))
     }
 
@@ -47,5 +51,17 @@ class SmokeTest {
         val client = ApiClient(ApiClientConfig("http://127.0.0.1:9", "smoke", "ar", 2000uL, 1u), null)
         val e = assertFails { client.request(ApiCall("get_GetI18nConfigEndpoint", emptyMap(), emptyMap(), emptyMap(), null, null)) }
         assertTrue(e is AunException.Network || e is AunException.InvalidInput, "$e")
+    }
+
+    @Test fun authManagerSurface() = runBlocking {
+        val auth = AuthManager(
+            AuthConfig("https://auth.example.invalid", "viewer-mobile", "alummahnow://auth/callback", listOf("openid"), null, null, null),
+            memoryStorage(),
+        )
+        assertTrue(auth.beginLogin().url.contains("code_challenge_method=S256"))
+        assertTrue(auth.accounts().isEmpty())
+        assertNull(auth.accessToken())
+        assertFailsWith<AunException.Unsupported> { auth.beginDeviceLogin() }
+        Unit
     }
 }

@@ -165,6 +165,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "aun-api",
+ "aun-auth",
  "aun-common",
  "reqwest 0.13.5",
  "serde_json",
