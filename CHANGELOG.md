@@ -68,6 +68,16 @@ FFI; such changes are listed under **Breaking**.
 - Release workflow no longer pushes to `main`: the Package.swift release commit is created on top
   of the `vX.Y.Z` tag and only the SwiftPM tag `X.Y.Z` is pushed (`scripts/swiftpm-release-tag.sh`,
   `docs/RELEASING.md`). Swift consumers depend on `from: "X.Y.Z"`.
+- `aun-upload`: resumable TUS uploads for api-videos. Persistent per-account queue (survives
+  restarts, resumes from the server's offset via HEAD), priority + FIFO, 1–5 parallel uploads,
+  shared runtime-adjustable bandwidth cap, Wi-Fi-only/offline waiting, SHA-256 checksums with
+  duplicate lookup, pause/resume/retry/cancel (TUS terminate), changed-file detection, rate-limit
+  aware (one upload session per file, never re-initiated; `Retry-After` honoured), fallback to
+  direct upload via `/upload/resume/{videoId}` when the proxy session expired. Feature `watch`:
+  desktop folder watching (settle detection, symlinks outside the folder ignored).
+- FFI: `UploadEngine`, `UploadListener`, `UploadRequest`/`UploadConfig`/`UploadInfo`/`UploadState`,
+  `upload_config_default()`; `UploadEngine.watch_folder` on macOS/Windows/Linux (throws
+  `Unsupported` on mobile/TV).
 
 ## [0.1.0] - 2026-11-08
 

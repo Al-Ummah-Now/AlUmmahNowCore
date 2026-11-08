@@ -80,4 +80,20 @@ public class SmokeTests
         Assert.Null(await auth.AccessToken());
         await Assert.ThrowsAsync<AunException.Unsupported>(() => auth.BeginDeviceLogin());
     }
+
+    [Fact]
+    public void UploadEngineSurface()
+    {
+        var client = new ApiClient(new ApiClientConfig("http://127.0.0.1:9", "smoke", null, 2000, 1), null);
+        var dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), System.Guid.NewGuid().ToString());
+        var config = AunCoreMethods.UploadConfigDefault();
+        Assert.Equal(3u, config.MaxParallel);
+        var engine = new UploadEngine(client, dir, "u1", config, null);
+        Assert.Empty(engine.List());
+        var request = new UploadRequest("/nonexistent/clip.mp4", "درس", null, null, null, null, null, null,
+            new System.Collections.Generic.Dictionary<string, string>(), new System.Collections.Generic.Dictionary<string, string>(), 0);
+        Assert.Throws<AunException.InvalidInput>(() => engine.Enqueue(request));
+        engine.SetBandwidthLimit(1_000_000);
+        engine.Shutdown();
+    }
 }

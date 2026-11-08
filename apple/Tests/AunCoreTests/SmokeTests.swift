@@ -92,4 +92,24 @@ final class SmokeTests: XCTestCase {
         } catch AunError.Unsupported {
         }
     }
+
+    func testUploadEngineSurface() throws {
+        let client = try ApiClient(
+            config: ApiClientConfig(baseUrl: "http://127.0.0.1:9", userAgent: "smoke", locale: nil, timeoutMs: 2000, maxAttempts: 1),
+            tokens: nil
+        )
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).path
+        let config = uploadConfigDefault()
+        XCTAssertEqual(config.maxParallel, 3)
+        let engine = try UploadEngine(client: client, storeDir: dir, accountId: "u1", config: config, connectivity: nil)
+        XCTAssertTrue(try engine.list().isEmpty)
+        let request = UploadRequest(filePath: "/nonexistent/clip.mp4", title: "درس", description: nil, mimeType: nil,
+                                    channelId: nil, isPublic: nil, tags: nil, category: nil,
+                                    titleLocalized: [:], descriptionLocalized: [:], priority: 0)
+        XCTAssertThrowsError(try engine.enqueue(request: request)) { error in
+            guard case AunError.InvalidInput = error else { return XCTFail("\(error)") }
+        }
+        engine.setBandwidthLimit(bytesPerSec: 1_000_000)
+        engine.shutdown()
+    }
 }

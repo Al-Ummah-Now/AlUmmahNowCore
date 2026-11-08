@@ -11,12 +11,14 @@ mod auth;
 mod diagnostics;
 mod error;
 mod platform;
+mod upload;
 
 pub use api::*;
 pub use auth::*;
 pub use diagnostics::*;
 pub use error::AunError;
 pub use platform::*;
+pub use upload::*;
 
 /// The `aun-core` version, e.g. `"0.1.0"`. Apps log it and send it with telemetry.
 #[uniffi::export]
