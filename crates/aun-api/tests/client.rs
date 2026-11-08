@@ -383,8 +383,41 @@ async fn queue_never_replays_another_accounts_writes() {
     assert_eq!(reqs.len(), 1);
     assert_eq!(reqs[0].url.path(), "/api/videos/from-b/likes");
 
+    // A client bound to A can't drain B's queue.
+    let client_a = ApiClient::new(config(&server)).unwrap().with_account("user-a");
+    assert!(matches!(b.flush(&client_a).await, Err(Error::Unauthorized(_))));
+
     // A's write is still stored until A signs out.
     assert_eq!(b.purge_account("user-a").unwrap(), 1);
     assert!(store.load().unwrap().is_empty());
     assert!(OfflineQueue::open(store, "").is_err());
+}
+
+#[test]
+fn refuses_cleartext_base_url() {
+    assert!(matches!(
+        ApiClient::new(ApiConfig::new("http://videos.api.example.com")),
+        Err(Error::InvalidInput(_))
+    ));
+    assert!(ApiClient::new(ApiConfig::new("http://127.0.0.1:9")).is_ok());
+    assert!(ApiClient::new(ApiConfig::new("https://videos.api.example.com")).is_ok());
+}
+
+#[tokio::test]
+async fn refuses_redirect_to_cleartext() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(302).insert_header("Location", "http://videos.example.com/leak"))
+        .mount(&server)
+        .await;
+    let client = ApiClient::new(config(&server)).unwrap();
+    let err = client
+        .execute(aun_api::RequestSpec::new(
+            reqwest::Method::GET,
+            "/x".into(),
+            "test",
+        ))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::Network(_)), "{err:?}");
 }

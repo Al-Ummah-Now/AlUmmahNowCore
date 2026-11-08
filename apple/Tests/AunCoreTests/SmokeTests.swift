@@ -73,4 +73,23 @@ final class SmokeTests: XCTestCase {
         } catch AunError.InvalidInput {
         }
     }
+
+    func testAuthManagerSurface() async throws {
+        let auth = try AuthManager(
+            config: AuthConfig(issuer: "https://auth.example.invalid", clientId: "viewer-mobile",
+                               redirectUri: "alummahnow://auth/callback", scopes: ["openid"],
+                               authorizationEndpoint: nil, tokenEndpoint: nil, deviceAuthorizationEndpoint: nil),
+            storage: MemoryStorage()
+        )
+        let req = try auth.beginLogin()
+        XCTAssertTrue(req.url.contains("code_challenge_method=S256"))
+        XCTAssertTrue(try auth.accounts().isEmpty)
+        let token = try await auth.accessToken()
+        XCTAssertNil(token)
+        do {
+            _ = try await auth.beginDeviceLogin()
+            XCTFail("expected Unsupported")
+        } catch AunError.Unsupported {
+        }
+    }
 }

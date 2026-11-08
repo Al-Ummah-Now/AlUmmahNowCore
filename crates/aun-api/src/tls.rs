@@ -31,6 +31,16 @@ pub fn http_client(config: &ApiConfig) -> Result<reqwest::Client> {
         .timeout(config.timeout)
         .connect_timeout(std::time::Duration::from_secs(15))
         .pool_idle_timeout(std::time::Duration::from_secs(60))
+        // Follow at most 5 redirects and never to a cleartext URL (no https -> http downgrade).
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= 5 {
+                attempt.error("too many redirects")
+            } else if aun_common::security::is_secure(attempt.url()) {
+                attempt.follow()
+            } else {
+                attempt.error("refusing redirect to an insecure URL")
+            }
+        }))
         .build()
         .map_err(|e| Error::Internal(format!("HTTP client: {e}")))
 }

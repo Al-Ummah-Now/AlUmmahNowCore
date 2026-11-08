@@ -7,11 +7,13 @@
 uniffi::setup_scaffolding!("aun_core");
 
 mod api;
+mod auth;
 mod diagnostics;
 mod error;
 mod platform;
 
 pub use api::*;
+pub use auth::*;
 pub use diagnostics::*;
 pub use error::AunError;
 pub use platform::*;

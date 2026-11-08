@@ -3,6 +3,7 @@
 
 mod error;
 pub mod platform;
+pub mod security;
 
 pub use error::{Error, Result};
 
