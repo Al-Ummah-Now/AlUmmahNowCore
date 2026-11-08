@@ -24,6 +24,12 @@ FFI; such changes are listed under **Breaking**.
   delete/split/trim, and render planning that decides stream copy versus re-encode per segment.
 - `aun-media`: bidi-aware text shaping and line breaking for titles and burned-in captions.
 
+### Changed
+
+- Release workflow no longer pushes to `main`: the Package.swift release commit is created on top
+  of the `vX.Y.Z` tag and only the SwiftPM tag `X.Y.Z` is pushed (`scripts/swiftpm-release-tag.sh`,
+  `docs/RELEASING.md`). Swift consumers depend on `from: "X.Y.Z"`.
+
 ## [0.1.0] - 2026-11-08
 
 ### Added

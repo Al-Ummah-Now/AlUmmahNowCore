@@ -36,7 +36,7 @@ bindings/
   swift/                   SwiftPM smoke-test package (generated sources + xcframework)
   kotlin/                  Gradle: Android library (AAR) + JVM smoke test
   csharp/                  AlUmmahNow.Core.csproj (NuGet) + xUnit smoke test
-Package.swift              Swift Package consumers depend on (rewritten by the release workflow)
+Package.swift              Swift Package manifest (release tags X.Y.Z carry the release URL/checksum)
 scripts/                   build-xcframework.sh, build-android.sh, gen-bindings.sh, …
 ```
 
@@ -146,7 +146,9 @@ shaping, on by default), `aun-upload/watch` (folder watching, desktop only).
   3. creates the GitHub release with `AunCoreFFI.xcframework.zip`, Swift sources, the AAR, the
      `.nupkg` and SHA-256 sums;
   4. publishes the AAR to GitHub Packages Maven and the NuGet package to GitHub Packages;
-  5. commits the updated `Package.swift` (release URL + checksum) and Swift sources to `main`.
+  5. creates a release-only commit on top of the tag (Package.swift URL + checksum, Swift
+     sources) and pushes only the SwiftPM tag `X.Y.Z` pointing at it. Nothing is pushed to `main`
+     or any branch. Details: [`docs/RELEASING.md`](RELEASING.md).
 - Never release by hand; never move or delete a published tag.
 
 ## 9. Build order
