@@ -142,7 +142,7 @@ fn buffer_survives_restart_and_breadcrumbs_attach_to_next_crash() {
     assert_eq!(t2.pending_count(), 1);
     let prev = t2.previous_session_breadcrumbs();
     assert_eq!(prev.len(), 2);
-    assert_eq!(prev[1].message, "token=abc https://x.net/v?[redacted]");
+    assert_eq!(prev[1].message, "token=[token] https://x.net/v?[redacted]");
     t2.add_breadcrumb("nav", "new session", BreadcrumbLevel::Info);
     t2.report_crash(CrashReport {
         kind: "SIGABRT".into(),
