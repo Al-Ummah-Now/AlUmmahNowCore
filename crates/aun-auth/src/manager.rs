@@ -54,6 +54,9 @@ pub struct AuthManager {
     pending: Mutex<HashMap<String, PendingAuthorization>>,
     /// Serialises refreshes so concurrent API calls trigger one token request (rotation-safe).
     refresh_lock: tokio::sync::Mutex<()>,
+    /// Orders sign-out against writing refreshed tokens back, so a refresh that was in flight
+    /// during sign-out can't resurrect the account.
+    store_lock: Mutex<()>,
     listeners: Mutex<Vec<Arc<dyn AuthListener>>>,
 }
 
@@ -77,6 +80,7 @@ impl AuthManager {
             clock,
             pending: Mutex::new(HashMap::new()),
             refresh_lock: tokio::sync::Mutex::new(()),
+            store_lock: Mutex::new(()),
             listeners: Mutex::new(Vec::new()),
         }
     }
@@ -210,7 +214,13 @@ impl AuthManager {
     /// used remaining account becomes active.
     pub fn sign_out(&self, user_id: &str) -> Result<()> {
         let was_active = self.store.active()?.as_deref() == Some(user_id);
-        self.store.remove(user_id)?;
+        {
+            let _g = self
+                .store_lock
+                .lock()
+                .map_err(|_| Error::Internal("auth lock poisoned".into()))?;
+            self.store.remove(user_id)?;
+        }
         self.emit(AuthEvent::SignedOut {
             user_id: user_id.into(),
         });
@@ -272,7 +282,9 @@ impl AuthManager {
         match self.oauth.refresh(&rt, self.clock.now_ms()).await {
             Ok(t) => {
                 a.tokens = t;
-                self.store.put(&a)?;
+                if !self.put_if_present(&a)? {
+                    return Ok(None); // signed out while refreshing
+                }
                 Ok(Some(a.tokens.access_token))
             }
             Err(Error::Unauthorized(_)) => self.mark_reauth(a).map(|_| None),
@@ -280,9 +292,24 @@ impl AuthManager {
         }
     }
 
+    /// Saves `a` only if the account still exists (it may have been signed out meanwhile).
+    fn put_if_present(&self, a: &StoredAccount) -> Result<bool> {
+        let _g = self
+            .store_lock
+            .lock()
+            .map_err(|_| Error::Internal("auth lock poisoned".into()))?;
+        if self.store.get(&a.info.user_id)?.is_none() {
+            return Ok(false);
+        }
+        self.store.put(a)?;
+        Ok(true)
+    }
+
     fn mark_reauth(&self, mut a: StoredAccount) -> Result<()> {
         a.info.needs_reauth = true;
-        self.store.put(&a)?;
+        if !self.put_if_present(&a)? {
+            return Ok(());
+        }
         self.emit(AuthEvent::ReauthRequired {
             user_id: a.info.user_id,
         });

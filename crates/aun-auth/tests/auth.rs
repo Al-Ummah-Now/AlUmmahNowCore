@@ -252,6 +252,34 @@ async fn refreshes_near_expiry_once_for_concurrent_callers() {
 }
 
 #[tokio::test]
+async fn sign_out_during_refresh_does_not_resurrect_the_account() {
+    let server = MockServer::start().await;
+    let clock = Arc::new(ManualClock::new(0));
+    let m = Arc::new(manager(&server, clock.clone()));
+    sign_in(&m, &server, "u1").await;
+    Mock::given(method("POST"))
+        .and(path("/token"))
+        .and(body_string_contains("grant_type=refresh_token"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(token_body("u1", "at-new", Some("rt-new"), 3600))
+                .set_delay(std::time::Duration::from_millis(300)),
+        )
+        .mount(&server)
+        .await;
+    clock.advance(3_600_000 - 30_000);
+    let refreshing = {
+        let m = m.clone();
+        tokio::spawn(async move { m.access_token().await.unwrap() })
+    };
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await; // refresh is in flight
+    m.sign_out("u1").unwrap();
+    assert_eq!(refreshing.await.unwrap(), None);
+    assert!(m.accounts().unwrap().is_empty(), "signed-out account came back");
+    assert_eq!(m.token_for_account("u1", false).await.unwrap(), None);
+}
+
+#[tokio::test]
 async fn rejected_refresh_marks_reauth() {
     let server = MockServer::start().await;
     let clock = Arc::new(ManualClock::new(0));
