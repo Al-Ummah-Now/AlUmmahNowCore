@@ -12,7 +12,7 @@ bindings for the native apps.
 **Swift (iOS, iPadOS, tvOS, macOS)**
 
 ```swift
-.package(url: "https://github.com/Al-Ummah-Now/AlUmmahNowCore", exact: "0.1.0")
+.package(url: "https://github.com/Al-Ummah-Now/AlUmmahNowCore", exact: "0.2.0")
 // target dependency: .product(name: "AunCore", package: "AlUmmahNowCore")
 import AunCore
 print(coreVersion())
@@ -26,7 +26,7 @@ repositories {
         credentials { username = gprUser; password = gprToken }
     }
 }
-dependencies { implementation("net.alummahnow:aun-core:0.1.0") }
+dependencies { implementation("net.alummahnow:aun-core:0.2.0") }
 // import net.alummahnow.core.*; coreVersion()
 ```
 
@@ -34,7 +34,7 @@ dependencies { implementation("net.alummahnow:aun-core:0.1.0") }
 
 ```sh
 dotnet nuget add source https://nuget.pkg.github.com/Al-Ummah-Now/index.json -n aun -u <user> -p <token>
-dotnet add package AlUmmahNow.Core --version 0.1.0
+dotnet add package AlUmmahNow.Core --version 0.2.0
 ```
 
 ```csharp
