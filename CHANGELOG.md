@@ -75,6 +75,9 @@ FFI; such changes are listed under **Breaking**.
   aware (one upload session per file, never re-initiated; `Retry-After` honoured), fallback to
   direct upload via `/upload/resume/{videoId}` when the proxy session expired. Feature `watch`:
   desktop folder watching (settle detection, symlinks outside the folder ignored).
+  Every TUS request is checked first: endpoints and upload URLs must be https (http only for
+  localhost), and on the proxy, where the bearer token is attached, the upload URL must share the
+  endpoint's origin, so a hostile `Location` can't collect the token.
 - FFI: `UploadEngine`, `UploadListener`, `UploadRequest`/`UploadConfig`/`UploadInfo`/`UploadState`,
   `upload_config_default()`; `UploadEngine.watch_folder` on macOS/Windows/Linux (throws
   `Unsupported` on mobile/TV).
