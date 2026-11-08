@@ -1314,31 +1314,31 @@ public enum AunError: Swift.Error, Equatable, Hashable, Foundation.LocalizedErro
 
     
     
-    case Network(message: String
+    case Network(detail: String
     )
     case Offline
-    case Http(status: UInt16, code: String?, message: String
+    case Http(status: UInt16, code: String?, detail: String
     )
-    case Unauthorized(message: String
+    case Unauthorized(detail: String
     )
-    case Forbidden(message: String
+    case Forbidden(detail: String
     )
-    case NotFound(message: String
+    case NotFound(detail: String
     )
-    case Conflict(message: String
+    case Conflict(detail: String
     )
     case RateLimited(retryAfterMs: UInt64?
     )
-    case InvalidInput(message: String
+    case InvalidInput(detail: String
     )
-    case Storage(message: String
+    case Storage(detail: String
     )
-    case Platform(message: String
+    case Platform(detail: String
     )
-    case Unsupported(message: String
+    case Unsupported(detail: String
     )
     case Cancelled
-    case Internal(message: String
+    case Internal(detail: String
     )
 
     
@@ -1370,44 +1370,44 @@ public struct FfiConverterTypeAunError: FfiConverterRustBuffer {
 
         
         case 1: return .Network(
-            message: try FfiConverterString.read(from: &buf)
+            detail: try FfiConverterString.read(from: &buf)
             )
         case 2: return .Offline
         case 3: return .Http(
             status: try FfiConverterUInt16.read(from: &buf), 
             code: try FfiConverterOptionString.read(from: &buf), 
-            message: try FfiConverterString.read(from: &buf)
+            detail: try FfiConverterString.read(from: &buf)
             )
         case 4: return .Unauthorized(
-            message: try FfiConverterString.read(from: &buf)
+            detail: try FfiConverterString.read(from: &buf)
             )
         case 5: return .Forbidden(
-            message: try FfiConverterString.read(from: &buf)
+            detail: try FfiConverterString.read(from: &buf)
             )
         case 6: return .NotFound(
-            message: try FfiConverterString.read(from: &buf)
+            detail: try FfiConverterString.read(from: &buf)
             )
         case 7: return .Conflict(
-            message: try FfiConverterString.read(from: &buf)
+            detail: try FfiConverterString.read(from: &buf)
             )
         case 8: return .RateLimited(
             retryAfterMs: try FfiConverterOptionUInt64.read(from: &buf)
             )
         case 9: return .InvalidInput(
-            message: try FfiConverterString.read(from: &buf)
+            detail: try FfiConverterString.read(from: &buf)
             )
         case 10: return .Storage(
-            message: try FfiConverterString.read(from: &buf)
+            detail: try FfiConverterString.read(from: &buf)
             )
         case 11: return .Platform(
-            message: try FfiConverterString.read(from: &buf)
+            detail: try FfiConverterString.read(from: &buf)
             )
         case 12: return .Unsupported(
-            message: try FfiConverterString.read(from: &buf)
+            detail: try FfiConverterString.read(from: &buf)
             )
         case 13: return .Cancelled
         case 14: return .Internal(
-            message: try FfiConverterString.read(from: &buf)
+            detail: try FfiConverterString.read(from: &buf)
             )
 
          default: throw UniffiInternalError.unexpectedEnumCase
@@ -1421,40 +1421,40 @@ public struct FfiConverterTypeAunError: FfiConverterRustBuffer {
 
         
         
-        case let .Network(message):
+        case let .Network(detail):
             writeInt(&buf, Int32(1))
-            FfiConverterString.write(message, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
             
         
         case .Offline:
             writeInt(&buf, Int32(2))
         
         
-        case let .Http(status,code,message):
+        case let .Http(status,code,detail):
             writeInt(&buf, Int32(3))
             FfiConverterUInt16.write(status, into: &buf)
             FfiConverterOptionString.write(code, into: &buf)
-            FfiConverterString.write(message, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
             
         
-        case let .Unauthorized(message):
+        case let .Unauthorized(detail):
             writeInt(&buf, Int32(4))
-            FfiConverterString.write(message, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
             
         
-        case let .Forbidden(message):
+        case let .Forbidden(detail):
             writeInt(&buf, Int32(5))
-            FfiConverterString.write(message, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
             
         
-        case let .NotFound(message):
+        case let .NotFound(detail):
             writeInt(&buf, Int32(6))
-            FfiConverterString.write(message, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
             
         
-        case let .Conflict(message):
+        case let .Conflict(detail):
             writeInt(&buf, Int32(7))
-            FfiConverterString.write(message, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
             
         
         case let .RateLimited(retryAfterMs):
@@ -1462,33 +1462,33 @@ public struct FfiConverterTypeAunError: FfiConverterRustBuffer {
             FfiConverterOptionUInt64.write(retryAfterMs, into: &buf)
             
         
-        case let .InvalidInput(message):
+        case let .InvalidInput(detail):
             writeInt(&buf, Int32(9))
-            FfiConverterString.write(message, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
             
         
-        case let .Storage(message):
+        case let .Storage(detail):
             writeInt(&buf, Int32(10))
-            FfiConverterString.write(message, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
             
         
-        case let .Platform(message):
+        case let .Platform(detail):
             writeInt(&buf, Int32(11))
-            FfiConverterString.write(message, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
             
         
-        case let .Unsupported(message):
+        case let .Unsupported(detail):
             writeInt(&buf, Int32(12))
-            FfiConverterString.write(message, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
             
         
         case .Cancelled:
             writeInt(&buf, Int32(13))
         
         
-        case let .Internal(message):
+        case let .Internal(detail):
             writeInt(&buf, Int32(14))
-            FfiConverterString.write(message, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
             
         }
     }
