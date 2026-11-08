@@ -30,7 +30,7 @@ jobs:
   whisper:
     name: whisper inference (tiny model)
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -59,4 +59,4 @@ jobs:
           AUN_WHISPER_MODEL: ${{ github.workspace }}/models/ggml-tiny.bin
           AUN_CLIP_EN: ${{ github.workspace }}/clips/en.wav
           AUN_CLIP_AR: ${{ github.workspace }}/clips/ar.wav
-        run: cargo test -p aun-media --features whisper --test whisper_inference -- --ignored --test-threads=1
+        run: cargo test --release -p aun-media --features whisper --test whisper_inference -- --ignored --test-threads=1

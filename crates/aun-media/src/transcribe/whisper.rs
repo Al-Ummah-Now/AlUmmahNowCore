@@ -65,8 +65,14 @@ impl Transcriber for WhisperTranscriber {
         if let Some(threads) = options.threads {
             params.set_n_threads(i32::try_from(threads).unwrap_or(1).max(1));
         }
+        // whisper-rs 0.16's `set_abort_callback_safe` stores `Box<Box<dyn FnMut>>` but its C
+        // trampoline casts the pointer back to `*mut F`. With a plain closure that is a type
+        // confusion (UB: it aborted the process in CI). Making `F` itself
+        // `Box<dyn FnMut() -> bool>` makes the cast correct: the trampoline calls the outer box,
+        // which forwards to ours. Keep this until whisper-rs fixes the trampoline.
         let abort = cancel.clone();
-        params.set_abort_callback_safe(move || abort.is_cancelled());
+        let abort_cb: Box<dyn FnMut() -> bool> = Box::new(move || abort.is_cancelled());
+        params.set_abort_callback_safe::<Box<dyn FnMut() -> bool>, Box<dyn FnMut() -> bool>>(abort_cb);
         let (sender, receiver) = std::sync::mpsc::channel::<u32>();
         params.set_progress_callback_safe(move |percent: i32| {
             let _ = sender.send(u32::try_from(percent).unwrap_or(0).min(100));
