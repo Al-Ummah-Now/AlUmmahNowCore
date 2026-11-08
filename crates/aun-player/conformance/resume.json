@@ -1,0 +1,252 @@
+{
+  "scenarios": [
+    {
+      "name": "resumes_saved_position",
+      "description": "A saved position between 30 s and 95 % resumes.",
+      "steps": [
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "load_queue",
+            "items": [
+              {
+                "id": "a",
+                "duration_ms": 600000,
+                "resume_position_ms": 120000
+              }
+            ],
+            "start_index": 0,
+            "play_when_ready": true
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "a",
+              "start_position_ms": 120000,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            }
+          ],
+          "expect_state": {
+            "position_ms": 120000
+          }
+        }
+      ]
+    },
+    {
+      "name": "starts_over_when_barely_started",
+      "description": "Less than 30 s in starts from the beginning.",
+      "steps": [
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "load_queue",
+            "items": [
+              {
+                "id": "a",
+                "duration_ms": 600000,
+                "resume_position_ms": 29999
+              }
+            ],
+            "start_index": 0,
+            "play_when_ready": true
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "a",
+              "start_position_ms": 0,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "starts_over_when_finished",
+      "description": "At or beyond 95 % the item counts as watched and starts over.",
+      "steps": [
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "load_queue",
+            "items": [
+              {
+                "id": "a",
+                "duration_ms": 600000,
+                "resume_position_ms": 570000
+              }
+            ],
+            "start_index": 0,
+            "play_when_ready": true
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "a",
+              "start_position_ms": 0,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "resumes_with_unknown_duration",
+      "description": "With an unknown duration only the 30 s rule applies.",
+      "steps": [
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "load_queue",
+            "items": [
+              {
+                "id": "a",
+                "duration_ms": 0,
+                "resume_position_ms": 45000
+              }
+            ],
+            "start_index": 0,
+            "play_when_ready": true
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "a",
+              "start_position_ms": 45000,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "live_never_resumes_or_saves",
+      "description": "Live items start at the live edge and never save positions.",
+      "steps": [
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "load_queue",
+            "items": [
+              {
+                "id": "live",
+                "duration_ms": 0,
+                "resume_position_ms": 100000,
+                "is_live": true
+              }
+            ],
+            "start_index": 0,
+            "play_when_ready": true
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "live",
+              "start_position_ms": 0,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            }
+          ]
+        },
+        {
+          "at_ms": 20000,
+          "input": {
+            "type": "tick",
+            "position_ms": 20000
+          },
+          "expect": []
+        },
+        {
+          "at_ms": 20001,
+          "input": {
+            "type": "pause"
+          },
+          "expect": [
+            {
+              "type": "pause"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "completed_flag_at_95_percent",
+      "description": "Saved positions at or past 95 % carry completed=true.",
+      "steps": [
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "load_queue",
+            "items": [
+              {
+                "id": "a",
+                "duration_ms": 600000
+              }
+            ],
+            "start_index": 0,
+            "play_when_ready": true
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "a",
+              "start_position_ms": 0,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            }
+          ]
+        },
+        {
+          "at_ms": 15000,
+          "input": {
+            "type": "tick",
+            "position_ms": 570000
+          },
+          "expect": [
+            {
+              "type": "save_position",
+              "item_id": "a",
+              "position_ms": 570000,
+              "duration_ms": 600000,
+              "completed": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,204 @@
+{
+  "scenarios": [
+    {
+      "name": "chapter_navigation",
+      "description": "Next chapter jumps to the next start; previous restarts the chapter after 3 s, else goes to the previous one.",
+      "steps": [
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "load_queue",
+            "items": [
+              {
+                "id": "a",
+                "duration_ms": 600000,
+                "chapters": [
+                  {
+                    "start_ms": 0,
+                    "title": "Intro"
+                  },
+                  {
+                    "start_ms": 120000,
+                    "title": "Part 1"
+                  },
+                  {
+                    "start_ms": 300000,
+                    "title": "Part 2"
+                  }
+                ]
+              }
+            ],
+            "start_index": 0,
+            "play_when_ready": true
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "a",
+              "start_position_ms": 0,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            }
+          ],
+          "expect_state": {
+            "current_chapter": 0
+          }
+        },
+        {
+          "at_ms": 1,
+          "input": {
+            "type": "next_chapter"
+          },
+          "expect": [
+            {
+              "type": "seek_to",
+              "position_ms": 120000
+            },
+            {
+              "type": "save_position",
+              "item_id": "a",
+              "position_ms": 120000,
+              "duration_ms": 600000,
+              "completed": false
+            }
+          ],
+          "expect_state": {
+            "current_chapter": 1
+          }
+        },
+        {
+          "at_ms": 2000,
+          "input": {
+            "type": "tick",
+            "position_ms": 122000
+          },
+          "expect": []
+        },
+        {
+          "at_ms": 2001,
+          "input": {
+            "type": "previous_chapter"
+          },
+          "expect": [
+            {
+              "type": "seek_to",
+              "position_ms": 0
+            },
+            {
+              "type": "save_position",
+              "item_id": "a",
+              "position_ms": 0,
+              "duration_ms": 600000,
+              "completed": false
+            }
+          ],
+          "expect_state": {
+            "current_chapter": 0
+          }
+        },
+        {
+          "at_ms": 2002,
+          "input": {
+            "type": "seek_to",
+            "position_ms": 400000
+          },
+          "expect": [
+            {
+              "type": "seek_to",
+              "position_ms": 400000
+            },
+            {
+              "type": "save_position",
+              "item_id": "a",
+              "position_ms": 400000,
+              "duration_ms": 600000,
+              "completed": false
+            }
+          ]
+        },
+        {
+          "at_ms": 2003,
+          "input": {
+            "type": "previous_chapter"
+          },
+          "expect": [
+            {
+              "type": "seek_to",
+              "position_ms": 300000
+            },
+            {
+              "type": "save_position",
+              "item_id": "a",
+              "position_ms": 300000,
+              "duration_ms": 600000,
+              "completed": false
+            }
+          ],
+          "expect_state": {
+            "current_chapter": 2
+          }
+        },
+        {
+          "at_ms": 2004,
+          "input": {
+            "type": "next_chapter"
+          },
+          "expect": []
+        }
+      ]
+    },
+    {
+      "name": "no_chapters",
+      "description": "Chapter commands do nothing for items without chapters.",
+      "steps": [
+        {
+          "at_ms": 0,
+          "input": {
+            "type": "load_queue",
+            "items": [
+              {
+                "id": "a",
+                "duration_ms": 600000
+              }
+            ],
+            "start_index": 0,
+            "play_when_ready": true
+          },
+          "expect": [
+            {
+              "type": "load",
+              "item_id": "a",
+              "start_position_ms": 0,
+              "play_when_ready": true
+            },
+            {
+              "type": "set_quality_cap",
+              "cap": {
+                "max_height": 1080
+              }
+            }
+          ]
+        },
+        {
+          "at_ms": 1,
+          "input": {
+            "type": "next_chapter"
+          },
+          "expect": []
+        },
+        {
+          "at_ms": 2,
+          "input": {
+            "type": "previous_chapter"
+          },
+          "expect": []
+        }
+      ]
+    }
+  ]
+}
