@@ -16,6 +16,8 @@ FFI; such changes are listed under **Breaking**.
   (`crates/aun-player/conformance/`) with a Rust runner, and native wrappers can replay them.
 - `aun-media`: container/codec probing, EBU R128 loudness, silence and scene detection, waveform
   peaks, scene-aware thumbnail timestamps.
+- `aun-media`: encode presets, validated `JobPlan` DAG, job runner with pause/resume/cancel, software
+  reference backend and a backend conformance suite.
 
 ## [0.1.0] - 2026-11-08
 

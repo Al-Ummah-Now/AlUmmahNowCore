@@ -60,6 +60,9 @@ pub fn decode_audio(
     cancel: &CancellationToken,
     on_block: &mut dyn FnMut(AudioFormat, &[f32]) -> Result<()>,
 ) -> Result<AudioFormat> {
+    if crate::refcontainer::is_reference_file(path)? {
+        return crate::refcontainer::decode_audio(path, cancel, on_block);
+    }
     let mut format = open_format(path)?;
     let track = format
         .tracks()

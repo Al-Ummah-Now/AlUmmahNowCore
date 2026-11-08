@@ -11,6 +11,7 @@ use symphonia::core::errors::Error as SymphoniaError;
 
 use crate::audio::{open_error, open_format};
 use crate::isobmff::{self, Movie, Trak};
+use crate::refcontainer;
 
 /// The container family of a probed file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -24,6 +25,8 @@ pub enum ContainerFormat {
     Aac,
     Flac,
     Ogg,
+    /// The software backend's reference container (`crate::job::SoftwareBackend`).
+    Reference,
     /// Unknown to the sniffer but readable by the audio demuxer.
     Other,
 }
@@ -82,7 +85,14 @@ pub fn probe_file(path: &Path) -> Result<MediaInfo> {
     drop(file);
     let head = &head[..head_len];
 
-    let (container, duration_ms, tracks) = if isobmff::sniff(head) {
+    let (container, duration_ms, tracks) = if refcontainer::sniff(head) {
+        let header = refcontainer::read_header(path)?.0;
+        (
+            ContainerFormat::Reference,
+            header.tracks.iter().map(|t| t.duration_ms).max(),
+            header.track_infos(),
+        )
+    } else if isobmff::sniff(head) {
         let movie = isobmff::parse_file(path)?;
         let tracks = movie.tracks.iter().enumerate().map(iso_track).collect::<Vec<_>>();
         (iso_container(&movie), iso_duration(&movie), tracks)
