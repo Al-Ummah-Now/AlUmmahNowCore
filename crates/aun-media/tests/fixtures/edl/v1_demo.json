@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "id": "demo",
+  "metadata": {
+    "title": "محاضرة",
+    "description": {
+      "ar": "وصف",
+      "en": "Description"
+    },
+    "createdAtMs": 1762560000000,
+    "updatedAtMs": 1762560000000
+  },
+  "settings": {
+    "width": 1280,
+    "height": 720,
+    "fps": 30.0,
+    "sampleRate": 48000,
+    "channels": 2
+  },
+  "sources": [
+    {
+      "id": "cam",
+      "path": "/media/cam.mp4",
+      "durationMs": 60000,
+      "video": {
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": 30.0
+      },
+      "audio": {
+        "codec": "aac",
+        "sampleRate": 48000,
+        "channels": 2
+      },
+      "keyframesMs": [
+        0,
+        2000,
+        4000,
+        6000,
+        8000,
+        10000,
+        12000,
+        14000,
+        16000,
+        18000,
+        20000
+      ]
+    }
+  ],
+  "tracks": [
+    {
+      "id": "v1",
+      "kind": "video",
+      "clips": [
+        {
+          "id": "a",
+          "sourceId": "cam",
+          "inMs": 0,
+          "outMs": 10000,
+          "timelineStartMs": 0
+        },
+        {
+          "id": "b",
+          "sourceId": "cam",
+          "inMs": 12000,
+          "outMs": 20000,
+          "timelineStartMs": 10000
+        }
+      ]
+    },
+    {
+      "id": "t1",
+      "kind": "title",
+      "titles": [
+        {
+          "id": "title1",
+          "startMs": 0,
+          "durationMs": 3000,
+          "text": {
+            "ar": "بسم الله",
+            "en": "In the name of Allah"
+          },
+          "style": {
+            "fontFamily": "Amiri",
+            "sizePt": 48.0,
+            "color": "#FFFFFF",
+            "position": "lowerThird"
+          }
+        }
+      ]
+    },
+    {
+      "id": "c1",
+      "kind": "caption",
+      "captions": [
+        {
+          "id": "cue1",
+          "startMs": 500,
+          "endMs": 2500,
+          "text": "مرحبا",
+          "locale": "ar"
+        }
+      ]
+    }
+  ],
+  "markers": [
+    {
+      "id": "m1",
+      "timeMs": 0,
+      "title": {
+        "en": "Start"
+      },
+      "chapter": true
+    },
+    {
+      "id": "m2",
+      "timeMs": 5000,
+      "title": {
+        "en": "Note"
+      }
+    }
+  ]
+}

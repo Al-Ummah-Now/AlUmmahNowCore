@@ -1,0 +1,44 @@
+{
+  "name": "Friday khutbah",
+  "width": 1280,
+  "height": 720,
+  "fps": 25.0,
+  "assets": [
+    {
+      "file": "cam.mp4",
+      "duration": 60.0,
+      "width": 1280,
+      "height": 720,
+      "hasAudio": true
+    },
+    {
+      "file": "nasheed.wav",
+      "duration": 30.0,
+      "hasAudio": true
+    }
+  ],
+  "clips": [
+    {
+      "file": "cam.mp4",
+      "start": 0.0,
+      "in": 1.5,
+      "out": 11.5
+    },
+    {
+      "file": "nasheed.wav",
+      "start": 2.0,
+      "in": 0.0,
+      "out": 5.25
+    }
+  ],
+  "chapters": [
+    {
+      "at": 0.0,
+      "title": "Opening"
+    },
+    {
+      "at": 6.5,
+      "title": "Main topic"
+    }
+  ]
+}

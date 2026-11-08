@@ -5,6 +5,7 @@
 //! | [`probe`] | 30.1 | container/codec probing (ISO BMFF parser, Symphonia for audio) |
 //! | [`audio`] | 30.1 | streaming audio decode |
 //! | [`analysis`] | 30.1 | EBU R128 loudness, silence and scene-change detection |
+//! | [`edl`] | 30.5 | versioned edit project, operations, render planning |
 //! | [`job`] | 30.2 | presets, `JobPlan` DAG, runner, backends, conformance suite |
 //! | [`waveform`] | 30.3 | multi-resolution min/max peaks |
 //! | [`thumbnails`] | 30.3 | scene-aware filmstrip timestamps |
@@ -15,6 +16,7 @@
 
 pub mod analysis;
 pub mod audio;
+pub mod edl;
 mod isobmff;
 pub mod job;
 pub mod probe;
