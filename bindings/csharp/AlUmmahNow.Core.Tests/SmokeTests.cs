@@ -96,4 +96,17 @@ public class SmokeTests
         engine.SetBandwidthLimit(1_000_000);
         engine.Shutdown();
     }
+
+    [Fact]
+    public async Task MediaSurface()
+    {
+        Assert.True(AunCoreMethods.EdlSchemaVersion() >= 1);
+        Assert.Contains(AunCoreMethods.TranscriptionModelCatalog(), m => m.Tier == ModelTier.Tiny);
+        Assert.NotEmpty(AunCoreMethods.MediaSelectThumbnailTimestamps(60_000, new SceneChange[0], AunCoreMethods.ThumbnailConfigDefault()));
+        var vtt = AunCoreMethods.TranscriptToWebvtt(
+            "{\"language\":\"ar\",\"segments\":[{\"start_ms\":0,\"end_ms\":1500,\"text\":\"بسم الله\",\"words\":[]}]}",
+            AunCoreMethods.SubtitleOptionsDefault());
+        Assert.StartsWith("WEBVTT", vtt);
+        await Assert.ThrowsAnyAsync<AunException>(() => AunCoreMethods.MediaProbeJson("/nonexistent.mp4"));
+    }
 }
