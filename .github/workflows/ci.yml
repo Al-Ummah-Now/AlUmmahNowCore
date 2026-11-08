@@ -1,0 +1,118 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    name: fmt, clippy, licences, bindings drift
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - run: cargo deny check licenses bans sources
+      - name: Committed Swift bindings match the Rust FFI
+        run: |
+          scripts/gen-bindings.sh swift
+          diff -u apple/Sources/AunCore/AunCore.swift bindings/swift/generated/AunCore.swift \
+            || { echo "::error::apple/Sources/AunCore/AunCore.swift is stale: run scripts/gen-bindings.sh swift and copy it"; exit 1; }
+      - name: Generated API client matches the pinned OpenAPI
+        if: hashFiles('tools/codegen/openapi_to_rust.py') != ''
+        run: |
+          python3 tools/codegen/openapi_to_rust.py spec/openapi/api-videos.json /tmp/generated.rs
+          rustfmt --edition 2024 /tmp/generated.rs
+          diff -u crates/aun-api/src/generated.rs /tmp/generated.rs \
+            || { echo "::error::crates/aun-api/src/generated.rs is stale: rerun the generator"; exit 1; }
+
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace --all-targets
+      - run: cargo test --workspace --doc
+
+  swift:
+    name: Swift smoke test (macOS)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - run: scripts/build-xcframework.sh --macos-only
+      - run: AUN_LOCAL_XCFRAMEWORK=1 swift test
+
+  kotlin:
+    name: Kotlin JVM smoke test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v6
+      - run: scripts/gen-bindings.sh kotlin
+      - working-directory: bindings/kotlin
+        run: AUN_SKIP_ANDROID=1 ./gradlew --no-daemon :jvm-smoke:test
+
+  csharp:
+    name: C# smoke test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/uniffi-bindgen-cs
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 8.0.x
+      - run: scripts/gen-bindings.sh csharp
+      - run: dotnet test bindings/csharp/AlUmmahNow.Core.Tests
+
+  build:
+    name: cross-build + package
+    uses: ./.github/workflows/build.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      publish: false

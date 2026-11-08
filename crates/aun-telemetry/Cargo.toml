@@ -1,0 +1,15 @@
+[package]
+name = "aun-telemetry"
+description = "Consent-gated analytics, QoE events and crash breadcrumbs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+aun-common.workspace = true
+
+
+[lints]
+workspace = true

@@ -1,0 +1,235 @@
+# Cross-builds every target and packages the per-platform artifacts.
+# Called by ci.yml (validate only) and release.yml (publish: true).
+name: build
+
+on:
+  workflow_call:
+    inputs:
+      publish:
+        description: Publish the AAR (GitHub Packages Maven) and the NuGet package (GitHub Packages)
+        type: boolean
+        default: false
+
+env:
+  CARGO_TERM_COLOR: always
+  UNIFFI_BINDGEN_CS: v0.11.1+v0.31.0
+
+jobs:
+  apple:
+    name: apple (iOS, iOS sim, macOS universal, tvOS)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin,aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
+      - name: Nightly for tvOS (tier 3, -Zbuild-std)
+        run: rustup toolchain install nightly --profile minimal --component rust-src
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: apple
+      - name: Build XCFramework
+        run: scripts/build-xcframework.sh
+      - name: Swift smoke test against the XCFramework
+        run: AUN_LOCAL_XCFRAMEWORK=1 swift test
+      - name: macOS universal dylib (for the NuGet osx runtime)
+        run: |
+          cargo build -p aun-ffi --lib --release --target aarch64-apple-darwin
+          cargo build -p aun-ffi --lib --release --target x86_64-apple-darwin
+          mkdir -p dist/osx
+          lipo -create target/aarch64-apple-darwin/release/libaun_core.dylib \
+            target/x86_64-apple-darwin/release/libaun_core.dylib -output dist/osx/libaun_core.dylib
+      - uses: actions/upload-artifact@v7
+        with:
+          name: apple-xcframework
+          path: |
+            build/AunCoreFFI.xcframework.zip
+            apple/Sources/AunCore/AunCore.swift
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-osx
+          path: dist/osx/libaun_core.dylib
+          if-no-files-found: error
+
+  android:
+    name: android (arm64-v8a, armeabi-v7a, x86_64)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: android
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk
+      - name: Build .so per ABI
+        # The runner image ships an NDK; ANDROID_NDK_LATEST_HOME points at it.
+        run: ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_NDK_LATEST_HOME}" scripts/build-android.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-android
+          path: bindings/kotlin/aun-core/src/main/jniLibs
+          if-no-files-found: error
+
+  windows:
+    name: windows (${{ matrix.target }})
+    runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            rid: win-x64
+          - target: aarch64-pc-windows-msvc
+            rid: win-arm64
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - run: cargo build -p aun-ffi --lib --release --target ${{ matrix.target }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-${{ matrix.rid }}
+          path: target/${{ matrix.target }}/release/aun_core.dll
+          if-no-files-found: error
+
+  linux:
+    name: linux (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+            rid: linux-x64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-22.04-arm
+            rid: linux-arm64
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      # Built on 22.04 so the .so links against an older glibc (2.35) and runs on more distros.
+      - run: cargo build -p aun-ffi --lib --release --target ${{ matrix.target }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-${{ matrix.rid }}
+          path: target/${{ matrix.target }}/release/libaun_core.so
+          if-no-files-found: error
+
+  bindings:
+    name: generate Kotlin + C# sources
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: bindings
+      - uses: ./.github/actions/uniffi-bindgen-cs
+      - run: scripts/gen-bindings.sh kotlin --release && scripts/gen-bindings.sh csharp --release
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bindings-sources
+          path: |
+            bindings/kotlin/generated
+            bindings/csharp/generated
+          if-no-files-found: error
+
+  aar:
+    name: package AAR
+    needs: [android, bindings]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: native-android
+          path: bindings/kotlin/aun-core/src/main/jniLibs
+      - uses: actions/download-artifact@v8
+        with:
+          name: bindings-sources
+          path: bindings
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Assemble AAR
+        working-directory: bindings/kotlin
+        run: ./gradlew --no-daemon :aun-core:assembleRelease
+      - name: Check the AAR carries every ABI
+        run: |
+          unzip -l bindings/kotlin/aun-core/build/outputs/aar/aun-core-release.aar | tee /tmp/aar.txt
+          for abi in arm64-v8a armeabi-v7a x86_64; do grep -q "jni/$abi/libaun_core.so" /tmp/aar.txt; done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android-aar
+          path: bindings/kotlin/aun-core/build/outputs/aar/aun-core-release.aar
+          if-no-files-found: error
+      - name: Publish to GitHub Packages Maven
+        if: inputs.publish
+        working-directory: bindings/kotlin
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./gradlew --no-daemon :aun-core:publishReleasePublicationToGitHubPackagesRepository
+
+  nuget:
+    name: package NuGet
+    needs: [apple, windows, linux, bindings]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: bindings-sources
+          path: bindings
+      - name: Stage native runtimes
+        uses: actions/download-artifact@v8
+        with:
+          pattern: native-*
+          path: staging
+      - run: |
+          set -euo pipefail
+          R=bindings/csharp/AlUmmahNow.Core/runtimes
+          for rid in win-x64 win-arm64 linux-x64 linux-arm64 osx; do
+            mkdir -p "$R/$rid/native" && cp staging/native-$rid/* "$R/$rid/native/"
+          done
+          find "$R" -type f
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 8.0.x
+      - name: Pack
+        run: |
+          VERSION=$(grep -m1 '^version' Cargo.toml | sed -E 's/version = "(.*)"/\1/')
+          dotnet pack bindings/csharp/AlUmmahNow.Core -c Release -p:AunCoreVersion=$VERSION -o dist
+          unzip -l dist/*.nupkg | grep runtimes/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nuget
+          path: dist/*.nupkg
+          if-no-files-found: error
+      - name: Publish to GitHub Packages NuGet
+        if: inputs.publish
+        run: >
+          dotnet nuget push "dist/*.nupkg"
+          --source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+          --api-key ${{ secrets.GITHUB_TOKEN }} --skip-duplicate

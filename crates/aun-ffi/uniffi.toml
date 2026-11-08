@@ -1,0 +1,14 @@
+[bindings.swift]
+module_name = "AunCore"
+ffi_module_name = "AunCoreFFI"
+ffi_module_filename = "AunCoreFFI"
+generate_module_map = true
+
+[bindings.kotlin]
+package_name = "net.alummahnow.core"
+cdylib_name = "aun_core"
+
+[bindings.csharp]
+namespace = "AlUmmahNow.Core"
+cdylib_name = "aun_core"
+access_modifier = "public"

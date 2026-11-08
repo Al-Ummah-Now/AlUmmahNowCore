@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- NuGet package AlUmmahNow.Core: uniffi-bindgen-cs bindings + native aun_core per RID.
+       Native libraries are staged by CI into runtimes/<rid>/native/ before `dotnet pack`. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>AlUmmahNow.Core</RootNamespace>
+    <PackageId>AlUmmahNow.Core</PackageId>
+    <Version>$(AunCoreVersion)</Version>
+    <Version Condition="'$(AunCoreVersion)' == ''">0.0.0-local</Version>
+    <Authors>Al Ummah Now</Authors>
+    <Description>Al Ummah Now shared Rust core (aun-core): C# bindings for Windows, Linux, macOS and Tizen.</Description>
+    <RepositoryUrl>https://github.com/Al-Ummah-Now/AlUmmahNowCore</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Al-Ummah-Now/AlUmmahNowCore</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;CS1573;CS1570;CS8981;CS0618</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../generated/*.cs" />
+    <None Include="README.md" Pack="true" PackagePath="/" />
+    <None Include="runtimes/**/*" Pack="true" PackagePath="runtimes/" />
+  </ItemGroup>
+</Project>

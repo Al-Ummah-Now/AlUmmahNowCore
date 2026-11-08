@@ -1,0 +1,15 @@
+[package]
+name = "aun-auth"
+description = "OAuth 2 + PKCE S256, device authorization (RFC 8628), multi-account, token storage adapter"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+aun-common.workspace = true
+
+
+[lints]
+workspace = true

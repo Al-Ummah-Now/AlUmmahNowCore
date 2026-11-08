@@ -1,0 +1,15 @@
+[package]
+name = "aun-upload"
+description = "Resumable TUS upload engine for the api-videos TUS proxy"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+aun-common.workspace = true
+
+
+[lints]
+workspace = true

@@ -1,0 +1,107 @@
+# Release: push tag vX.Y.Z on a commit that is on main. Never release by hand.
+#   1. verify the tag is on main and matches workspace.package.version
+#   2. build every target + package (build.yml), publishing the AAR and NuGet to GitHub Packages
+#   3. create the GitHub release with the XCFramework, AAR, NuGet and checksums
+#   4. commit Package.swift (release URL + checksum) + Swift sources to main and tag it X.Y.Z for SwiftPM
+name: release
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+', 'v[0-9]+.[0-9]+.[0-9]+-*']
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: v
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          CARGO_VERSION=$(grep -m1 '^version' Cargo.toml | sed -E 's/version = "(.*)"/\1/')
+          [[ "$VERSION" == "$CARGO_VERSION" ]] || { echo "::error::tag $TAG != Cargo.toml version $CARGO_VERSION"; exit 1; }
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "::error::$TAG is not on main"; exit 1; }
+          grep -q "^## \[$VERSION\]" CHANGELOG.md || { echo "::error::CHANGELOG.md has no [$VERSION] section"; exit 1; }
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: verify
+    uses: ./.github/workflows/build.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      publish: true
+
+  github-release:
+    needs: [verify, build]
+    runs-on: macos-15
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+      - name: Collect release assets
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp artifacts/apple-xcframework/build/AunCoreFFI.xcframework.zip dist/
+          (cd artifacts/apple-xcframework/apple/Sources && zip -qr ../../../../dist/AunCore-swift-sources.zip AunCore)
+          cp artifacts/android-aar/aun-core-release.aar "dist/aun-core-$VERSION.aar"
+          cp artifacts/nuget/*.nupkg dist/
+          (cd artifacts/bindings-sources && zip -qr ../../dist/aun-core-bindings-sources.zip .)
+          echo "XCF_CHECKSUM=$(swift package compute-checksum dist/AunCoreFFI.xcframework.zip)" >> "$GITHUB_ENV"
+          (cd dist && shasum -a 256 * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+      - name: Release notes from CHANGELOG
+        run: |
+          awk -v v="$VERSION" '$0 ~ "^## \\[" v "\\]" {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md > notes.md
+          cat >> notes.md <<EOF
+
+          ### Install
+          - **Swift Package:** \`.package(url: "https://github.com/${GITHUB_REPOSITORY}", exact: "$VERSION")\` (XCFramework checksum \`$XCF_CHECKSUM\`)
+          - **Android:** \`implementation("net.alummahnow:aun-core:$VERSION")\` from \`https://maven.pkg.github.com/${GITHUB_REPOSITORY}\`
+          - **.NET:** \`dotnet add package AlUmmahNow.Core --version $VERSION\` from \`https://nuget.pkg.github.com/${GITHUB_REPOSITORY_OWNER}/index.json\`
+          EOF
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          PRERELEASE=""
+          [[ "$VERSION" == *-* ]] && PRERELEASE="--prerelease"
+          gh release create "$TAG" dist/* --title "$TAG" --notes-file notes.md --verify-tag $PRERELEASE
+      - name: Point Package.swift at this release and tag it for SwiftPM
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          cp artifacts/apple-xcframework/apple/Sources/AunCore/AunCore.swift apple/Sources/AunCore/AunCore.swift
+          sed -i '' -E "s/^let releaseVersion = \".*\"/let releaseVersion = \"$VERSION\"/; s/^let releaseChecksum = \".*\"/let releaseChecksum = \"$XCF_CHECKSUM\"/" Package.swift
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Package.swift apple/Sources/AunCore/AunCore.swift
+          git commit -m "release: Package.swift for $TAG [skip ci]"
+          # SwiftPM prefers the plain X.Y.Z tag over vX.Y.Z, so consumers resolve this commit.
+          git tag -a "$VERSION" -m "SwiftPM release for $TAG"
+          git push origin HEAD:main "refs/tags/$VERSION"
