@@ -32,6 +32,14 @@ FFI; such changes are listed under **Breaking**.
   (direction detection, FSI/PDI isolation of mixed-direction arguments). Bundles sync from
   `/api/i18n/config|metadata|translations/{locale}` into an atomic on-disk cache validated by
   checksums. Built-in bundles cover offline first launch. Bundle schema in `schemas/i18n/`.
+- `aun-telemetry`: consent-gated `Telemetry` recorder. With consent `unknown` or `denied` nothing
+  is recorded or stored; `crash_only` keeps crash reports and breadcrumbs only; narrowing consent
+  purges the memory and disk buffer. It scrubs PII (sensitive keys, e-mails, tokens/JWTs, URL
+  queries, opaque secrets, phone numbers), samples by session (never crashes), caps size, keeps an
+  atomic persistent buffer, a breadcrumb ring buffer attached to the next crash report, and batched
+  flush with retry/drop semantics. `QoeTracker` measures startup time, rebuffer count/duration/ratio,
+  bitrate switches and stable playback error codes. Sinks: `HttpSink` (JSON batches to a
+  configurable URL), `ApiPerformanceSink` (QoE to `POST /api/analytics/events`), `NoopSink`.
 - `aun-api`: client generated from the api-videos OpenAPI (`spec/openapi/api-videos.json`,
   `tools/codegen/openapi_to_rust.py`): typed params/bodies/responses for every operation,
   request builders, retries with jittered backoff (idempotent requests or an `Idempotency-Key`),
