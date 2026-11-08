@@ -7,6 +7,8 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-08
+
 ### Added
 - `aun-media`: `UploadHandoff` record and builder linking a finished job to `aun-upload`.
 - `aun-media`: Whisper model manager (resumable, SHA-256 verified downloads), WebVTT and SRT writers,

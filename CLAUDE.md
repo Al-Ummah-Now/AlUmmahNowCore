@@ -13,8 +13,11 @@ Read `docs/PLAN.md` first: layout, FFI rules, error and async model, adapters, t
 - Releases only via tag `vX.Y.Z` on `main` → `release.yml` (see `docs/RELEASING.md`; the workflow
   never pushes to a branch). Never publish by hand. Update
   `CHANGELOG.md` (Unreleased) in every PR; a breaking FFI change goes under **Breaking**.
-- Small PRs into `main` with CI green. `main` needs the owner's approval: never merge PRs yourself
-  and never use `--admin`; report green PRs as ready. Stack follow-up work on PR branches.
+- Small PRs into `main` with CI green. Merge with **rebase merges only, never squash**
+  (`gh pr merge --rebase`): a squash commit is authored with the merger's account email, which
+  would leak a private address in this public repo; a rebase merge keeps each commit's noreply
+  author. Commit as `meywd <3499969+meywd@users.noreply.github.com>`. Stack follow-up work on PR
+  branches and rebase it onto `main` after each merge.
 - Out-of-scope work: open a GitHub issue labelled `queue`.
 
 ## Commands
