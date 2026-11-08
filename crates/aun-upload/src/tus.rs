@@ -4,6 +4,7 @@
 
 use std::collections::BTreeMap;
 
+use aun_common::security::ensure_secure_url;
 use aun_common::{Error, Result};
 use base64::Engine;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
@@ -87,6 +88,24 @@ impl TusClient {
         Self { http }
     }
 
+    /// Every TUS request goes through here first. The upload URL must be https (http only for
+    /// localhost). On the proxy target, where the account's bearer token is attached, it must
+    /// also share the endpoint's origin, so a hostile `Location` can't collect the token.
+    fn check_url(target: &TusTarget, url: &str) -> Result<()> {
+        ensure_secure_url(url)?;
+        if let TusTarget::Proxy { endpoint } = target {
+            let parse = |u: &str| {
+                reqwest::Url::parse(u.trim()).map_err(|_| Error::InvalidInput(format!("bad TUS URL {u:?}")))
+            };
+            if parse(endpoint)?.origin() != parse(url)?.origin() {
+                return Err(Error::InvalidInput(format!(
+                    "refusing TUS upload URL {url:?}: not on the endpoint's origin"
+                )));
+            }
+        }
+        Ok(())
+    }
+
     fn headers(target: &TusTarget, bearer: Option<&str>) -> Result<HeaderMap> {
         let mut h = HeaderMap::new();
         h.insert("Tus-Resumable", HeaderValue::from_static(TUS_VERSION));
@@ -119,6 +138,7 @@ impl TusClient {
         length: u64,
         metadata: &BTreeMap<String, String>,
     ) -> Result<String> {
+        ensure_secure_url(target.endpoint())?;
         let mut h = Self::headers(target, bearer)?;
         h.insert("Upload-Length", HeaderValue::from(length));
         if let Ok(v) = HeaderValue::from_str(&encode_metadata(metadata)) {
@@ -148,11 +168,14 @@ impl TusClient {
         let abs = base
             .join(loc)
             .map_err(|e| Error::Internal(format!("bad Location {loc}: {e}")))?;
-        Ok(abs.into())
+        let abs: String = abs.into();
+        Self::check_url(target, &abs)?;
+        Ok(abs)
     }
 
     /// HEAD: the server's current offset.
     pub async fn offset(&self, target: &TusTarget, bearer: Option<&str>, upload_url: &str) -> Result<u64> {
+        Self::check_url(target, upload_url)?;
         let resp = self
             .http
             .head(upload_url)
@@ -180,6 +203,7 @@ impl TusClient {
         body: reqwest::Body,
         len: u64,
     ) -> Result<u64> {
+        Self::check_url(target, upload_url)?;
         let mut h = Self::headers(target, bearer)?;
         h.insert("Upload-Offset", HeaderValue::from(offset));
         h.insert(
@@ -207,6 +231,7 @@ impl TusClient {
 
     /// Termination extension (best effort when the user cancels).
     pub async fn terminate(&self, target: &TusTarget, bearer: Option<&str>, upload_url: &str) -> Result<()> {
+        Self::check_url(target, upload_url)?;
         let resp = self
             .http
             .delete(upload_url)
@@ -225,6 +250,65 @@ impl TusClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn proxy(endpoint: &str) -> TusTarget {
+        TusTarget::Proxy {
+            endpoint: endpoint.into(),
+        }
+    }
+
+    #[test]
+    fn upload_urls_must_be_secure_and_same_origin_on_the_proxy() {
+        let p = proxy("https://api.example.com/api/videos/tus");
+        assert!(TusClient::check_url(&p, "https://api.example.com/api/videos/tus/abc").is_ok());
+        for bad in [
+            "http://api.example.com/api/videos/tus/abc",
+            "https://evil.example/api/videos/tus/abc",
+            "https://api.example.com:8443/tus/abc",
+            "ftp://api.example.com/x",
+            "not a url",
+        ] {
+            assert!(TusClient::check_url(&p, bad).is_err(), "{bad}");
+        }
+        assert!(TusClient::check_url(&proxy("http://127.0.0.1:9/tus"), "http://127.0.0.1:9/tus/a").is_ok());
+
+        // Direct targets carry per-upload signatures, not the bearer: any https host is fine.
+        let d = TusTarget::Direct {
+            endpoint: "https://video.example.net/tusupload".into(),
+            headers: BTreeMap::new(),
+        };
+        assert!(TusClient::check_url(&d, "https://cdn.example.org/tusupload/xyz").is_ok());
+        assert!(TusClient::check_url(&d, "http://cdn.example.org/tusupload/xyz").is_err());
+    }
+
+    #[tokio::test]
+    async fn create_refuses_insecure_endpoints_and_foreign_locations() {
+        use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        let client = TusClient::new(
+            aun_api::http_client(&aun_api::ApiConfig::new("https://api.example.com")).unwrap(),
+        );
+        let meta = BTreeMap::new();
+
+        let err = client
+            .create(&proxy("http://uploads.example.com/tus"), Some("t"), 10, &meta)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::InvalidInput(_)), "{err:?}");
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(201).insert_header("Location", "https://evil.example/tus/abc"),
+            )
+            .mount(&server)
+            .await;
+        let err = client
+            .create(&proxy(&format!("{}/tus", server.uri())), Some("t"), 10, &meta)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::InvalidInput(_)), "{err:?}");
+    }
 
     #[test]
     fn metadata_is_base64_and_sorted() {

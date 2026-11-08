@@ -506,3 +506,40 @@ async fn rejects_bad_input() {
     assert!(matches!(engine.enqueue(r), Err(Error::InvalidInput(_))));
     assert!(UploadEngine::open(api(&server), dir.path().join("q"), "", cfg()).is_err());
 }
+
+#[tokio::test]
+async fn foreign_upload_location_fails_without_sending_the_token() {
+    let server = MockServer::start().await;
+    mount_api(&server, 1).await;
+    // A hostile proxy response pointing the upload (and our bearer token) at another origin.
+    Mock::given(method("POST"))
+        .and(path("/api/videos/tus"))
+        .respond_with(ResponseTemplate::new(201).insert_header("Location", "https://evil.example/tus/s1"))
+        .mount(&server)
+        .await;
+    let dir = tempfile::tempdir().unwrap();
+    let file = video(dir.path(), "a.mp4", 10 * KIB);
+    let engine = UploadEngine::open(api(&server), dir.path().join("q"), "u1", cfg()).unwrap();
+    let id = engine.enqueue(request(&file)).unwrap();
+    engine.start();
+    let m = wait_for(&engine, &id, UploadState::Failed).await;
+    assert_eq!(m.upload_url, None);
+    let reqs = server.received_requests().await.unwrap();
+    assert!(!reqs.iter().any(|r| r.method.as_str() == "PATCH"));
+    engine.shutdown();
+}
+
+#[tokio::test]
+async fn insecure_tus_endpoint_override_is_refused() {
+    let server = MockServer::start().await;
+    mount_api(&server, 1).await;
+    let dir = tempfile::tempdir().unwrap();
+    let file = video(dir.path(), "a.mp4", 10 * KIB);
+    let mut c = cfg();
+    c.tus_endpoint = Some("http://uploads.example.com/api/videos/tus".into());
+    let engine = UploadEngine::open(api(&server), dir.path().join("q"), "u1", c).unwrap();
+    let id = engine.enqueue(request(&file)).unwrap();
+    engine.start();
+    wait_for(&engine, &id, UploadState::Failed).await;
+    engine.shutdown();
+}
