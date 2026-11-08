@@ -18,6 +18,8 @@ FFI; such changes are listed under **Breaking**.
   peaks, scene-aware thumbnail timestamps.
 - `aun-media`: encode presets, validated `JobPlan` DAG, job runner with pause/resume/cancel, software
   reference backend and a backend conformance suite.
+- `aun-media`: versioned EDL project format (`schemas/edl/v1.json`), migrations, validation, ripple
+  delete/split/trim, and render planning that decides stream copy versus re-encode per segment.
 
 ## [0.1.0] - 2026-11-08
 

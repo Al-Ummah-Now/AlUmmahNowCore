@@ -23,6 +23,7 @@ pub use plan::{
     StreamType, TransitionKind, VideoCodec,
 };
 pub use planner::{EncodeRequest, ThumbnailRequest, fit_dimensions, plan_encode, plan_proxy};
+pub(crate) use planner::{pick_audio_target, pick_video_target};
 pub use preset::{AudioSettings, EncodePreset, PresetKind, VideoSettings};
 pub use runner::{JobEvent, JobHandle, JobListener, JobOutcome, JobRunner, JobState};
 pub use software::{SoftwareBackend, SyntheticSource};
