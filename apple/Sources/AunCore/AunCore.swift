@@ -457,6 +457,22 @@ fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterInt32: FfiConverterPrimitive {
+    typealias FfiType = Int32
+    typealias SwiftType = Int32
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Int32 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: Int32, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
     typealias FfiType = UInt64
     typealias SwiftType = UInt64
@@ -2524,6 +2540,615 @@ public func FfiConverterTypeTokenSource_lower(_ value: TokenSource) -> UInt64 {
 
 
 
+
+
+/**
+ * The resumable upload queue for one account. Uploads survive app restarts: create the engine
+ * again with the same `store_dir` and `account_id` and they continue where they stopped.
+ */
+public protocol UploadEngineProtocol: AnyObject, Sendable {
+    
+    func addListener(listener: UploadListener) 
+    
+    /**
+     * Stops the upload and discards the partial upload on the server.
+     */
+    func cancel(id: String) async throws 
+    
+    /**
+     * Queues a file; returns the upload id.
+     */
+    func enqueue(request: UploadRequest) throws  -> String
+    
+    /**
+     * Queues many files (bulk import); stops at the first invalid one.
+     */
+    func enqueueAll(requests: [UploadRequest]) throws  -> [String]
+    
+    /**
+     * Uploads with this SHA-256 (duplicate detection).
+     */
+    func findByChecksum(sha256: String) throws  -> [UploadInfo]
+    
+    func get(id: String) throws  -> UploadInfo?
+    
+    /**
+     * Every upload, highest priority then oldest first.
+     */
+    func list() throws  -> [UploadInfo]
+    
+    func pause(id: String) throws 
+    
+    /**
+     * Call when connectivity changes or the app returns to the foreground.
+     */
+    func poke() 
+    
+    /**
+     * Forgets a finished, failed or cancelled upload.
+     */
+    func remove(id: String) throws 
+    
+    func resume(id: String) throws 
+    
+    func retry(id: String) throws 
+    
+    func setBandwidthLimit(bytesPerSec: UInt64?) 
+    
+    func setMaxParallel(maxParallel: UInt32) 
+    
+    func setWifiOnly(wifiOnly: Bool) 
+    
+    /**
+     * Stops transfers (they resume next time an engine is created for this store).
+     */
+    func shutdown() 
+    
+    /**
+     * Desktop only: queue new video files that appear in `dir`, using `template` for the
+     * metadata (its `file_path` is replaced; the title defaults to the file name when empty).
+     * Throws `Unsupported` on mobile and TV.
+     */
+    func watchFolder(dir: String, recursive: Bool, template: UploadRequest) throws 
+    
+}
+/**
+ * The resumable upload queue for one account. Uploads survive app restarts: create the engine
+ * again with the same `store_dir` and `account_id` and they continue where they stopped.
+ */
+open class UploadEngine: UploadEngineProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aun_core_fn_clone_uploadengine(self.handle, $0) }
+    }
+    /**
+     * `client` must be bound to `account_id` (use `AuthManager.api_client(config, account_id)`).
+     * `connectivity`: pass the OS adapter so Wi-Fi-only and offline waiting work.
+     */
+public convenience init(client: ApiClient, storeDir: String, accountId: String, config: UploadConfig, connectivity: Connectivity?)throws  {
+    let handle =
+        try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_constructor_uploadengine_new(
+        FfiConverterTypeApiClient_lower(client),
+        FfiConverterString.lower(storeDir),
+        FfiConverterString.lower(accountId),
+        FfiConverterTypeUploadConfig_lower(config),
+        FfiConverterOptionTypeConnectivity.lower(connectivity),$0
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aun_core_fn_free_uploadengine(handle, $0) }
+    }
+
+    
+
+    
+open func addListener(listener: UploadListener)  {try! rustCall() {
+    uniffi_aun_core_fn_method_uploadengine_add_listener(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeUploadListener_lower(listener),$0
+    )
+}
+}
+    
+    /**
+     * Stops the upload and discards the partial upload on the server.
+     */
+open func cancel(id: String)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_uploadengine_cancel(
+                    self.uniffiCloneHandle(),
+                    FfiConverterString.lower(id)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_void,
+            completeFunc: ffi_aun_core_rust_future_complete_void,
+            freeFunc: ffi_aun_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+    /**
+     * Queues a file; returns the upload id.
+     */
+open func enqueue(request: UploadRequest)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_uploadengine_enqueue(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeUploadRequest_lower(request),$0
+    )
+})
+}
+    
+    /**
+     * Queues many files (bulk import); stops at the first invalid one.
+     */
+open func enqueueAll(requests: [UploadRequest])throws  -> [String]  {
+    return try  FfiConverterSequenceString.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_uploadengine_enqueue_all(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceTypeUploadRequest.lower(requests),$0
+    )
+})
+}
+    
+    /**
+     * Uploads with this SHA-256 (duplicate detection).
+     */
+open func findByChecksum(sha256: String)throws  -> [UploadInfo]  {
+    return try  FfiConverterSequenceTypeUploadInfo.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_uploadengine_find_by_checksum(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(sha256),$0
+    )
+})
+}
+    
+open func get(id: String)throws  -> UploadInfo?  {
+    return try  FfiConverterOptionTypeUploadInfo.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_uploadengine_get(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),$0
+    )
+})
+}
+    
+    /**
+     * Every upload, highest priority then oldest first.
+     */
+open func list()throws  -> [UploadInfo]  {
+    return try  FfiConverterSequenceTypeUploadInfo.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_uploadengine_list(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func pause(id: String)throws   {try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_uploadengine_pause(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),$0
+    )
+}
+}
+    
+    /**
+     * Call when connectivity changes or the app returns to the foreground.
+     */
+open func poke()  {try! rustCall() {
+    uniffi_aun_core_fn_method_uploadengine_poke(
+            self.uniffiCloneHandle(),$0
+    )
+}
+}
+    
+    /**
+     * Forgets a finished, failed or cancelled upload.
+     */
+open func remove(id: String)throws   {try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_uploadengine_remove(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),$0
+    )
+}
+}
+    
+open func resume(id: String)throws   {try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_uploadengine_resume(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),$0
+    )
+}
+}
+    
+open func retry(id: String)throws   {try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_uploadengine_retry(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),$0
+    )
+}
+}
+    
+open func setBandwidthLimit(bytesPerSec: UInt64?)  {try! rustCall() {
+    uniffi_aun_core_fn_method_uploadengine_set_bandwidth_limit(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionUInt64.lower(bytesPerSec),$0
+    )
+}
+}
+    
+open func setMaxParallel(maxParallel: UInt32)  {try! rustCall() {
+    uniffi_aun_core_fn_method_uploadengine_set_max_parallel(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(maxParallel),$0
+    )
+}
+}
+    
+open func setWifiOnly(wifiOnly: Bool)  {try! rustCall() {
+    uniffi_aun_core_fn_method_uploadengine_set_wifi_only(
+            self.uniffiCloneHandle(),
+        FfiConverterBool.lower(wifiOnly),$0
+    )
+}
+}
+    
+    /**
+     * Stops transfers (they resume next time an engine is created for this store).
+     */
+open func shutdown()  {try! rustCall() {
+    uniffi_aun_core_fn_method_uploadengine_shutdown(
+            self.uniffiCloneHandle(),$0
+    )
+}
+}
+    
+    /**
+     * Desktop only: queue new video files that appear in `dir`, using `template` for the
+     * metadata (its `file_path` is replaced; the title defaults to the file name when empty).
+     * Throws `Unsupported` on mobile and TV.
+     */
+open func watchFolder(dir: String, recursive: Bool, template: UploadRequest)throws   {try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_uploadengine_watch_folder(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(dir),
+        FfiConverterBool.lower(recursive),
+        FfiConverterTypeUploadRequest_lower(template),$0
+    )
+}
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeUploadEngine: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = UploadEngine
+
+    public static func lift(_ handle: UInt64) throws -> UploadEngine {
+        return UploadEngine(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: UploadEngine) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UploadEngine {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: UploadEngine, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUploadEngine_lift(_ handle: UInt64) throws -> UploadEngine {
+    return try FfiConverterTypeUploadEngine.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUploadEngine_lower(_ value: UploadEngine) -> UInt64 {
+    return FfiConverterTypeUploadEngine.lower(value)
+}
+
+
+
+
+
+
+/**
+ * Upload events (called on a background thread; hop to the UI thread yourself).
+ */
+public protocol UploadListener: AnyObject, Sendable {
+    
+    func onProgress(id: String, sentBytes: UInt64, totalBytes: UInt64) 
+    
+    func onState(id: String, state: UploadState, error: AunError?) 
+    
+}
+/**
+ * Upload events (called on a background thread; hop to the UI thread yourself).
+ */
+open class UploadListenerImpl: UploadListener, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aun_core_fn_clone_uploadlistener(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aun_core_fn_free_uploadlistener(handle, $0) }
+    }
+
+    
+
+    
+open func onProgress(id: String, sentBytes: UInt64, totalBytes: UInt64)  {try! rustCall() {
+    uniffi_aun_core_fn_method_uploadlistener_on_progress(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),
+        FfiConverterUInt64.lower(sentBytes),
+        FfiConverterUInt64.lower(totalBytes),$0
+    )
+}
+}
+    
+open func onState(id: String, state: UploadState, error: AunError?)  {try! rustCall() {
+    uniffi_aun_core_fn_method_uploadlistener_on_state(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),
+        FfiConverterTypeUploadState_lower(state),
+        FfiConverterOptionTypeAunError.lower(error),$0
+    )
+}
+}
+    
+
+    
+}
+
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfaceUploadListener {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    //
+    // This creates 1-element array, since this seems to be the only way to construct a const
+    // pointer that we can pass to the Rust code.
+    static let vtable: [UniffiVTableCallbackInterfaceUploadListener] = [UniffiVTableCallbackInterfaceUploadListener(
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            do {
+                try FfiConverterTypeUploadListener.handleMap.remove(handle: uniffiHandle)
+            } catch {
+                print("Uniffi callback interface UploadListener: handle missing in uniffiFree")
+            }
+        },
+        uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
+            do {
+                return try FfiConverterTypeUploadListener.handleMap.clone(handle: uniffiHandle)
+            } catch {
+                fatalError("Uniffi callback interface UploadListener: handle missing in uniffiClone")
+            }
+        },
+        onProgress: { (
+            uniffiHandle: UInt64,
+            id: RustBuffer,
+            sentBytes: UInt64,
+            totalBytes: UInt64,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterTypeUploadListener.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return uniffiObj.onProgress(
+                     id: try FfiConverterString.lift(id),
+                     sentBytes: try FfiConverterUInt64.lift(sentBytes),
+                     totalBytes: try FfiConverterUInt64.lift(totalBytes)
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCall(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn
+            )
+        },
+        onState: { (
+            uniffiHandle: UInt64,
+            id: RustBuffer,
+            state: RustBuffer,
+            error: RustBuffer,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterTypeUploadListener.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return uniffiObj.onState(
+                     id: try FfiConverterString.lift(id),
+                     state: try FfiConverterTypeUploadState_lift(state),
+                     error: try FfiConverterOptionTypeAunError.lift(error)
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCall(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn
+            )
+        }
+    )]
+}
+
+private func uniffiCallbackInitUploadListener() {
+    uniffi_aun_core_fn_init_callback_vtable_uploadlistener(UniffiCallbackInterfaceUploadListener.vtable)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeUploadListener: FfiConverter {
+    fileprivate static let handleMap = UniffiHandleMap<UploadListener>()
+
+    typealias FfiType = UInt64
+    typealias SwiftType = UploadListener
+
+    public static func lift(_ handle: UInt64) throws -> UploadListener {
+        if ((handle & 1) == 0) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return UploadListenerImpl(unsafeFromHandle: handle)
+        } else {
+            // Swift-generated handle, get the object from the handle map
+            return try handleMap.remove(handle: handle)
+        }
+    }
+
+    public static func lower(_ value: UploadListener) -> UInt64 {
+         if let rustImpl = value as? UploadListenerImpl {
+             // Rust-implemented object.  Clone the handle and return it
+            return rustImpl.uniffiCloneHandle()
+         } else {
+            // Swift object, generate a new vtable handle and return that.
+            return handleMap.insert(obj: value)
+         }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UploadListener {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: UploadListener, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUploadListener_lift(_ handle: UInt64) throws -> UploadListener {
+    return try FfiConverterTypeUploadListener.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUploadListener_lower(_ value: UploadListener) -> UInt64 {
+    return FfiConverterTypeUploadListener.lower(value)
+}
+
+
+
+
 /**
  * A signed-in account (no secrets).
  */
@@ -3275,6 +3900,310 @@ public func FfiConverterTypeRejectedWrite_lower(_ value: RejectedWrite) -> RustB
 }
 
 
+public struct UploadConfig: Equatable, Hashable {
+    /**
+     * Uploads at once, 1–5 (the server allows 5 concurrent sessions).
+     */
+    public var maxParallel: UInt32
+    /**
+     * Bytes/second across all uploads; `None` = unlimited.
+     */
+    public var bandwidthBytesPerSec: UInt64?
+    public var wifiOnly: Bool
+    /**
+     * Override the server's chunk size (bytes).
+     */
+    public var chunkSize: UInt64?
+    public var computeChecksum: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Uploads at once, 1–5 (the server allows 5 concurrent sessions).
+         */maxParallel: UInt32, 
+        /**
+         * Bytes/second across all uploads; `None` = unlimited.
+         */bandwidthBytesPerSec: UInt64?, wifiOnly: Bool, 
+        /**
+         * Override the server's chunk size (bytes).
+         */chunkSize: UInt64?, computeChecksum: Bool) {
+        self.maxParallel = maxParallel
+        self.bandwidthBytesPerSec = bandwidthBytesPerSec
+        self.wifiOnly = wifiOnly
+        self.chunkSize = chunkSize
+        self.computeChecksum = computeChecksum
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension UploadConfig: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeUploadConfig: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UploadConfig {
+        return
+            try UploadConfig(
+                maxParallel: FfiConverterUInt32.read(from: &buf), 
+                bandwidthBytesPerSec: FfiConverterOptionUInt64.read(from: &buf), 
+                wifiOnly: FfiConverterBool.read(from: &buf), 
+                chunkSize: FfiConverterOptionUInt64.read(from: &buf), 
+                computeChecksum: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: UploadConfig, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.maxParallel, into: &buf)
+        FfiConverterOptionUInt64.write(value.bandwidthBytesPerSec, into: &buf)
+        FfiConverterBool.write(value.wifiOnly, into: &buf)
+        FfiConverterOptionUInt64.write(value.chunkSize, into: &buf)
+        FfiConverterBool.write(value.computeChecksum, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUploadConfig_lift(_ buf: RustBuffer) throws -> UploadConfig {
+    return try FfiConverterTypeUploadConfig.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUploadConfig_lower(_ value: UploadConfig) -> RustBuffer {
+    return FfiConverterTypeUploadConfig.lower(value)
+}
+
+
+/**
+ * One upload's status (no secrets).
+ */
+public struct UploadInfo: Equatable, Hashable {
+    public var id: String
+    public var filePath: String
+    public var title: String
+    public var state: UploadState
+    public var sentBytes: UInt64
+    public var totalBytes: UInt64
+    /**
+     * Set once the server created the video.
+     */
+    public var videoId: String?
+    public var sha256: String?
+    public var lastError: String?
+    public var priority: Int32
+    public var createdAtMs: Int64
+    public var updatedAtMs: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, filePath: String, title: String, state: UploadState, sentBytes: UInt64, totalBytes: UInt64, 
+        /**
+         * Set once the server created the video.
+         */videoId: String?, sha256: String?, lastError: String?, priority: Int32, createdAtMs: Int64, updatedAtMs: Int64) {
+        self.id = id
+        self.filePath = filePath
+        self.title = title
+        self.state = state
+        self.sentBytes = sentBytes
+        self.totalBytes = totalBytes
+        self.videoId = videoId
+        self.sha256 = sha256
+        self.lastError = lastError
+        self.priority = priority
+        self.createdAtMs = createdAtMs
+        self.updatedAtMs = updatedAtMs
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension UploadInfo: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeUploadInfo: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UploadInfo {
+        return
+            try UploadInfo(
+                id: FfiConverterString.read(from: &buf), 
+                filePath: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                state: FfiConverterTypeUploadState.read(from: &buf), 
+                sentBytes: FfiConverterUInt64.read(from: &buf), 
+                totalBytes: FfiConverterUInt64.read(from: &buf), 
+                videoId: FfiConverterOptionString.read(from: &buf), 
+                sha256: FfiConverterOptionString.read(from: &buf), 
+                lastError: FfiConverterOptionString.read(from: &buf), 
+                priority: FfiConverterInt32.read(from: &buf), 
+                createdAtMs: FfiConverterInt64.read(from: &buf), 
+                updatedAtMs: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: UploadInfo, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.filePath, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterTypeUploadState.write(value.state, into: &buf)
+        FfiConverterUInt64.write(value.sentBytes, into: &buf)
+        FfiConverterUInt64.write(value.totalBytes, into: &buf)
+        FfiConverterOptionString.write(value.videoId, into: &buf)
+        FfiConverterOptionString.write(value.sha256, into: &buf)
+        FfiConverterOptionString.write(value.lastError, into: &buf)
+        FfiConverterInt32.write(value.priority, into: &buf)
+        FfiConverterInt64.write(value.createdAtMs, into: &buf)
+        FfiConverterInt64.write(value.updatedAtMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUploadInfo_lift(_ buf: RustBuffer) throws -> UploadInfo {
+    return try FfiConverterTypeUploadInfo.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUploadInfo_lower(_ value: UploadInfo) -> RustBuffer {
+    return FfiConverterTypeUploadInfo.lower(value)
+}
+
+
+/**
+ * A file to upload and its video metadata.
+ */
+public struct UploadRequest: Equatable, Hashable {
+    public var filePath: String
+    public var title: String
+    public var description: String?
+    /**
+     * `None`: guessed from the file extension.
+     */
+    public var mimeType: String?
+    public var channelId: String?
+    public var isPublic: Bool?
+    /**
+     * Comma-separated.
+     */
+    public var tags: String?
+    public var category: String?
+    /**
+     * e.g. `{"ar": "…", "en": "…"}`
+     */
+    public var titleLocalized: [String: String]
+    public var descriptionLocalized: [String: String]
+    /**
+     * Higher uploads first.
+     */
+    public var priority: Int32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(filePath: String, title: String, description: String?, 
+        /**
+         * `None`: guessed from the file extension.
+         */mimeType: String?, channelId: String?, isPublic: Bool?, 
+        /**
+         * Comma-separated.
+         */tags: String?, category: String?, 
+        /**
+         * e.g. `{"ar": "…", "en": "…"}`
+         */titleLocalized: [String: String], descriptionLocalized: [String: String], 
+        /**
+         * Higher uploads first.
+         */priority: Int32) {
+        self.filePath = filePath
+        self.title = title
+        self.description = description
+        self.mimeType = mimeType
+        self.channelId = channelId
+        self.isPublic = isPublic
+        self.tags = tags
+        self.category = category
+        self.titleLocalized = titleLocalized
+        self.descriptionLocalized = descriptionLocalized
+        self.priority = priority
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension UploadRequest: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeUploadRequest: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UploadRequest {
+        return
+            try UploadRequest(
+                filePath: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                description: FfiConverterOptionString.read(from: &buf), 
+                mimeType: FfiConverterOptionString.read(from: &buf), 
+                channelId: FfiConverterOptionString.read(from: &buf), 
+                isPublic: FfiConverterOptionBool.read(from: &buf), 
+                tags: FfiConverterOptionString.read(from: &buf), 
+                category: FfiConverterOptionString.read(from: &buf), 
+                titleLocalized: FfiConverterDictionaryStringString.read(from: &buf), 
+                descriptionLocalized: FfiConverterDictionaryStringString.read(from: &buf), 
+                priority: FfiConverterInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: UploadRequest, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.filePath, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.description, into: &buf)
+        FfiConverterOptionString.write(value.mimeType, into: &buf)
+        FfiConverterOptionString.write(value.channelId, into: &buf)
+        FfiConverterOptionBool.write(value.isPublic, into: &buf)
+        FfiConverterOptionString.write(value.tags, into: &buf)
+        FfiConverterOptionString.write(value.category, into: &buf)
+        FfiConverterDictionaryStringString.write(value.titleLocalized, into: &buf)
+        FfiConverterDictionaryStringString.write(value.descriptionLocalized, into: &buf)
+        FfiConverterInt32.write(value.priority, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUploadRequest_lift(_ buf: RustBuffer) throws -> UploadRequest {
+    return try FfiConverterTypeUploadRequest.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUploadRequest_lower(_ value: UploadRequest) -> RustBuffer {
+    return FfiConverterTypeUploadRequest.lower(value)
+}
+
+
 /**
  * Errors thrown to Swift (`AunError`), Kotlin (`AunException`) and C# (`AunException`).
  */
@@ -3570,6 +4499,132 @@ public func FfiConverterTypeAuthEvent_lower(_ value: AuthEvent) -> RustBuffer {
 }
 
 
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum UploadState: Equatable, Hashable {
+    
+    case queued
+    /**
+     * Waiting for connectivity / Wi-Fi.
+     */
+    case waiting
+    case hashing
+    case initiating
+    case uploading
+    case completing
+    case paused
+    case done
+    case failed
+    case cancelled
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension UploadState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeUploadState: FfiConverterRustBuffer {
+    typealias SwiftType = UploadState
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UploadState {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .queued
+        
+        case 2: return .waiting
+        
+        case 3: return .hashing
+        
+        case 4: return .initiating
+        
+        case 5: return .uploading
+        
+        case 6: return .completing
+        
+        case 7: return .paused
+        
+        case 8: return .done
+        
+        case 9: return .failed
+        
+        case 10: return .cancelled
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: UploadState, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .queued:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .waiting:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .hashing:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .initiating:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .uploading:
+            writeInt(&buf, Int32(5))
+        
+        
+        case .completing:
+            writeInt(&buf, Int32(6))
+        
+        
+        case .paused:
+            writeInt(&buf, Int32(7))
+        
+        
+        case .done:
+            writeInt(&buf, Int32(8))
+        
+        
+        case .failed:
+            writeInt(&buf, Int32(9))
+        
+        
+        case .cancelled:
+            writeInt(&buf, Int32(10))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUploadState_lift(_ buf: RustBuffer) throws -> UploadState {
+    return try FfiConverterTypeUploadState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUploadState_lower(_ value: UploadState) -> RustBuffer {
+    return FfiConverterTypeUploadState.lower(value)
+}
+
+
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
@@ -3613,6 +4668,30 @@ fileprivate struct FfiConverterOptionUInt64: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterUInt64.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionBool: FfiConverterRustBuffer {
+    typealias SwiftType = Bool?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterBool.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterBool.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -3669,6 +4748,30 @@ fileprivate struct FfiConverterOptionData: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeConnectivity: FfiConverterRustBuffer {
+    typealias SwiftType = Connectivity?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeConnectivity.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeConnectivity.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeTokenSource: FfiConverterRustBuffer {
     typealias SwiftType = TokenSource?
 
@@ -3709,6 +4812,30 @@ fileprivate struct FfiConverterOptionTypeAccountInfo: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeAccountInfo.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeUploadInfo: FfiConverterRustBuffer {
+    typealias SwiftType = UploadInfo?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeUploadInfo.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeUploadInfo.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -3833,6 +4960,56 @@ fileprivate struct FfiConverterSequenceTypeRejectedWrite: FfiConverterRustBuffer
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeRejectedWrite.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeUploadInfo: FfiConverterRustBuffer {
+    typealias SwiftType = [UploadInfo]
+
+    public static func write(_ value: [UploadInfo], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeUploadInfo.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [UploadInfo] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [UploadInfo]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeUploadInfo.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeUploadRequest: FfiConverterRustBuffer {
+    typealias SwiftType = [UploadRequest]
+
+    public static func write(_ value: [UploadRequest], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeUploadRequest.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [UploadRequest] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [UploadRequest]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeUploadRequest.read(from: &buf))
         }
         return seq
     }
@@ -4013,6 +5190,15 @@ public func selftestThrow(kind: String)throws   {try rustCallWithError(FfiConver
     )
 }
 }
+/**
+ * Defaults for [`UploadConfig`].
+ */
+public func uploadConfigDefault() -> UploadConfig  {
+    return try!  FfiConverterTypeUploadConfig_lift(try! rustCall() {
+    uniffi_aun_core_fn_func_upload_config_default($0
+    )
+})
+}
 
 private enum InitializationResult {
     case ok
@@ -4051,6 +5237,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_func_selftest_throw() != 9695) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_func_upload_config_default() != 36473) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_apiclient_request() != 46776) {
@@ -4149,6 +5338,63 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_method_securestorage_list() != 12307) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_method_uploadengine_add_listener() != 5924) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_uploadengine_cancel() != 43663) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_uploadengine_enqueue() != 34566) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_uploadengine_enqueue_all() != 29664) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_uploadengine_find_by_checksum() != 64209) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_uploadengine_get() != 37021) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_uploadengine_list() != 42258) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_uploadengine_pause() != 16569) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_uploadengine_poke() != 21661) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_uploadengine_remove() != 37431) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_uploadengine_resume() != 47041) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_uploadengine_retry() != 35866) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_uploadengine_set_bandwidth_limit() != 606) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_uploadengine_set_max_parallel() != 9103) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_uploadengine_set_wifi_only() != 25378) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_uploadengine_shutdown() != 30920) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_uploadengine_watch_folder() != 13969) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_uploadlistener_on_progress() != 28291) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_uploadlistener_on_state() != 5742) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aun_core_checksum_constructor_apiclient_new() != 27430) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -4158,12 +5404,16 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_constructor_authmanager_new() != 64790) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_constructor_uploadengine_new() != 6121) {
+        return InitializationResult.apiChecksumMismatch
+    }
 
     uniffiCallbackInitAuthListener()
     uniffiCallbackInitConnectivity()
     uniffiCallbackInitSecureStorage()
     uniffiCallbackInitSelfTestListener()
     uniffiCallbackInitTokenSource()
+    uniffiCallbackInitUploadListener()
     return InitializationResult.ok
 }()
 

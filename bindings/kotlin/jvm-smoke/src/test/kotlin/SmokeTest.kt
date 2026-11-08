@@ -64,4 +64,17 @@ class SmokeTest {
         assertFailsWith<AunException.Unsupported> { auth.beginDeviceLogin() }
         Unit
     }
+
+    @Test fun uploadEngineSurface() {
+        val client = ApiClient(ApiClientConfig("http://127.0.0.1:9", "smoke", null, 2000uL, 1u), null)
+        val dir = java.nio.file.Files.createTempDirectory("aun-upload").toString()
+        val config = uploadConfigDefault()
+        assertEquals(3u, config.maxParallel)
+        val engine = UploadEngine(client, dir, "u1", config, null)
+        assertTrue(engine.list().isEmpty())
+        val request = UploadRequest("/nonexistent/clip.mp4", "درس", null, null, null, null, null, null, emptyMap(), emptyMap(), 0)
+        assertFailsWith<AunException.InvalidInput> { engine.enqueue(request) }
+        engine.setBandwidthLimit(1_000_000uL)
+        engine.shutdown()
+    }
 }

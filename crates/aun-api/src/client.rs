@@ -251,6 +251,27 @@ impl ApiClient {
         self.account_id.as_deref()
     }
 
+    /// The shared HTTP client (same TLS setup), for protocols outside the OpenAPI (TUS).
+    pub fn http(&self) -> &reqwest::Client {
+        &self.http
+    }
+
+    /// The current bearer token, for requests made outside `execute` (TUS PATCHes).
+    pub async fn bearer(&self) -> Option<String> {
+        match &self.auth {
+            Some(a) => a.access_token().await,
+            None => None,
+        }
+    }
+
+    /// Refreshes after a 401 seen outside `execute`.
+    pub async fn refresh_bearer(&self) -> Result<Option<String>> {
+        match &self.auth {
+            Some(a) => a.refresh().await,
+            None => Ok(None),
+        }
+    }
+
     pub fn config(&self) -> &ApiConfig {
         &self.config
     }
