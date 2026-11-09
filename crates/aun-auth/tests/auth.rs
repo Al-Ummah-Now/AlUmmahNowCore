@@ -4,7 +4,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use aun_auth::{AuthEvent, AuthListener, AuthManager, OAuthClient, OAuthConfig};
+use aun_auth::{AuthEvent, AuthListener, AuthManager, LoginPrompt, OAuthClient, OAuthConfig};
 use aun_common::Error;
 use aun_common::platform::{ManualClock, MemorySecureStorage};
 use base64::Engine;
@@ -134,6 +134,87 @@ async fn authorization_url_has_pkce_s256_and_state() {
     assert_eq!(q["code_challenge"], aun_auth::pkce::s256(&p.pkce.verifier));
     assert_eq!(q["state"], p.state);
     assert_eq!(q["scope"], "openid profile");
+}
+
+#[tokio::test]
+async fn normal_sign_in_sends_no_prompt_and_explicit_prompts_are_passed() {
+    let server = MockServer::start().await;
+    let m = manager(&server, Arc::new(ManualClock::new(0)));
+    let prompt_of = |url: &str| {
+        reqwest::Url::parse(url)
+            .unwrap()
+            .query_pairs()
+            .find(|(k, _)| k == "prompt")
+            .map(|(_, v)| v.into_owned())
+    };
+    assert_eq!(prompt_of(&m.begin_login().unwrap().url), None);
+    assert_eq!(
+        prompt_of(&m.begin_login_with_prompt(LoginPrompt::Default).unwrap().url),
+        None
+    );
+    assert_eq!(
+        prompt_of(&m.begin_login_with_prompt(LoginPrompt::Silent).unwrap().url).as_deref(),
+        Some("none")
+    );
+    assert_eq!(
+        prompt_of(&m.begin_login_with_prompt(LoginPrompt::Login).unwrap().url).as_deref(),
+        Some("login")
+    );
+    assert_eq!(
+        prompt_of(&m.begin_login_with_prompt(LoginPrompt::SelectAccount).unwrap().url).as_deref(),
+        Some("select_account")
+    );
+}
+
+#[tokio::test]
+async fn silent_reauthorize_after_rejected_refresh() {
+    let server = MockServer::start().await;
+    let m = manager(&server, Arc::new(ManualClock::new(0)));
+    sign_in(&m, &server, "u1").await;
+    Mock::given(body_string_contains("grant_type=refresh_token"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({"error": "invalid_grant"})))
+        .mount(&server)
+        .await;
+    assert_eq!(m.force_refresh().await.unwrap(), None);
+    assert!(m.active_account().unwrap().unwrap().needs_reauth);
+
+    // No browser session: prompt=none comes back with login_required and nothing changes.
+    let p = m.begin_login_with_prompt(LoginPrompt::Silent).unwrap();
+    let e = m
+        .complete_login(&format!(
+            "alummahnow://auth/callback?error=login_required&state={}",
+            p.state
+        ))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&e, Error::Unauthorized(d) if d.starts_with("login_required")),
+        "{e:?}"
+    );
+    assert!(m.active_account().unwrap().unwrap().needs_reauth);
+
+    // Browser still signed in: prompt=none returns a code and the account is usable again.
+    let p = m.begin_login_with_prompt(LoginPrompt::Silent).unwrap();
+    Mock::given(method("POST"))
+        .and(path("/token"))
+        .and(body_string_contains("grant_type=authorization_code"))
+        .and(body_string_contains(format!("code_verifier={}", p.pkce.verifier)))
+        .respond_with(ResponseTemplate::new(200).set_body_json(token_body(
+            "u1",
+            "at-u1-2",
+            Some("rt-u1-2"),
+            900,
+        )))
+        .mount(&server)
+        .await;
+    let info = m
+        .complete_login(&format!("alummahnow://auth/callback?code=c2&state={}", p.state))
+        .await
+        .unwrap();
+    assert_eq!(info.user_id, "u1");
+    assert!(!info.needs_reauth);
+    assert_eq!(m.accounts().unwrap().len(), 1);
+    assert_eq!(m.access_token().await.unwrap().as_deref(), Some("at-u1-2"));
 }
 
 #[tokio::test]

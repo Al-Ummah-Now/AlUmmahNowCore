@@ -9,7 +9,9 @@ use aun_common::{Error, Result};
 use tokio_util::sync::CancellationToken;
 
 use crate::accounts::{AccountInfo, AccountStore, MAX_ACCOUNTS, StoredAccount, identity_from_tokens};
-use crate::oauth::{DeviceAuthorization, OAuthClient, PendingAuthorization, TokenSet, poll_until_granted};
+use crate::oauth::{
+    DeviceAuthorization, LoginPrompt, OAuthClient, PendingAuthorization, TokenSet, poll_until_granted,
+};
 
 /// Refresh when the access token has less than this left.
 pub const REFRESH_SKEW_MS: i64 = 60_000;
@@ -99,8 +101,17 @@ impl AuthManager {
     }
 
     /// Step 1 of browser sign-in: returns the URL to open. Keep the returned `state`.
+    /// Sends no `prompt`, so a browser that is already signed in to Al Ummah Now completes
+    /// without showing the form.
     pub fn begin_login(&self) -> Result<PendingAuthorization> {
-        let p = self.oauth.authorize(&[])?;
+        self.begin_login_with_prompt(LoginPrompt::Default)
+    }
+
+    /// [`Self::begin_login`] with an explicit `prompt`: `Silent` to re-authorize without UI
+    /// (e.g. after [`AuthEvent::ReauthRequired`]), `Login` for "Add account".
+    pub fn begin_login_with_prompt(&self, prompt: LoginPrompt) -> Result<PendingAuthorization> {
+        let extra: Vec<(&str, &str)> = prompt.as_param().map(|p| ("prompt", p)).into_iter().collect();
+        let p = self.oauth.authorize(&extra)?;
         self.pending
             .lock()
             .map_err(|_| Error::Internal("poisoned".into()))?
