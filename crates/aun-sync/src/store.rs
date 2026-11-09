@@ -121,6 +121,11 @@ pub fn load(path: &Path) -> Result<Option<StoreData>> {
     }
 }
 
+/// The sidecar lock file for the store at `path` (`<name>.lock`), held by the engine while open.
+pub fn lock_path(path: &Path) -> PathBuf {
+    PathBuf::from(format!("{}.lock", path.display()))
+}
+
 /// Writes the store atomically.
 pub fn save(path: &Path, data: &StoreData) -> Result<()> {
     let parent = path

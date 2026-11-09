@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use aun_api::ApiClient;
+use aun_common::lock::StoreLock;
 use aun_common::platform::{AlwaysOnline, Clock, Connectivity, SystemClock};
 use aun_common::{Error, Result};
 use tokio_util::sync::CancellationToken;
@@ -71,6 +72,10 @@ struct Inner {
     api: ApiClient,
     tus: TusClient,
     store: ManifestStore,
+    /// Held while the engine is open, so a second process cannot resume this account's uploads
+    /// at the same time. Released when the engine is dropped, or after `shutdown()` once the last
+    /// transfer has unwound, so the app can reopen the store in the same process.
+    store_lock: Mutex<Option<StoreLock>>,
     account_id: String,
     cfg: Mutex<UploadConfig>,
     throttle: Arc<Throttle>,
@@ -151,6 +156,9 @@ impl UploadEngine {
         }
         cfg.max_parallel = cfg.max_parallel.clamp(1, MAX_PARALLEL);
         let store = ManifestStore::open(store_dir.as_ref())?;
+        // Lock before loading: a second engine for the same account and directory (another
+        // process, or a second open in this one) would resume the same TUS uploads.
+        let store_lock = StoreLock::acquire(store.lock_path(&account_id))?;
         let mut uploads = BTreeMap::new();
         for mut m in store.load_all()? {
             if m.account_id != account_id {
@@ -176,6 +184,7 @@ impl UploadEngine {
                 api,
                 tus,
                 store,
+                store_lock: Mutex::new(Some(store_lock)),
                 account_id,
                 cfg: Mutex::new(cfg),
                 throttle,
@@ -371,6 +380,9 @@ impl UploadEngine {
             for t in r.values() {
                 t.cancel();
             }
+            if r.is_empty() {
+                self.inner.release_store_lock();
+            }
         }
     }
 }
@@ -384,6 +396,14 @@ enum Outcome {
 }
 
 impl Inner {
+    /// Lets another engine open the store. Called with `running` locked and empty after
+    /// shutdown, so no transfer of ours writes manifests afterwards.
+    fn release_store_lock(&self) {
+        if let Ok(mut l) = self.store_lock.lock() {
+            l.take();
+        }
+    }
+
     fn emit_state(&self, id: &str, state: UploadState, error: Option<&Error>) {
         let ls = self.listeners.lock().map(|v| v.clone()).unwrap_or_default();
         for l in ls {
@@ -443,6 +463,11 @@ impl Inner {
         let now = self.clock.now_ms();
         let can_run = self.can_run_now();
         let mut running = lock(&self.running)?;
+        // Checked under `running`, which `shutdown()` also takes: nothing starts after shutdown
+        // has released the store lock.
+        if self.shutdown.is_cancelled() {
+            return Ok(());
+        }
         let candidates: Vec<String> = {
             let mut uploads = lock(&self.uploads)?;
             let mut list: Vec<&mut UploadManifest> = uploads.values_mut().collect();
@@ -483,6 +508,9 @@ impl Inner {
                 inner.clone().run_one(&id, token).await;
                 if let Ok(mut r) = inner.running.lock() {
                     r.remove(&id);
+                    if r.is_empty() && inner.shutdown.is_cancelled() {
+                        inner.release_store_lock();
+                    }
                 }
                 inner.wake.notify_one();
             });
@@ -873,7 +901,13 @@ impl Inner {
                 if buf.is_empty() {
                     return None;
                 }
-                state.0.acquire(buf.len() as u64).await;
+                // Cancel-aware, so shutdown does not wait out a throttled piece.
+                tokio::select! {
+                    () = state.0.acquire(buf.len() as u64) => {}
+                    () = cancel.cancelled() => {
+                        return Some((Err(std::io::Error::other("cancelled")), (file, state, id, cancel)));
+                    }
+                }
                 let sent = state.2.fetch_add(buf.len() as u64, Ordering::Relaxed) + buf.len() as u64;
                 for l in state.1.lock().map(|v| v.clone()).unwrap_or_default() {
                     l.on_progress(&id, sent, total);

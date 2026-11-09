@@ -106,11 +106,33 @@ impl ManifestStore {
         Ok(self.dir.join(format!("{id}.json")))
     }
 
+    /// The lock file an engine holds for `account_id` in this directory. Accounts get separate
+    /// locks because each engine only loads and writes its own account's manifests.
+    pub fn lock_path(&self, account_id: &str) -> PathBuf {
+        use sha2::Digest;
+        let digest = sha2::Sha256::digest(account_id.as_bytes());
+        let hex: String = digest.iter().take(8).map(|b| format!("{b:02x}")).collect();
+        self.dir.join(format!(".account-{hex}.lock"))
+    }
+
+    /// Replaces the manifest atomically. The temp name is unique per write (process id plus a
+    /// sequence number), so concurrent saves of one manifest never write into the same temp file.
     pub fn save(&self, m: &UploadManifest) -> Result<()> {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static SEQ: AtomicU64 = AtomicU64::new(0);
         let path = self.path(&m.id)?;
-        let tmp = path.with_extension("json.tmp");
-        std::fs::write(&tmp, serde_json::to_vec_pretty(m)?)?;
-        std::fs::rename(&tmp, &path)?;
+        let tmp = self.dir.join(format!(
+            ".{}.{}.{}.tmp",
+            m.id,
+            std::process::id(),
+            SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
+        if let Err(e) =
+            std::fs::write(&tmp, serde_json::to_vec_pretty(m)?).and_then(|()| std::fs::rename(&tmp, &path))
+        {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e.into());
+        }
         Ok(())
     }
 
@@ -191,6 +213,81 @@ mod tests {
         assert!(s.path("../x").is_err());
         assert!(s.path("").is_err());
         assert!(s.path("u-1_a").is_ok());
+    }
+
+    fn manifest(id: &str, offset: u64) -> UploadManifest {
+        UploadManifest {
+            id: id.into(),
+            account_id: "u1".into(),
+            request: UploadRequest {
+                file_path: "/x.mp4".into(),
+                title: "عنوان".into(),
+                description: None,
+                mime_type: "video/mp4".into(),
+                channel_id: None,
+                is_public: None,
+                tags: None,
+                category: None,
+                title_localized: BTreeMap::new(),
+                description_localized: BTreeMap::new(),
+                priority: 0,
+            },
+            state: UploadState::Uploading,
+            file_size: 1 << 30,
+            file_mtime_ms: 0,
+            sha256: None,
+            video_id: None,
+            tus_session_id: None,
+            target: None,
+            upload_url: None,
+            offset,
+            chunk_size: 1 << 20,
+            attempts: 0,
+            last_error: None,
+            created_at_ms: 0,
+            updated_at_ms: 0,
+            not_before_ms: 0,
+        }
+    }
+
+    #[test]
+    fn concurrent_saves_of_one_manifest_never_tear_or_fail() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = ManifestStore::open(dir.path()).unwrap();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(64));
+        let handles: Vec<_> = (0..64u64)
+            .map(|i| {
+                let (s, barrier) = (s.clone(), barrier.clone());
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    for j in 0..20 {
+                        s.save(&manifest("u-1", i * 100 + j)).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+        let all = s.load_all().unwrap();
+        assert_eq!(all.len(), 1);
+        let last = all[0].offset;
+        assert!(last % 100 == 19, "a complete final write wins, got offset {last}");
+        let leftovers: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "{leftovers:?}");
+    }
+
+    #[test]
+    fn account_locks_are_separate_and_stable() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = ManifestStore::open(dir.path()).unwrap();
+        assert_eq!(s.lock_path("u1"), s.lock_path("u1"));
+        assert_ne!(s.lock_path("u1"), s.lock_path("u2"));
+        assert!(s.lock_path("../../etc").starts_with(dir.path()));
     }
 
     #[test]
