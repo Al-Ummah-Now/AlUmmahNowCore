@@ -992,6 +992,11 @@ public protocol AuthManagerProtocol: AnyObject, Sendable {
     func beginLogin() throws  -> LoginRequest
     
     /**
+     * Step 1 with an explicit `prompt` (`Silent` re-authorizes without UI, `Login` adds an account).
+     */
+    func beginLoginWithPrompt(prompt: LoginPrompt) throws  -> LoginRequest
+    
+    /**
      * Polls until approved; throws `Cancelled` if denied or cancelled.
      */
     func completeDeviceLogin(login: DeviceLogin) async throws  -> AccountInfo
@@ -1159,6 +1164,18 @@ open func beginLogin()throws  -> LoginRequest  {
     return try  FfiConverterTypeLoginRequest_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
     uniffi_aun_core_fn_method_authmanager_begin_login(
             self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * Step 1 with an explicit `prompt` (`Silent` re-authorizes without UI, `Login` adds an account).
+     */
+open func beginLoginWithPrompt(prompt: LoginPrompt)throws  -> LoginRequest  {
+    return try  FfiConverterTypeLoginRequest_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_authmanager_begin_login_with_prompt(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeLoginPrompt_lower(prompt),$0
     )
 })
 }
@@ -5332,6 +5349,103 @@ public func FfiConverterTypeAuthEvent_lower(_ value: AuthEvent) -> RustBuffer {
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * The `prompt` sent to `/authorize`. Use `Default` for the normal sign-in path.
+ */
+
+public enum LoginPrompt: Equatable, Hashable {
+    
+    /**
+     * No `prompt`: silent when the browser is signed in, the form otherwise.
+     */
+    case `default`
+    /**
+     * `prompt=none`: no UI; `complete_login` throws `Unauthorized` (`login_required`) when the
+     * browser has no session. Use after `ReauthRequired` before showing sign-in.
+     */
+    case silent
+    /**
+     * `prompt=login`: always the form ("Add account").
+     */
+    case login
+    /**
+     * `prompt=select_account`: the account chooser (explicit "Choose account" only).
+     */
+    case selectAccount
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension LoginPrompt: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLoginPrompt: FfiConverterRustBuffer {
+    typealias SwiftType = LoginPrompt
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LoginPrompt {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .`default`
+        
+        case 2: return .silent
+        
+        case 3: return .login
+        
+        case 4: return .selectAccount
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: LoginPrompt, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .`default`:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .silent:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .login:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .selectAccount:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLoginPrompt_lift(_ buf: RustBuffer) throws -> LoginPrompt {
+    return try FfiConverterTypeLoginPrompt.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLoginPrompt_lower(_ value: LoginPrompt) -> RustBuffer {
+    return FfiConverterTypeLoginPrompt.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
 public enum ModelTier: Equatable, Hashable {
     
@@ -6675,6 +6789,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_authmanager_begin_login() != 25035) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_authmanager_begin_login_with_prompt() != 25349) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_authmanager_complete_device_login() != 8120) {

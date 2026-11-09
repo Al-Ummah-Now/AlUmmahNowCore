@@ -52,6 +52,31 @@ impl From<aun_auth::AccountInfo> for AccountInfo {
     }
 }
 
+/// The `prompt` sent to `/authorize`. Use `Default` for the normal sign-in path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum LoginPrompt {
+    /// No `prompt`: silent when the browser is signed in, the form otherwise.
+    Default,
+    /// `prompt=none`: no UI; `complete_login` throws `Unauthorized` (`login_required`) when the
+    /// browser has no session. Use after `ReauthRequired` before showing sign-in.
+    Silent,
+    /// `prompt=login`: always the form ("Add account").
+    Login,
+    /// `prompt=select_account`: the account chooser (explicit "Choose account" only).
+    SelectAccount,
+}
+
+impl From<LoginPrompt> for aun_auth::LoginPrompt {
+    fn from(p: LoginPrompt) -> Self {
+        match p {
+            LoginPrompt::Default => aun_auth::LoginPrompt::Default,
+            LoginPrompt::Silent => aun_auth::LoginPrompt::Silent,
+            LoginPrompt::Login => aun_auth::LoginPrompt::Login,
+            LoginPrompt::SelectAccount => aun_auth::LoginPrompt::SelectAccount,
+        }
+    }
+}
+
 /// Open `url` in ASWebAuthenticationSession / Custom Tabs / the system browser.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct LoginRequest {
@@ -180,6 +205,15 @@ impl AuthManager {
     /// Step 1 of browser sign-in.
     pub fn begin_login(&self) -> Result<LoginRequest, AunError> {
         let p = self.inner.begin_login()?;
+        Ok(LoginRequest {
+            url: p.url,
+            state: p.state,
+        })
+    }
+
+    /// Step 1 with an explicit `prompt` (`Silent` re-authorizes without UI, `Login` adds an account).
+    pub fn begin_login_with_prompt(&self, prompt: LoginPrompt) -> Result<LoginRequest, AunError> {
+        let p = self.inner.begin_login_with_prompt(prompt.into())?;
         Ok(LoginRequest {
             url: p.url,
             state: p.state,

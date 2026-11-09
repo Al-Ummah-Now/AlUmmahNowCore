@@ -14,4 +14,6 @@ pub mod pkce;
 
 pub use accounts::{AccountInfo, AccountStore, MAX_ACCOUNTS};
 pub use manager::{AccountTokens, AuthEvent, AuthListener, AuthManager, DeviceLogin, REFRESH_SKEW_MS};
-pub use oauth::{DeviceAuthorization, DevicePoll, OAuthClient, OAuthConfig, PendingAuthorization, TokenSet};
+pub use oauth::{
+    DeviceAuthorization, DevicePoll, LoginPrompt, OAuthClient, OAuthConfig, PendingAuthorization, TokenSet,
+};

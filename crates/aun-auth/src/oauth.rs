@@ -120,6 +120,38 @@ struct OAuthErrorBody {
     error_description: Option<String>,
 }
 
+/// The OIDC `prompt` sent to `/authorize`.
+///
+/// The normal sign-in path uses [`LoginPrompt::Default`] (no `prompt`): the auth server signs the
+/// user in silently as the browser session's active account and shows the form only when there is
+/// no session. Never use `Login` or `SelectAccount` for the normal path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LoginPrompt {
+    /// No `prompt` parameter: silent when the browser has a session, the form otherwise.
+    #[default]
+    Default,
+    /// `prompt=none`: never shows UI. Without a browser session the redirect carries
+    /// `error=login_required`, which `exchange_code` returns as [`Error::Unauthorized`]. Use it to
+    /// re-authorize after a rejected refresh token before asking the user to sign in.
+    Silent,
+    /// `prompt=login`: always shows the sign-in form ("Add account").
+    Login,
+    /// `prompt=select_account`: shows the account chooser (an explicit "Choose account").
+    SelectAccount,
+}
+
+impl LoginPrompt {
+    /// The `prompt` value, or `None` when no parameter is sent.
+    pub fn as_param(self) -> Option<&'static str> {
+        match self {
+            LoginPrompt::Default => None,
+            LoginPrompt::Silent => Some("none"),
+            LoginPrompt::Login => Some("login"),
+            LoginPrompt::SelectAccount => Some("select_account"),
+        }
+    }
+}
+
 /// An authorization request in flight: open `url` in the system browser
 /// (ASWebAuthenticationSession / Custom Tabs / the default browser), then pass the redirect to
 /// [`OAuthClient::exchange_code`].
@@ -417,6 +449,15 @@ pub async fn poll_until_granted(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn login_prompt_params() {
+        assert_eq!(LoginPrompt::default(), LoginPrompt::Default);
+        assert_eq!(LoginPrompt::Default.as_param(), None);
+        assert_eq!(LoginPrompt::Silent.as_param(), Some("none"));
+        assert_eq!(LoginPrompt::Login.as_param(), Some("login"));
+        assert_eq!(LoginPrompt::SelectAccount.as_param(), Some("select_account"));
+    }
 
     #[test]
     fn slow_down_adds_five_seconds() {

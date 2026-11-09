@@ -7,6 +7,12 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+### Added
+- `aun-auth`/FFI: `LoginPrompt` and `AuthManager.begin_login_with_prompt`. `Silent` sends `prompt=none`
+  (re-authorize without UI after `ReauthRequired`; `login_required` comes back as `Unauthorized`), `Login`
+  sends `prompt=login` ("Add account"), `SelectAccount` sends `prompt=select_account`. `begin_login` still
+  sends no `prompt`.
+
 ## [0.2.0] - 2026-11-08
 
 ### Added
