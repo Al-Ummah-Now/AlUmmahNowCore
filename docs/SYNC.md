@@ -33,6 +33,10 @@ A video is in history when its latest activity (position or completed) is newer 
 `SyncEngine` (one per signed-in account) holds the state, an **outbox** of server writes and the
 download records. It persists everything to one JSON file, replaced atomically (temp file, then
 rename). A corrupt file is moved to `<file>.corrupt` and the engine starts empty.
+While open, the engine holds an exclusive OS lock on `<file>.lock` (`flock` / `LockFileEx`, released
+when the engine is dropped or the process exits). A second engine on the same file, in another
+process or the same one, fails with `Conflict` instead of loading the same state and overwriting
+the other's writes; apps should show "already open in another window" and not retry in a loop.
 
 - **Debounced positions.** `record_position` updates local state at once. The server write is
   queued with a due time of `last push + position_push_interval_ms` (default 30 s) and coalesced

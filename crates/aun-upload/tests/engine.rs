@@ -297,6 +297,12 @@ async fn other_accounts_uploads_are_not_loaded() {
     e1.enqueue(request(&file)).unwrap();
     let e2 = UploadEngine::open(api(&server), &store, "u2", cfg()).unwrap();
     assert!(e2.list().unwrap().is_empty());
+    // A second engine for u1 on the same directory is refused while the first is open.
+    assert!(matches!(
+        UploadEngine::open(api(&server), &store, "u1", cfg()),
+        Err(Error::Conflict(_))
+    ));
+    drop(e1);
     assert_eq!(
         UploadEngine::open(api(&server), &store, "u1", cfg())
             .unwrap()

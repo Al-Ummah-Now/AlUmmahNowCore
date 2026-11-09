@@ -7,6 +7,15 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+### Changed
+- `aun-sync`/`aun-upload`: an open store is now locked against other processes. `SyncEngine::open`
+  takes an exclusive lock on `<store>.lock`, and `UploadEngine::open` one per account in the store
+  directory. A second open while the first is alive returns `Conflict` instead of both processes
+  overwriting each other's state or resuming the same TUS upload. The upload lock is released when
+  the engine is dropped, or after `shutdown()` once its transfers have stopped.
+- `aun-upload`: manifests are written through a temp file unique to each write, so concurrent saves
+  never share a temp file. A throttled transfer now stops promptly on pause, cancel or shutdown.
+
 ### Added
 - `aun-auth`/FFI: `LoginPrompt` and `AuthManager.begin_login_with_prompt`. `Silent` sends `prompt=none`
   (re-authorize without UI after `ReauthRequired`; `login_required` comes back as `Unauthorized`), `Login`

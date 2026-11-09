@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use aun_common::lock::StoreLock;
 use aun_common::platform::{Clock, SystemClock};
 use aun_common::{Error, Result};
 use serde::{Deserialize, Serialize};
@@ -103,6 +104,8 @@ pub struct SyncEngine {
     config: SyncConfig,
     device: String,
     path: Option<PathBuf>,
+    /// Held while the engine is open so a second process cannot load and overwrite the store.
+    _store_lock: Option<StoreLock>,
     transport: Arc<dyn SyncTransport>,
     clock: Arc<dyn Clock>,
     inner: Mutex<Inner>,
@@ -145,6 +148,11 @@ impl SyncEngine {
         clock: Arc<dyn Clock>,
     ) -> Result<Arc<Self>> {
         let path = config.store_path.as_ref().map(PathBuf::from);
+        // Lock before reading, so the state we load is not being replaced under us.
+        let store_lock = path
+            .as_deref()
+            .map(|p| StoreLock::acquire(store::lock_path(p)))
+            .transpose()?;
         let mut data = match &path {
             Some(p) => store::load(p)?.unwrap_or_default(),
             None => StoreData::default(),
@@ -164,6 +172,7 @@ impl SyncEngine {
             device: data.device_id.clone(),
             config,
             path,
+            _store_lock: store_lock,
             transport,
             clock,
             inner: Mutex::new(Inner {

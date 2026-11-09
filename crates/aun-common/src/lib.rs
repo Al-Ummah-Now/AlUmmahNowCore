@@ -2,6 +2,7 @@
 //! apps implement. See `docs/PLAN.md` §4 and §6.
 
 mod error;
+pub mod lock;
 pub mod platform;
 pub mod security;
 

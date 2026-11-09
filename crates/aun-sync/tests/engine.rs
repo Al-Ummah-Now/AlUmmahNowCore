@@ -505,3 +505,88 @@ async fn local_edits_win_over_stamps_from_a_clock_ahead() {
     assert_eq!(e.history(10, 0).len(), 1);
     assert!(e.is_saved("s"));
 }
+
+#[tokio::test]
+async fn a_second_open_of_the_same_store_is_refused_until_the_first_closes() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir
+        .path()
+        .join("acct")
+        .join("sync.json")
+        .to_string_lossy()
+        .into_owned();
+    let clock = Arc::new(ManualClock::new(1_000_000));
+    let server = FakeServer::new(clock.clone());
+    let first = engine(&server, &clock, "desktop", Some(path.clone()));
+    first.set_saved("v1", true).unwrap();
+
+    // Many "processes" opening the profile at once: none of them gets in while the first is open.
+    let opens: Vec<_> = (0..32)
+        .map(|_| {
+            let (server, clock, path) = (server.clone(), clock.clone(), path.clone());
+            std::thread::spawn(move || {
+                SyncEngine::open_with_clock(
+                    SyncConfig {
+                        device_id: "desktop-2".into(),
+                        store_path: Some(path),
+                        ..SyncConfig::default()
+                    },
+                    server,
+                    clock,
+                )
+                .map(|_| ())
+            })
+        })
+        .collect();
+    for h in opens {
+        assert!(matches!(h.join().unwrap(), Err(Error::Conflict(_))));
+    }
+
+    // Different accounts (different store files) are independent.
+    let other = dir
+        .path()
+        .join("other")
+        .join("sync.json")
+        .to_string_lossy()
+        .into_owned();
+    let _other = engine(&server, &clock, "desktop", Some(other));
+
+    first.persist().unwrap();
+    drop(first);
+    let reopened = engine(&server, &clock, "desktop", Some(path));
+    assert_eq!(reopened.device_id(), "desktop");
+}
+
+#[tokio::test]
+async fn racing_opens_of_one_store_let_exactly_one_in() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("sync.json").to_string_lossy().into_owned();
+    let clock = Arc::new(ManualClock::new(1_000_000));
+    let server = FakeServer::new(clock.clone());
+    let barrier = Arc::new(std::sync::Barrier::new(24));
+    let opens: Vec<_> = (0..24)
+        .map(|i| {
+            let (server, clock, path, barrier) =
+                (server.clone(), clock.clone(), path.clone(), barrier.clone());
+            std::thread::spawn(move || {
+                barrier.wait();
+                SyncEngine::open_with_clock(
+                    SyncConfig {
+                        device_id: format!("p{i}"),
+                        store_path: Some(path),
+                        ..SyncConfig::default()
+                    },
+                    server,
+                    clock,
+                )
+            })
+        })
+        .collect();
+    let results: Vec<_> = opens.into_iter().map(|h| h.join().unwrap()).collect();
+    assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1);
+    assert!(
+        results
+            .iter()
+            .all(|r| r.is_ok() || matches!(r, Err(Error::Conflict(_))))
+    );
+}
