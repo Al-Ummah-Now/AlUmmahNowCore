@@ -90,4 +90,15 @@ class SmokeTest {
         assertFails { mediaProbeJson("/nonexistent.mp4") }
         Unit
     }
+
+    @Test fun searchHelpers() {
+        assertEquals("احمد", normalizeSearchText("أحمد"))
+        val ranges = searchHighlightRanges("أحمد", "احم")
+        assertEquals(listOf(0u to 3u), ranges.map { it.start to it.end })
+        assertEquals(listOf("أحمد"), recentSearchesAdd(listOf("احمد"), "أحمد", 20u))
+        val groups = groupSearchSuggestions(
+            listOf(SearchSuggestion("ق", SuggestionKind.CHANNEL, "c1", null, null, true, null, null, true)),
+        )
+        assertEquals(SuggestionKind.CHANNEL, groups.single().kind)
+    }
 }

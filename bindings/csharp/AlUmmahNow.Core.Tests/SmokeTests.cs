@@ -109,4 +109,13 @@ public class SmokeTests
         Assert.StartsWith("WEBVTT", vtt);
         await Assert.ThrowsAnyAsync<AunException>(() => AunCoreMethods.MediaProbeJson("/nonexistent.mp4"));
     }
+
+    [Fact]
+    public void SearchHelpers()
+    {
+        Assert.Equal("احمد", AunCoreMethods.NormalizeSearchText("أحمد"));
+        Assert.Single(AunCoreMethods.SearchHighlightRanges("أحمد", "احم"));
+        Assert.Equal("أحمد", Assert.Single(AunCoreMethods.RecentSearchesAdd(new List<string> { "احمد" }, "أحمد", 20)));
+        Assert.True(AunCoreMethods.SearchMatches("سورة البقرة", "بقره"));
+    }
 }

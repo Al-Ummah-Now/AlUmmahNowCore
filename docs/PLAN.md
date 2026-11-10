@@ -28,6 +28,7 @@ crates/
   aun-i18n/                translation bundles, plural rules, locale switching, bidi helpers
   aun-telemetry/           consent-gated analytics, QoE events, crash breadcrumbs
   aun-player/              player behaviour model (queue, resume, quality caps, study tools, sleep timer) + conformance suite (docs/PLAYER_BEHAVIOUR.md)
+  aun-search/              search suggestions client, grouping, recent searches, Arabic-aware normalisation + highlight
   aun-ffi/                 the ONLY crate with UniFFI: facade objects, FFI records, AunError; builds `aun_core` cdylib/staticlib
 spec/openapi/              pinned api-videos OpenAPI snapshot the client is generated from
 schemas/                   JSON schemas (EDL project format, i18n bundles)
