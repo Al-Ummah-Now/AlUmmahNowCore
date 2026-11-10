@@ -115,7 +115,7 @@ public class SmokeTests
     {
         Assert.Equal("احمد", AunCoreMethods.NormalizeSearchText("أحمد"));
         Assert.Single(AunCoreMethods.SearchHighlightRanges("أحمد", "احم"));
-        Assert.Equal("أحمد", Assert.Single(AunCoreMethods.RecentSearchesAdd(new List<string> { "احمد" }, "أحمد", 20)));
+        Assert.Equal("أحمد", Assert.Single(AunCoreMethods.RecentSearchesAdd(new[] { "احمد" }, "أحمد", 20)));
         Assert.True(AunCoreMethods.SearchMatches("سورة البقرة", "بقره"));
     }
 }

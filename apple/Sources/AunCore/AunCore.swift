@@ -630,6 +630,11 @@ public protocol ApiClientProtocol: AnyObject, Sendable {
      */
     func request(call: ApiCall) async throws  -> ApiResponse
     
+    /**
+     * `GET /api/search/suggestions`, made once (no retries). Throws `RateLimited` on 429.
+     */
+    func searchSuggestions(query: SuggestionQuery) async throws  -> [SearchSuggestion]
+    
 }
 /**
  * The api-videos client. Share one per account.
@@ -712,6 +717,26 @@ open func request(call: ApiCall)async throws  -> ApiResponse  {
             completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeApiResponse_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+    /**
+     * `GET /api/search/suggestions`, made once (no retries). Throws `RateLimited` on 429.
+     */
+open func searchSuggestions(query: SuggestionQuery)async throws  -> [SearchSuggestion]  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_search_suggestions(
+                    self.uniffiCloneHandle(),
+                    FfiConverterTypeSuggestionQuery_lower(query)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeSearchSuggestion.lift,
             errorHandler: FfiConverterTypeAunError_lift
         )
 }
@@ -4337,6 +4362,115 @@ public func FfiConverterTypeSceneChange_lower(_ value: SceneChange) -> RustBuffe
 }
 
 
+/**
+ * One suggestion.
+ */
+public struct SearchSuggestion: Equatable, Hashable {
+    public var text: String
+    public var kind: SuggestionKind
+    /**
+     * Item id for videos, channels, playlists and categories.
+     */
+    public var id: String?
+    public var thumbnailUrl: String?
+    /**
+     * Secondary line, e.g. the channel name under a video title.
+     */
+    public var subtitle: String?
+    public var verified: Bool
+    public var count: Double?
+    /**
+     * Extra server fields as a JSON object, when present.
+     */
+    public var metadataJson: String?
+    /**
+     * True when picking it opens the item (`id` is set); false runs a full search for `text`.
+     */
+    public var opensItem: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(text: String, kind: SuggestionKind, 
+        /**
+         * Item id for videos, channels, playlists and categories.
+         */id: String?, thumbnailUrl: String?, 
+        /**
+         * Secondary line, e.g. the channel name under a video title.
+         */subtitle: String?, verified: Bool, count: Double?, 
+        /**
+         * Extra server fields as a JSON object, when present.
+         */metadataJson: String?, 
+        /**
+         * True when picking it opens the item (`id` is set); false runs a full search for `text`.
+         */opensItem: Bool) {
+        self.text = text
+        self.kind = kind
+        self.id = id
+        self.thumbnailUrl = thumbnailUrl
+        self.subtitle = subtitle
+        self.verified = verified
+        self.count = count
+        self.metadataJson = metadataJson
+        self.opensItem = opensItem
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SearchSuggestion: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSearchSuggestion: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SearchSuggestion {
+        return
+            try SearchSuggestion(
+                text: FfiConverterString.read(from: &buf), 
+                kind: FfiConverterTypeSuggestionKind.read(from: &buf), 
+                id: FfiConverterOptionString.read(from: &buf), 
+                thumbnailUrl: FfiConverterOptionString.read(from: &buf), 
+                subtitle: FfiConverterOptionString.read(from: &buf), 
+                verified: FfiConverterBool.read(from: &buf), 
+                count: FfiConverterOptionDouble.read(from: &buf), 
+                metadataJson: FfiConverterOptionString.read(from: &buf), 
+                opensItem: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SearchSuggestion, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.text, into: &buf)
+        FfiConverterTypeSuggestionKind.write(value.kind, into: &buf)
+        FfiConverterOptionString.write(value.id, into: &buf)
+        FfiConverterOptionString.write(value.thumbnailUrl, into: &buf)
+        FfiConverterOptionString.write(value.subtitle, into: &buf)
+        FfiConverterBool.write(value.verified, into: &buf)
+        FfiConverterOptionDouble.write(value.count, into: &buf)
+        FfiConverterOptionString.write(value.metadataJson, into: &buf)
+        FfiConverterBool.write(value.opensItem, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSearchSuggestion_lift(_ buf: RustBuffer) throws -> SearchSuggestion {
+    return try FfiConverterTypeSearchSuggestion.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSearchSuggestion_lower(_ value: SearchSuggestion) -> RustBuffer {
+    return FfiConverterTypeSearchSuggestion.lower(value)
+}
+
+
 public struct SilenceConfig: Equatable, Hashable {
     public var thresholdDbfs: Double
     public var minDurationMs: UInt64
@@ -4442,6 +4576,209 @@ public func FfiConverterTypeSubtitleOptions_lift(_ buf: RustBuffer) throws -> Su
 #endif
 public func FfiConverterTypeSubtitleOptions_lower(_ value: SubtitleOptions) -> RustBuffer {
     return FfiConverterTypeSubtitleOptions.lower(value)
+}
+
+
+/**
+ * Suggestions of one kind, in server order.
+ */
+public struct SuggestionGroup: Equatable, Hashable {
+    public var kind: SuggestionKind
+    public var items: [SearchSuggestion]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(kind: SuggestionKind, items: [SearchSuggestion]) {
+        self.kind = kind
+        self.items = items
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SuggestionGroup: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSuggestionGroup: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SuggestionGroup {
+        return
+            try SuggestionGroup(
+                kind: FfiConverterTypeSuggestionKind.read(from: &buf), 
+                items: FfiConverterSequenceTypeSearchSuggestion.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SuggestionGroup, into buf: inout [UInt8]) {
+        FfiConverterTypeSuggestionKind.write(value.kind, into: &buf)
+        FfiConverterSequenceTypeSearchSuggestion.write(value.items, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSuggestionGroup_lift(_ buf: RustBuffer) throws -> SuggestionGroup {
+    return try FfiConverterTypeSuggestionGroup.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSuggestionGroup_lower(_ value: SuggestionGroup) -> RustBuffer {
+    return FfiConverterTypeSuggestionGroup.lower(value)
+}
+
+
+/**
+ * A suggestions request.
+ */
+public struct SuggestionQuery: Equatable, Hashable {
+    /**
+     * What the user has typed so far. Blank returns an empty list without a request.
+     */
+    public var text: String
+    /**
+     * 1-20; 8 when `None`.
+     */
+    public var limit: UInt32?
+    /**
+     * Kinds to return. Empty keeps the server default (videos, channels and categories).
+     */
+    public var kinds: [SuggestionKind]
+    /**
+     * Restricts suggestions to one channel.
+     */
+    public var channelId: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * What the user has typed so far. Blank returns an empty list without a request.
+         */text: String, 
+        /**
+         * 1-20; 8 when `None`.
+         */limit: UInt32?, 
+        /**
+         * Kinds to return. Empty keeps the server default (videos, channels and categories).
+         */kinds: [SuggestionKind], 
+        /**
+         * Restricts suggestions to one channel.
+         */channelId: String?) {
+        self.text = text
+        self.limit = limit
+        self.kinds = kinds
+        self.channelId = channelId
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SuggestionQuery: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSuggestionQuery: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SuggestionQuery {
+        return
+            try SuggestionQuery(
+                text: FfiConverterString.read(from: &buf), 
+                limit: FfiConverterOptionUInt32.read(from: &buf), 
+                kinds: FfiConverterSequenceTypeSuggestionKind.read(from: &buf), 
+                channelId: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SuggestionQuery, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.text, into: &buf)
+        FfiConverterOptionUInt32.write(value.limit, into: &buf)
+        FfiConverterSequenceTypeSuggestionKind.write(value.kinds, into: &buf)
+        FfiConverterOptionString.write(value.channelId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSuggestionQuery_lift(_ buf: RustBuffer) throws -> SuggestionQuery {
+    return try FfiConverterTypeSuggestionQuery.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSuggestionQuery_lower(_ value: SuggestionQuery) -> RustBuffer {
+    return FfiConverterTypeSuggestionQuery.lower(value)
+}
+
+
+/**
+ * A half-open range of UTF-16 code units, the unit `NSString`, Kotlin and C# strings index by.
+ */
+public struct TextRange: Equatable, Hashable {
+    public var start: UInt32
+    public var end: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(start: UInt32, end: UInt32) {
+        self.start = start
+        self.end = end
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension TextRange: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTextRange: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TextRange {
+        return
+            try TextRange(
+                start: FfiConverterUInt32.read(from: &buf), 
+                end: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TextRange, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.start, into: &buf)
+        FfiConverterUInt32.write(value.end, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTextRange_lift(_ buf: RustBuffer) throws -> TextRange {
+    return try FfiConverterTypeTextRange.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTextRange_lower(_ value: TextRange) -> RustBuffer {
+    return FfiConverterTypeTextRange.lower(value)
 }
 
 
@@ -5534,6 +5871,100 @@ public func FfiConverterTypeModelTier_lower(_ value: ModelTier) -> RustBuffer {
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * What a suggestion points at.
+ */
+
+public enum SuggestionKind: Equatable, Hashable {
+    
+    /**
+     * A query completion: picking it runs a full search for its text.
+     */
+    case query
+    case video
+    case channel
+    case playlist
+    case category
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SuggestionKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSuggestionKind: FfiConverterRustBuffer {
+    typealias SwiftType = SuggestionKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SuggestionKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .query
+        
+        case 2: return .video
+        
+        case 3: return .channel
+        
+        case 4: return .playlist
+        
+        case 5: return .category
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SuggestionKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .query:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .video:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .channel:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .playlist:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .category:
+            writeInt(&buf, Int32(5))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSuggestionKind_lift(_ buf: RustBuffer) throws -> SuggestionKind {
+    return try FfiConverterTypeSuggestionKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSuggestionKind_lower(_ value: SuggestionKind) -> RustBuffer {
+    return FfiConverterTypeSuggestionKind.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
 public enum UploadState: Equatable, Hashable {
     
@@ -6174,6 +6605,81 @@ fileprivate struct FfiConverterSequenceTypeSceneChange: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeSearchSuggestion: FfiConverterRustBuffer {
+    typealias SwiftType = [SearchSuggestion]
+
+    public static func write(_ value: [SearchSuggestion], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSearchSuggestion.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SearchSuggestion] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SearchSuggestion]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSearchSuggestion.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSuggestionGroup: FfiConverterRustBuffer {
+    typealias SwiftType = [SuggestionGroup]
+
+    public static func write(_ value: [SuggestionGroup], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSuggestionGroup.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SuggestionGroup] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SuggestionGroup]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSuggestionGroup.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeTextRange: FfiConverterRustBuffer {
+    typealias SwiftType = [TextRange]
+
+    public static func write(_ value: [TextRange], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeTextRange.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [TextRange] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [TextRange]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeTextRange.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeTimeRange: FfiConverterRustBuffer {
     typealias SwiftType = [TimeRange]
 
@@ -6266,6 +6772,31 @@ fileprivate struct FfiConverterSequenceTypeWaveformLevel: FfiConverterRustBuffer
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeWaveformLevel.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSuggestionKind: FfiConverterRustBuffer {
+    typealias SwiftType = [SuggestionKind]
+
+    public static func write(_ value: [SuggestionKind], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSuggestionKind.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SuggestionKind] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SuggestionKind]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSuggestionKind.read(from: &buf))
         }
         return seq
     }
@@ -6638,6 +7169,92 @@ public func waveformConfigDefault() -> WaveformConfig  {
 })
 }
 /**
+ * Groups suggestions for display: completions, videos, channels, playlists, categories.
+ */
+public func groupSearchSuggestions(suggestions: [SearchSuggestion]) -> [SuggestionGroup]  {
+    return try!  FfiConverterSequenceTypeSuggestionGroup.lift(try! rustCall() {
+    uniffi_aun_core_fn_func_group_search_suggestions(
+        FfiConverterSequenceTypeSearchSuggestion.lower(suggestions),$0
+    )
+})
+}
+/**
+ * Arabic letter folding only, for loose comparison of display strings.
+ */
+public func normalizeArabic(text: String) -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_aun_core_fn_func_normalize_arabic(
+        FfiConverterString.lower(text),$0
+    )
+})
+}
+/**
+ * The server's search normalisation (Arabic folding, case, accents, punctuation).
+ */
+public func normalizeSearchText(text: String) -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_aun_core_fn_func_normalize_search_text(
+        FfiConverterString.lower(text),$0
+    )
+})
+}
+/**
+ * Adds a submitted query to the recent list (newest first, de-duplicated, capped).
+ */
+public func recentSearchesAdd(recent: [String], query: String, capacity: UInt32) -> [String]  {
+    return try!  FfiConverterSequenceString.lift(try! rustCall() {
+    uniffi_aun_core_fn_func_recent_searches_add(
+        FfiConverterSequenceString.lower(recent),
+        FfiConverterString.lower(query),
+        FfiConverterUInt32.lower(capacity),$0
+    )
+})
+}
+/**
+ * Recent searches matching the typed text; all of them when it is blank.
+ */
+public func recentSearchesFilter(recent: [String], text: String) -> [String]  {
+    return try!  FfiConverterSequenceString.lift(try! rustCall() {
+    uniffi_aun_core_fn_func_recent_searches_filter(
+        FfiConverterSequenceString.lower(recent),
+        FfiConverterString.lower(text),$0
+    )
+})
+}
+/**
+ * Removes one recent search (and its spelling variants).
+ */
+public func recentSearchesRemove(recent: [String], query: String) -> [String]  {
+    return try!  FfiConverterSequenceString.lift(try! rustCall() {
+    uniffi_aun_core_fn_func_recent_searches_remove(
+        FfiConverterSequenceString.lower(recent),
+        FfiConverterString.lower(query),$0
+    )
+})
+}
+/**
+ * Ranges of `text` matching `query` (word prefixes, Arabic-aware), in UTF-16 code units.
+ */
+public func searchHighlightRanges(text: String, query: String) -> [TextRange]  {
+    return try!  FfiConverterSequenceTypeTextRange.lift(try! rustCall() {
+    uniffi_aun_core_fn_func_search_highlight_ranges(
+        FfiConverterString.lower(text),
+        FfiConverterString.lower(query),$0
+    )
+})
+}
+/**
+ * Whether every word of `query` starts a word of `text`, under search normalisation.
+ */
+public func searchMatches(text: String, query: String) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_aun_core_fn_func_search_matches(
+        FfiConverterString.lower(text),
+        FfiConverterString.lower(query),$0
+    )
+})
+}
+/**
  * Defaults for [`UploadConfig`].
  */
 public func uploadConfigDefault() -> UploadConfig  {
@@ -6740,10 +7357,37 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_func_waveform_config_default() != 63036) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_func_group_search_suggestions() != 56162) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_func_normalize_arabic() != 20203) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_func_normalize_search_text() != 24348) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_func_recent_searches_add() != 16856) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_func_recent_searches_filter() != 64563) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_func_recent_searches_remove() != 58742) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_func_search_highlight_ranges() != 54009) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_func_search_matches() != 4190) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aun_core_checksum_func_upload_config_default() != 36473) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_apiclient_request() != 46776) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_search_suggestions() != 32608) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_offlinequeue_enqueue() != 34998) {
