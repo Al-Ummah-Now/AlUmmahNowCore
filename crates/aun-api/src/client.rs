@@ -151,6 +151,9 @@ pub struct RequestSpec {
     pub auth: AuthMode,
     /// Makes a non-idempotent request safe to retry (the server dedupes on it).
     pub idempotency_key: Option<String>,
+    /// Caps the attempts for this request below the client's [`RetryPolicy`]. Interactive
+    /// requests such as search suggestions set `Some(1)`: the next keystroke is the retry.
+    pub max_attempts: Option<u32>,
 }
 
 impl RequestSpec {
@@ -164,6 +167,7 @@ impl RequestSpec {
             body: Body::None,
             auth: AuthMode::Optional,
             idempotency_key: None,
+            max_attempts: None,
         }
     }
 
@@ -297,6 +301,9 @@ impl ApiClient {
     /// Runs a request with retries and the refresh-on-401 hook. Returns the body of a 2xx.
     pub async fn execute(&self, req: RequestSpec) -> Result<RawResponse> {
         let policy = &self.config.retry;
+        let max_attempts = req
+            .max_attempts
+            .map_or(policy.max_attempts, |n| n.clamp(1, policy.max_attempts.max(1)));
         let mut attempt = 0u32;
         let mut refreshed = false;
         let mut token = match &self.auth {
@@ -331,9 +338,7 @@ impl ApiClient {
                     // A server asking us to wait longer than our longest backoff gets the error back
                     // (the offline queue reschedules) instead of a blocked call.
                     let wait_too_long = retry_after.is_some_and(|ra| ra > policy.max_delay);
-                    if wait_too_long
-                        || !(e.is_retryable() && req.retry_safe() && attempt < policy.max_attempts)
-                    {
+                    if wait_too_long || !(e.is_retryable() && req.retry_safe() && attempt < max_attempts) {
                         return Err(match e {
                             Error::RateLimited { .. } => Error::RateLimited { retry_after },
                             other => other,

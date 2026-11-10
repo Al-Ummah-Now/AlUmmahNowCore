@@ -20,6 +20,7 @@ aun-media = { path = "crates/aun-media" }
 aun-i18n = { path = "crates/aun-i18n" }
 aun-telemetry = { path = "crates/aun-telemetry" }
 aun-player = { path = "crates/aun-player" }
+aun-search = { path = "crates/aun-search" }
 
 uniffi = { version = "=0.31.0" }
 thiserror = "2"

@@ -127,4 +127,16 @@ final class SmokeTests: XCTestCase {
             XCTFail("expected an error")
         } catch is AunError {}
     }
+
+    func testSearchHelpers() {
+        XCTAssertEqual(normalizeSearchText(text: "أحمد"), "احمد")
+        let ranges = searchHighlightRanges(text: "أحمد", query: "احم")
+        XCTAssertEqual(ranges.map { [$0.start, $0.end] }, [[0, 3]])
+        XCTAssertEqual(recentSearchesAdd(recent: ["احمد"], query: "أحمد", capacity: 20), ["أحمد"])
+        let groups = groupSearchSuggestions(suggestions: [
+            SearchSuggestion(text: "ق", kind: .channel, id: "c1", thumbnailUrl: nil, subtitle: nil,
+                             verified: true, count: nil, metadataJson: nil, opensItem: true),
+        ])
+        XCTAssertEqual(groups.first?.kind, .channel)
+    }
 }

@@ -17,6 +17,16 @@ FFI; such changes are listed under **Breaking**.
   never share a temp file. A throttled transfer now stops promptly on pause, cancel or shutdown.
 
 ### Added
+- `aun-search` (new crate) and FFI: live search autocomplete for the native apps.
+  `ApiClient.search_suggestions(SuggestionQuery)` calls `GET /api/search/suggestions` with `q`,
+  `limit` (1-20, default 8), `types` and `channelId`, once and without retries (a 429 throws
+  `RateLimited` with `retry_after_ms`); unknown suggestion types decode as `Query` and malformed rows
+  are skipped. `group_search_suggestions` orders groups as completions, videos, channels, playlists,
+  categories. `normalize_search_text`/`normalize_arabic` port the server's Arabic-aware search
+  normalisation (tashkeel, alef forms, taa marbuta, yeh/alef maqsura, digits, NFKC, accents);
+  `search_highlight_ranges` returns match ranges in UTF-16 units; `search_matches` and
+  `recent_searches_add`/`_remove`/`_filter` hold the recent-search rules (apps persist the list).
+- `aun-api`: `RequestSpec::max_attempts` caps retries for a single request.
 - `aun-auth`/FFI: `LoginPrompt` and `AuthManager.begin_login_with_prompt`. `Silent` sends `prompt=none`
   (re-authorize without UI after `ReauthRequired`; `login_required` comes back as `Unauthorized`), `Login`
   sends `prompt=login` ("Add account"), `SelectAccount` sends `prompt=select_account`. `begin_login` still
