@@ -314,44 +314,61 @@ async fn other_accounts_uploads_are_not_loaded() {
     assert!(UploadEngine::open(api(&server).with_account("u3"), &store, "u1", cfg()).is_err());
 }
 
+/// Creates an upload only for metadata naming `session` (base64 in `Upload-Metadata`).
+struct CreateFor {
+    session: &'static str,
+    location: &'static str,
+}
+impl Respond for CreateFor {
+    fn respond(&self, req: &Request) -> ResponseTemplate {
+        use base64::Engine;
+        let want = base64::engine::general_purpose::STANDARD.encode(self.session);
+        let meta = req
+            .headers
+            .get("Upload-Metadata")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default();
+        if meta
+            .split(',')
+            .any(|kv| kv.trim() == format!("tusSessionId {want}"))
+        {
+            ResponseTemplate::new(201).insert_header("Location", self.location)
+        } else {
+            ResponseTemplate::new(404)
+        }
+    }
+}
+
 #[tokio::test]
-async fn expired_proxy_session_falls_back_to_direct_upload() {
+async fn expired_proxy_session_starts_again_with_a_fresh_session() {
     let server = MockServer::start().await;
-    let direct = Arc::new(TusState::default());
+    let tus = Arc::new(TusState::default());
     mount_api(&server, 1).await;
-    // The proxy forgot the session (KV TTL): create returns 404.
+    // The proxy forgot session s1: only the fresh session s2 may create the upload.
     Mock::given(method("POST"))
         .and(path("/api/videos/tus"))
-        .respond_with(ResponseTemplate::new(404))
+        .respond_with(CreateFor {
+            session: "s2",
+            location: "/api/videos/tus/s2.v1",
+        })
         .mount(&server)
         .await;
     Mock::given(method("GET"))
         .and(path("/api/videos/upload/resume/v1"))
+        .and(header("channelId", "ch1"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "success": true,
-            "result": {
-                "videoId": "v1",
-                "tusEndpoint": format!("{}/direct/tusupload", server.uri()),
-                "tusHeaders": {"AuthorizationSignature": "sig", "AuthorizationExpire": "9999999999",
-                               "LibraryId": "lib", "VideoId": "v1"},
-                "expiresAt": "2099-01-01T00:00:00Z",
-                "chunkSize": 1
-            }
+            "result": {"videoId": "v1", "tusSessionId": "s2", "expiresAt": "2099-01-01T00:00:00Z",
+                       "chunkSize": 1, "resumable": true,
+                       "videoMetadata": {"title": "t", "uploadStatus": "uploading"}}
         })))
         .expect(1)
         .mount(&server)
         .await;
-    Mock::given(method("POST"))
-        .and(path("/direct/tusupload"))
-        .and(header("AuthorizationSignature", "sig"))
-        .and(header("LibraryId", "lib"))
-        .respond_with(ResponseTemplate::new(201).insert_header("Location", "/direct/tusupload/xyz"))
-        .mount(&server)
-        .await;
     Mock::given(method("PATCH"))
-        .and(path("/direct/tusupload/xyz"))
-        .and(header("AuthorizationSignature", "sig"))
-        .respond_with(Patch(direct.clone()))
+        .and(path("/api/videos/tus/s2.v1"))
+        .and(header("Authorization", "Bearer tok"))
+        .respond_with(Patch(tus.clone()))
         .mount(&server)
         .await;
 
@@ -361,8 +378,61 @@ async fn expired_proxy_session_falls_back_to_direct_upload() {
     let id = engine.enqueue(request(&file)).unwrap();
     engine.start();
     let m = wait_for(&engine, &id, UploadState::Done).await;
-    assert!(matches!(m.target, Some(aun_upload::TusTarget::Direct { .. })));
-    assert_eq!(*direct.bytes.lock().unwrap(), std::fs::read(&file).unwrap());
+    assert!(matches!(m.target, Some(aun_upload::TusTarget::Proxy { .. })));
+    assert_eq!(m.tus_session_id.as_deref(), Some("s2"));
+    assert_eq!(*tus.bytes.lock().unwrap(), std::fs::read(&file).unwrap());
+    engine.shutdown();
+}
+
+#[tokio::test]
+async fn lost_upload_continues_at_the_earlier_proxy_upload() {
+    let server = MockServer::start().await;
+    let tus = Arc::new(TusState::default());
+    mount_api(&server, 1).await;
+    Mock::given(method("POST"))
+        .and(path("/api/videos/tus"))
+        .respond_with(ResponseTemplate::new(201).insert_header("Location", "/api/videos/tus/s1"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    // The first upload URL is gone (404); the server still holds the bytes under s9.v1.
+    Mock::given(path("/api/videos/tus/s1"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+    let size = 300 * KIB;
+    Mock::given(method("GET"))
+        .and(path("/api/videos/upload/resume/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "success": true,
+            "result": {"videoId": "v1", "tusSessionId": "s9", "tusUploadId": "s9.v1",
+                       "tusUploadFileSize": size, "expiresAt": "2099-01-01T00:00:00Z",
+                       "chunkSize": 1, "resumable": true,
+                       "videoMetadata": {"title": "t", "uploadStatus": "uploading"}}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("HEAD"))
+        .and(path("/api/videos/tus/s9.v1"))
+        .and(header("Authorization", "Bearer tok"))
+        .respond_with(Head(tus.clone()))
+        .mount(&server)
+        .await;
+    Mock::given(method("PATCH"))
+        .and(path("/api/videos/tus/s9.v1"))
+        .respond_with(Patch(tus.clone()))
+        .mount(&server)
+        .await;
+
+    let dir = tempfile::tempdir().unwrap();
+    let file = video(dir.path(), "a.mp4", size);
+    let engine = UploadEngine::open(api(&server), dir.path().join("q"), "u1", cfg()).unwrap();
+    let id = engine.enqueue(request(&file)).unwrap();
+    engine.start();
+    let m = wait_for(&engine, &id, UploadState::Done).await;
+    assert!(m.upload_url.unwrap().ends_with("/api/videos/tus/s9.v1"));
+    assert_eq!(*tus.bytes.lock().unwrap(), std::fs::read(&file).unwrap());
     engine.shutdown();
 }
 
