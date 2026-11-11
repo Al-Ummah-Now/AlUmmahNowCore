@@ -218,6 +218,50 @@ pub fn group_suggestions(suggestions: Vec<SearchSuggestion>) -> Vec<SuggestionGr
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+
+    /// The typed query must use exactly the parameters the pinned OpenAPI snapshot declares
+    /// for the operation, so a server rename shows up here when the snapshot is refreshed.
+    #[test]
+    fn query_parameters_match_the_openapi_snapshot() {
+        let spec: serde_json::Value =
+            serde_json::from_str(include_str!("../../../spec/openapi/api-videos.json")).unwrap();
+        let (spec_path, op) = spec["paths"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .find_map(|(p, ops)| {
+                ops.as_object()?
+                    .values()
+                    .find(|o| o["operationId"] == "get_SearchSuggestionsGet")
+                    .map(|o| (p.clone(), o.clone()))
+            })
+            .expect("get_SearchSuggestionsGet in the snapshot");
+        let mut declared: Vec<String> = op["parameters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|p| p["in"] == "query")
+            .map(|p| p["name"].as_str().unwrap().to_owned())
+            .collect();
+        declared.sort();
+        let req = suggestions_request(&SuggestionQuery {
+            text: "x".into(),
+            limit: Some(5),
+            kinds: vec![SuggestionKind::Video],
+            channel_id: Some("c".into()),
+        })
+        .unwrap()
+        .unwrap();
+        let mut sent: Vec<String> = req.query.iter().map(|(k, _)| k.clone()).collect();
+        sent.sort();
+        assert_eq!(sent, declared);
+        assert_eq!(spec_path.replacen("/api/v1/", "/api/", 1), req.path);
+        assert!(
+            aun_api::OPERATIONS
+                .iter()
+                .any(|o| o.id == "get_SearchSuggestionsGet" && o.path == req.path)
+        );
+    }
     use super::*;
 
     fn query(text: &str) -> SuggestionQuery {

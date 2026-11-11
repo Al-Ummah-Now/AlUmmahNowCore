@@ -22,6 +22,24 @@ FFI; such changes are listed under **Breaking**.
   the registered redirect); the code exchange sends the same redirect, and a callback on another
   port is refused.
 
+### Fixed
+- `aun-upload`: resuming after the proxy lost an upload (404/410) follows the server's current
+  `upload/resume` contract. It returns a new proxy `tusSessionId` and, when the server still holds
+  the earlier upload of the same size, its `tusUploadId`: the engine continues at
+  `{tus}/{tusUploadId}` from the server's offset, or creates a new upload with the new session.
+  Every request goes through the proxy with the bearer token. The direct-to-storage fallback
+  (`tusEndpoint`/`tusHeaders`) is gone from the server, so uploads whose proxy session expired
+  failed before this fix. Manifests saved with a `Direct` target switch to the proxy on their
+  next 404 or 401.
+
+### Changed
+- `aun-api`: OpenAPI snapshot refreshed from QA (132 paths; #25). New operations include
+  `get_ChannelAccessList`, `post_VideoBulkUpdate`, `post_PlaylistVideosBulkAdd`/`Remove`,
+  `put_PlaylistVideosReorder`, `get_PlaylistUploadAddsStatus`/`post_PlaylistUploadAddsCreate` and
+  the playlist job routes; `GetSearchSuggestionsGetParams` gains `types` and `channel_id`. The
+  codegen maps the documented `/api/v1/…` routes to the `/api/…` paths clients already call.
+- `aun-search`: a test pins the suggestion query parameters to the snapshot.
+
 ### Changed
 - `aun-sync`/`aun-upload`: an open store is now locked against other processes. `SyncEngine::open`
   takes an exclusive lock on `<store>.lock`, and `UploadEngine::open` one per account in the store

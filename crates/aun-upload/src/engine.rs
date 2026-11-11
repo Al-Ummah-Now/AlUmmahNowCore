@@ -707,7 +707,10 @@ impl Inner {
             .clamp(MIN_CHUNK, MAX_CHUNK)
     }
 
-    /// The proxy session expired (KV TTL): get fresh direct-upload authorisation for the video.
+    /// The proxy answered 404/410 (its session or upload is gone): ask `upload/resume` for a new
+    /// proxy session. When the server still holds the earlier upload of this same file, continue
+    /// it at `{tus}/{tusUploadId}` from the server's offset; otherwise create a new upload with the
+    /// new session. Every request goes through the proxy with the bearer token.
     async fn reauthorise(&self, id: &str) -> Result<()> {
         let m = self.snapshot(id)?;
         let video_id = m
@@ -722,21 +725,26 @@ impl Inner {
             })
             .await?
             .result;
-        let mut headers = BTreeMap::new();
-        headers.insert(
-            "AuthorizationSignature".into(),
-            r.tus_headers.authorization_signature,
-        );
-        headers.insert("AuthorizationExpire".into(), r.tus_headers.authorization_expire);
-        headers.insert("LibraryId".into(), r.tus_headers.library_id);
-        headers.insert("VideoId".into(), r.tus_headers.video_id);
+        if r.tus_session_id.is_empty() {
+            return Err(Error::Http {
+                status: 200,
+                code: None,
+                message: "upload/resume returned no tusSessionId".into(),
+            });
+        }
+        let endpoint = self.tus_endpoint();
+        let same_file = r
+            .tus_upload_file_size
+            .is_none_or(|size| size as u64 == m.file_size);
+        let upload_url = r
+            .tus_upload_id
+            .filter(|u| same_file && !u.is_empty())
+            .map(|u| format!("{}/{}", endpoint.trim_end_matches('/'), u));
         let chunk = self.chunk_size(r.chunk_size as u64);
         self.update(id, |m| {
-            m.target = Some(TusTarget::Direct {
-                endpoint: r.tus_endpoint,
-                headers,
-            });
-            m.upload_url = None;
+            m.target = Some(TusTarget::Proxy { endpoint });
+            m.tus_session_id = Some(r.tus_session_id);
+            m.upload_url = upload_url;
             m.offset = 0;
             m.chunk_size = chunk;
         })?;

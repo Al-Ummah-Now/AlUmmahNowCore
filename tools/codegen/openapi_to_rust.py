@@ -37,6 +37,10 @@ DOUBLED = re.compile(r"^(/api(?:/[^/{}]+)*?)\1(/.*)?$")
 
 
 def normalise_path(path: str) -> str:
+    # Epic 9.3 documents the routes under /api/v1/…, which the Worker serves with the /api/…
+    # handlers; keep the unversioned paths the clients already call.
+    if path.startswith("/api/v1/"):
+        return "/api/" + path[len("/api/v1/"):]
     m = DOUBLED.match(path)
     if m:
         return m.group(1) + (m.group(2) or "")
