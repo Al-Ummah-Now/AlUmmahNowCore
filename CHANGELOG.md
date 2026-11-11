@@ -35,7 +35,8 @@ FFI; such changes are listed under **Breaking**.
 - FFI: `ApiClient.request_path(PathCall)` calls an `/api/` path that is not in the pinned OpenAPI
   document yet (for example the Creator Studio routes: `/api/channels/access`,
   `/api/channels/{id}/content`, `/api/videos/bulk-update`), with the same auth, refresh on 401,
-  retries and errors as `request`. The template must start with `/api/`; `{name}` parameters are
+  retries and errors as `request`. `headers` carries extras such as `channelId`
+  (`Authorization`, `Cookie`, `Host` and `Content-Length` are refused). The template must start with `/api/`; `{name}` parameters are
   percent-encoded, and dot segments, queries, `//` and `%` in the template are refused.
 - `aun-search` (new crate) and FFI: live search autocomplete for the native apps.
   `ApiClient.search_suggestions(SuggestionQuery)` calls `GET /api/search/suggestions` with `q`,

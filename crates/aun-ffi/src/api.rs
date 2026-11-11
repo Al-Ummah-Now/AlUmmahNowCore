@@ -187,6 +187,8 @@ pub struct PathCall {
     pub path_template: String,
     pub path_params: HashMap<String, String>,
     pub query: HashMap<String, String>,
+    /// Extra headers, e.g. `channelId`. `Authorization`, `Cookie` and `Host` are refused.
+    pub headers: HashMap<String, String>,
     /// JSON request body.
     pub body_json: Option<String>,
     /// Makes a POST/PATCH safe to retry.
@@ -439,6 +441,18 @@ mod tests {
             };
             assert!(build_path_request(c).is_err(), "{t}");
         }
+        let mut c = PathCall {
+            method: "POST".into(),
+            path_template: "/api/videos/bulk-delete".into(),
+            ..Default::default()
+        };
+        c.headers.insert("channelId".into(), "ch1".into());
+        assert_eq!(
+            build_path_request(c.clone()).unwrap().headers,
+            vec![("channelId".into(), "ch1".into())]
+        );
+        c.headers.insert("Authorization".into(), "Bearer x".into());
+        assert!(build_path_request(c).is_err());
         let c = PathCall {
             method: "TRACE".into(),
             path_template: "/api/x".into(),
