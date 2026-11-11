@@ -7,6 +7,8 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+## [0.3.0-rc.1] - 2026-11-11
+
 ### Security
 - `aun-auth`/FFI: sign-out revokes the refresh token (RFC 7009, AlUmmahNow#720). `AuthManager.sign_out`
   removes the account from the device at once and revokes its refresh token in the background;
