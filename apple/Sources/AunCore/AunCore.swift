@@ -4291,6 +4291,10 @@ public struct PathCall: Equatable, Hashable {
     public var pathParams: [String: String]
     public var query: [String: String]
     /**
+     * Extra headers, e.g. `channelId`. `Authorization`, `Cookie` and `Host` are refused.
+     */
+    public var headers: [String: String]
+    /**
      * JSON request body.
      */
     public var bodyJson: String?
@@ -4313,6 +4317,9 @@ public struct PathCall: Equatable, Hashable {
          * Path under `/api/`, with `{name}` placeholders, e.g. `/api/videos/{id}/restore`.
          */pathTemplate: String, pathParams: [String: String], query: [String: String], 
         /**
+         * Extra headers, e.g. `channelId`. `Authorization`, `Cookie` and `Host` are refused.
+         */headers: [String: String], 
+        /**
          * JSON request body.
          */bodyJson: String?, 
         /**
@@ -4325,6 +4332,7 @@ public struct PathCall: Equatable, Hashable {
         self.pathTemplate = pathTemplate
         self.pathParams = pathParams
         self.query = query
+        self.headers = headers
         self.bodyJson = bodyJson
         self.idempotencyKey = idempotencyKey
         self.authRequired = authRequired
@@ -4350,6 +4358,7 @@ public struct FfiConverterTypePathCall: FfiConverterRustBuffer {
                 pathTemplate: FfiConverterString.read(from: &buf), 
                 pathParams: FfiConverterDictionaryStringString.read(from: &buf), 
                 query: FfiConverterDictionaryStringString.read(from: &buf), 
+                headers: FfiConverterDictionaryStringString.read(from: &buf), 
                 bodyJson: FfiConverterOptionString.read(from: &buf), 
                 idempotencyKey: FfiConverterOptionString.read(from: &buf), 
                 authRequired: FfiConverterBool.read(from: &buf)
@@ -4361,6 +4370,7 @@ public struct FfiConverterTypePathCall: FfiConverterRustBuffer {
         FfiConverterString.write(value.pathTemplate, into: &buf)
         FfiConverterDictionaryStringString.write(value.pathParams, into: &buf)
         FfiConverterDictionaryStringString.write(value.query, into: &buf)
+        FfiConverterDictionaryStringString.write(value.headers, into: &buf)
         FfiConverterOptionString.write(value.bodyJson, into: &buf)
         FfiConverterOptionString.write(value.idempotencyKey, into: &buf)
         FfiConverterBool.write(value.authRequired, into: &buf)
