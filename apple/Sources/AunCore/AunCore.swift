@@ -631,6 +631,12 @@ public protocol ApiClientProtocol: AnyObject, Sendable {
     func request(call: ApiCall) async throws  -> ApiResponse
     
     /**
+     * Calls an `/api/` path that is not in the pinned OpenAPI document (same auth, refresh on
+     * 401, retries and errors as [`Self::request`]). Throws `AunError` for non-2xx responses.
+     */
+    func requestPath(call: PathCall) async throws  -> ApiResponse
+    
+    /**
      * `GET /api/search/suggestions`, made once (no retries). Throws `RateLimited` on 429.
      */
     func searchSuggestions(query: SuggestionQuery) async throws  -> [SearchSuggestion]
@@ -711,6 +717,27 @@ open func request(call: ApiCall)async throws  -> ApiResponse  {
                 uniffi_aun_core_fn_method_apiclient_request(
                     self.uniffiCloneHandle(),
                     FfiConverterTypeApiCall_lower(call)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeApiResponse_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+    /**
+     * Calls an `/api/` path that is not in the pinned OpenAPI document (same auth, refresh on
+     * 401, retries and errors as [`Self::request`]). Throws `AunError` for non-2xx responses.
+     */
+open func requestPath(call: PathCall)async throws  -> ApiResponse  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_request_path(
+                    self.uniffiCloneHandle(),
+                    FfiConverterTypePathCall_lower(call)
                 )
             },
             pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
@@ -4249,6 +4276,114 @@ public func FfiConverterTypeNetworkState_lower(_ value: NetworkState) -> RustBuf
 
 
 /**
+ * A call to an api-videos path that is not (yet) in the pinned OpenAPI document, e.g. a Studio
+ * endpoint that shipped after the last spec sync. Prefer [`ApiCall`] when the operation exists.
+ */
+public struct PathCall: Equatable, Hashable {
+    /**
+     * `GET`, `POST`, `PUT`, `PATCH` or `DELETE`.
+     */
+    public var method: String
+    /**
+     * Path under `/api/`, with `{name}` placeholders, e.g. `/api/videos/{id}/restore`.
+     */
+    public var pathTemplate: String
+    public var pathParams: [String: String]
+    public var query: [String: String]
+    /**
+     * JSON request body.
+     */
+    public var bodyJson: String?
+    /**
+     * Makes a POST/PATCH safe to retry.
+     */
+    public var idempotencyKey: String?
+    /**
+     * Fail with `Unauthorized` instead of calling anonymously when there is no token.
+     */
+    public var authRequired: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * `GET`, `POST`, `PUT`, `PATCH` or `DELETE`.
+         */method: String, 
+        /**
+         * Path under `/api/`, with `{name}` placeholders, e.g. `/api/videos/{id}/restore`.
+         */pathTemplate: String, pathParams: [String: String], query: [String: String], 
+        /**
+         * JSON request body.
+         */bodyJson: String?, 
+        /**
+         * Makes a POST/PATCH safe to retry.
+         */idempotencyKey: String?, 
+        /**
+         * Fail with `Unauthorized` instead of calling anonymously when there is no token.
+         */authRequired: Bool) {
+        self.method = method
+        self.pathTemplate = pathTemplate
+        self.pathParams = pathParams
+        self.query = query
+        self.bodyJson = bodyJson
+        self.idempotencyKey = idempotencyKey
+        self.authRequired = authRequired
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PathCall: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePathCall: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PathCall {
+        return
+            try PathCall(
+                method: FfiConverterString.read(from: &buf), 
+                pathTemplate: FfiConverterString.read(from: &buf), 
+                pathParams: FfiConverterDictionaryStringString.read(from: &buf), 
+                query: FfiConverterDictionaryStringString.read(from: &buf), 
+                bodyJson: FfiConverterOptionString.read(from: &buf), 
+                idempotencyKey: FfiConverterOptionString.read(from: &buf), 
+                authRequired: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PathCall, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.method, into: &buf)
+        FfiConverterString.write(value.pathTemplate, into: &buf)
+        FfiConverterDictionaryStringString.write(value.pathParams, into: &buf)
+        FfiConverterDictionaryStringString.write(value.query, into: &buf)
+        FfiConverterOptionString.write(value.bodyJson, into: &buf)
+        FfiConverterOptionString.write(value.idempotencyKey, into: &buf)
+        FfiConverterBool.write(value.authRequired, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePathCall_lift(_ buf: RustBuffer) throws -> PathCall {
+    return try FfiConverterTypePathCall.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePathCall_lower(_ value: PathCall) -> RustBuffer {
+    return FfiConverterTypePathCall.lower(value)
+}
+
+
+/**
  * What a queue flush did.
  */
 public struct QueueFlushReport: Equatable, Hashable {
@@ -7454,6 +7589,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_apiclient_request() != 46776) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_request_path() != 9248) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_apiclient_search_suggestions() != 32608) {

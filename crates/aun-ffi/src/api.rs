@@ -110,28 +110,57 @@ fn find_op(id: &str) -> Result<&'static OperationInfo, AunError> {
         })
 }
 
-/// Builds the request for a call: fills `{param}` segments (percent-encoded), sorts query and
-/// headers for deterministic output.
-pub(crate) fn build_request(call: ApiCall) -> Result<RequestSpec, AunError> {
-    let op = find_op(&call.operation_id)?;
-    let mut path = String::with_capacity(op.path.len());
-    let mut rest = op.path;
+/// Fills `{param}` segments of `template` (percent-encoded, `..` refused).
+fn fill_path(template: &str, params: &HashMap<String, String>, what: &str) -> Result<String, AunError> {
+    let mut path = String::with_capacity(template.len());
+    let mut rest = template;
     while let Some(start) = rest.find('{') {
         let end = rest[start..]
             .find('}')
             .map(|e| start + e)
-            .ok_or_else(|| AunError::Internal {
-                detail: format!("bad path template {}", op.path),
+            .ok_or_else(|| AunError::InvalidInput {
+                detail: format!("bad path template {template}"),
             })?;
         path.push_str(&rest[..start]);
         let name = &rest[start + 1..end];
-        let value = call.path_params.get(name).ok_or_else(|| AunError::InvalidInput {
-            detail: format!("{} needs path parameter {name}", op.id),
+        let value = params.get(name).ok_or_else(|| AunError::InvalidInput {
+            detail: format!("{what} needs path parameter {name}"),
         })?;
         path.push_str(&aun_api::client::encode_path(value)?);
         rest = &rest[end + 1..];
     }
     path.push_str(rest);
+    Ok(path)
+}
+
+fn finish_request(
+    mut req: RequestSpec,
+    query: HashMap<String, String>,
+    headers: HashMap<String, String>,
+    body_json: Option<String>,
+    idempotency_key: Option<String>,
+) -> Result<RequestSpec, AunError> {
+    let mut query: Vec<_> = query.into_iter().collect();
+    query.sort();
+    req.query = query;
+    let mut headers: Vec<_> = headers.into_iter().collect();
+    headers.sort();
+    req.headers = headers;
+    if let Some(b) = body_json {
+        let v: serde_json::Value = serde_json::from_str(&b).map_err(|e| AunError::InvalidInput {
+            detail: format!("body is not JSON: {e}"),
+        })?;
+        req.body = aun_api::Body::Json(v);
+    }
+    req.idempotency_key = idempotency_key;
+    Ok(req)
+}
+
+/// Builds the request for a call: fills `{param}` segments (percent-encoded), sorts query and
+/// headers for deterministic output.
+pub(crate) fn build_request(call: ApiCall) -> Result<RequestSpec, AunError> {
+    let op = find_op(&call.operation_id)?;
+    let path = fill_path(op.path, &call.path_params, op.id)?;
     let method = reqwest::Method::from_bytes(op.method.as_bytes()).map_err(|e| AunError::Internal {
         detail: e.to_string(),
     })?;
@@ -139,20 +168,70 @@ pub(crate) fn build_request(call: ApiCall) -> Result<RequestSpec, AunError> {
     if op.auth_required {
         req.auth = aun_api::AuthMode::Required;
     }
-    let mut query: Vec<_> = call.query.into_iter().collect();
-    query.sort();
-    req.query = query;
-    let mut headers: Vec<_> = call.headers.into_iter().collect();
-    headers.sort();
-    req.headers = headers;
-    if let Some(b) = call.body_json {
-        let v: serde_json::Value = serde_json::from_str(&b).map_err(|e| AunError::InvalidInput {
-            detail: format!("body is not JSON: {e}"),
-        })?;
-        req.body = aun_api::Body::Json(v);
+    finish_request(
+        req,
+        call.query,
+        call.headers,
+        call.body_json,
+        call.idempotency_key,
+    )
+}
+
+/// A call to an api-videos path that is not (yet) in the pinned OpenAPI document, e.g. a Studio
+/// endpoint that shipped after the last spec sync. Prefer [`ApiCall`] when the operation exists.
+#[derive(Debug, Clone, Default, uniffi::Record)]
+pub struct PathCall {
+    /// `GET`, `POST`, `PUT`, `PATCH` or `DELETE`.
+    pub method: String,
+    /// Path under `/api/`, with `{name}` placeholders, e.g. `/api/videos/{id}/restore`.
+    pub path_template: String,
+    pub path_params: HashMap<String, String>,
+    pub query: HashMap<String, String>,
+    /// JSON request body.
+    pub body_json: Option<String>,
+    /// Makes a POST/PATCH safe to retry.
+    pub idempotency_key: Option<String>,
+    /// Fail with `Unauthorized` instead of calling anonymously when there is no token.
+    pub auth_required: bool,
+}
+
+pub(crate) fn build_path_request(call: PathCall) -> Result<RequestSpec, AunError> {
+    let t = call.path_template.as_str();
+    let bad = || AunError::InvalidInput {
+        detail: format!("path must be an /api/ path without query or dot segments: {t:?}"),
+    };
+    if !t.starts_with("/api/") || t.contains(['?', '#', '\\', '%']) || t.contains("//") {
+        return Err(bad());
     }
-    req.idempotency_key = call.idempotency_key;
-    Ok(req)
+    if t.split('/')
+        .any(|seg| !seg.is_empty() && seg.bytes().all(|b| b == b'.'))
+    {
+        return Err(bad());
+    }
+    let method = match call.method.to_ascii_uppercase().as_str() {
+        "GET" => reqwest::Method::GET,
+        "POST" => reqwest::Method::POST,
+        "PUT" => reqwest::Method::PUT,
+        "PATCH" => reqwest::Method::PATCH,
+        "DELETE" => reqwest::Method::DELETE,
+        other => {
+            return Err(AunError::InvalidInput {
+                detail: format!("unsupported method {other}"),
+            });
+        }
+    };
+    let path = fill_path(t, &call.path_params, t)?;
+    let mut req = RequestSpec::new(method, path, "path_call");
+    if call.auth_required {
+        req.auth = aun_api::AuthMode::Required;
+    }
+    finish_request(
+        req,
+        call.query,
+        HashMap::new(),
+        call.body_json,
+        call.idempotency_key,
+    )
 }
 
 /// The api-videos client. Share one per account.
@@ -186,6 +265,16 @@ impl ApiClient {
     /// Calls any operation by id. Throws `AunError` for non-2xx responses.
     pub async fn request(&self, call: ApiCall) -> Result<ApiResponse, AunError> {
         let raw = self.inner.execute(build_request(call)?).await?;
+        Ok(ApiResponse {
+            status: raw.status,
+            body: raw.body,
+        })
+    }
+
+    /// Calls an `/api/` path that is not in the pinned OpenAPI document (same auth, refresh on
+    /// 401, retries and errors as [`Self::request`]). Throws `AunError` for non-2xx responses.
+    pub async fn request_path(&self, call: PathCall) -> Result<ApiResponse, AunError> {
+        let raw = self.inner.execute(build_path_request(call)?).await?;
         Ok(ApiResponse {
             status: raw.status,
             body: raw.body,
@@ -311,6 +400,51 @@ mod tests {
             ..Default::default()
         };
         assert!(matches!(build_request(call), Err(AunError::InvalidInput { .. })));
+    }
+
+    #[test]
+    fn path_calls_fill_templates_and_refuse_escapes() {
+        let mut call = PathCall {
+            method: "post".into(),
+            path_template: "/api/videos/{id}/restore".into(),
+            auth_required: true,
+            body_json: Some("{}".into()),
+            ..Default::default()
+        };
+        assert!(matches!(
+            build_path_request(call.clone()),
+            Err(AunError::InvalidInput { .. })
+        ));
+        call.path_params.insert("id".into(), "v/1".into());
+        call.query.insert("z".into(), "1".into());
+        let r = build_path_request(call.clone()).unwrap();
+        assert_eq!(r.path, "/api/videos/v%2F1/restore");
+        assert_eq!(r.method, reqwest::Method::POST);
+        assert_eq!(r.auth, aun_api::AuthMode::Required);
+        call.path_params.insert("id".into(), "..".into());
+        assert!(build_path_request(call.clone()).is_err());
+        for t in [
+            "/internal/x",
+            "https://evil.example/api/x",
+            "/api/../internal",
+            "/api/x?y=1",
+            "/api//x",
+            "/api/%2e%2e/x",
+            "api/x",
+        ] {
+            let c = PathCall {
+                method: "GET".into(),
+                path_template: t.into(),
+                ..Default::default()
+            };
+            assert!(build_path_request(c).is_err(), "{t}");
+        }
+        let c = PathCall {
+            method: "TRACE".into(),
+            path_template: "/api/x".into(),
+            ..Default::default()
+        };
+        assert!(build_path_request(c).is_err());
     }
 
     #[test]
