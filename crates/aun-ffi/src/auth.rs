@@ -21,6 +21,9 @@ pub struct AuthConfig {
     pub authorization_endpoint: Option<String>,
     pub token_endpoint: Option<String>,
     pub device_authorization_endpoint: Option<String>,
+    /// RFC 7009 endpoint; `None` means `{issuer}/token/revoke`.
+    #[uniffi(default = None)]
+    pub revocation_endpoint: Option<String>,
 }
 
 /// A signed-in account (no secrets).
@@ -185,6 +188,7 @@ impl AuthManager {
                 .unwrap_or_else(|| format!("{issuer}/authorize")),
             token_endpoint: config.token_endpoint.unwrap_or_else(|| format!("{issuer}/token")),
             device_authorization_endpoint: config.device_authorization_endpoint,
+            revocation_endpoint: config.revocation_endpoint,
             issuer,
             client_id: config.client_id,
             redirect_uri: config.redirect_uri,
@@ -214,6 +218,23 @@ impl AuthManager {
     /// Step 1 with an explicit `prompt` (`Silent` re-authorizes without UI, `Login` adds an account).
     pub fn begin_login_with_prompt(&self, prompt: LoginPrompt) -> Result<LoginRequest, AunError> {
         let p = self.inner.begin_login_with_prompt(prompt.into())?;
+        Ok(LoginRequest {
+            url: p.url,
+            state: p.state,
+        })
+    }
+
+    /// Step 1 for desktop apps that receive the code on a loopback listener (RFC 8252 §7.3):
+    /// `redirect_uri` is `http://127.0.0.1:{port}/…` with the port the listener got. Pass the
+    /// request the listener received, as a full URL with that same origin, to `complete_login`.
+    pub fn begin_login_with_redirect(
+        &self,
+        prompt: LoginPrompt,
+        redirect_uri: String,
+    ) -> Result<LoginRequest, AunError> {
+        let p = self
+            .inner
+            .begin_login_with_redirect(prompt.into(), Some(&redirect_uri))?;
         Ok(LoginRequest {
             url: p.url,
             state: p.state,
@@ -253,8 +274,21 @@ impl AuthManager {
         Ok(self.inner.set_active_channel(channel_id)?)
     }
 
+    /// Removes the account from this device at once, then revokes its refresh token on the
+    /// server in the background (best effort; a failure never undoes the sign-out). Use
+    /// `sign_out_and_revoke` to wait for the revocation.
     pub fn sign_out(&self, user_id: String) -> Result<(), AunError> {
-        Ok(self.inner.sign_out(&user_id)?)
+        if let Some(rt) = self.inner.sign_out_taking_refresh_token(&user_id)? {
+            let inner = self.inner.clone();
+            crate::runtime::background()?.spawn(async move { inner.revoke_refresh_token(&rt).await });
+        }
+        Ok(())
+    }
+
+    /// Signs out on this device, then waits (up to 10 s) for the server to revoke the refresh
+    /// token. Never fails because of the revocation.
+    pub async fn sign_out_and_revoke(&self, user_id: String) -> Result<(), AunError> {
+        Ok(self.inner.sign_out_and_revoke(&user_id).await?)
     }
 
     /// A fresh access token for the active account (refreshes when close to expiry).

@@ -1,7 +1,7 @@
 //! FFI facade for `aun-upload`.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 use crate::AunError;
 use crate::api::ApiClient;
@@ -9,18 +9,7 @@ use crate::platform::{Connectivity, ForeignConnectivity};
 
 /// The runtime upload workers run on (they outlive any single FFI call).
 fn runtime() -> Result<&'static tokio::runtime::Runtime, AunError> {
-    static RT: OnceLock<std::io::Result<tokio::runtime::Runtime>> = OnceLock::new();
-    RT.get_or_init(|| {
-        tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(2)
-            .thread_name("aun-upload")
-            .enable_all()
-            .build()
-    })
-    .as_ref()
-    .map_err(|e| AunError::Internal {
-        detail: format!("upload runtime: {e}"),
-    })
+    crate::runtime::background()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]

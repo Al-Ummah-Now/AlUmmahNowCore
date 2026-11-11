@@ -47,6 +47,7 @@ fn config(server: &MockServer, device: bool) -> OAuthConfig {
         authorization_endpoint: format!("{}/authorize", server.uri()),
         token_endpoint: format!("{}/token", server.uri()),
         device_authorization_endpoint: device.then(|| format!("{}/device/code", server.uri())),
+        revocation_endpoint: None,
         client_id: "viewer-mobile".into(),
         redirect_uri: "alummahnow://auth/callback".into(),
         scopes: vec!["openid".into(), "profile".into()],
@@ -574,4 +575,119 @@ async fn refuses_cleartext_endpoints() {
         server.received_requests().await.unwrap().is_empty(),
         "nothing was sent"
     );
+}
+
+#[tokio::test]
+async fn sign_out_and_revoke_revokes_the_refresh_token() {
+    let server = MockServer::start().await;
+    let m = manager(&server, Arc::new(ManualClock::new(0)));
+    sign_in(&m, &server, "u1").await;
+    Mock::given(method("POST"))
+        .and(path("/token/revoke"))
+        .and(body_string_contains("token=rt-u1"))
+        .and(body_string_contains("token_type_hint=refresh_token"))
+        .and(body_string_contains("client_id=viewer-mobile"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&server)
+        .await;
+    m.sign_out_and_revoke("u1").await.unwrap();
+    assert!(m.accounts().unwrap().is_empty());
+    assert_eq!(m.active_account().unwrap(), None);
+}
+
+#[tokio::test]
+async fn failed_revocation_never_blocks_sign_out() {
+    let server = MockServer::start().await;
+    let m = manager(&server, Arc::new(ManualClock::new(0)));
+    sign_in(&m, &server, "u1").await;
+    sign_in(&m, &server, "u2").await;
+    Mock::given(method("POST"))
+        .and(path("/token/revoke"))
+        .respond_with(ResponseTemplate::new(503))
+        .expect(1)
+        .mount(&server)
+        .await;
+    m.sign_out_and_revoke("u2").await.unwrap();
+    let ids: Vec<_> = m.accounts().unwrap().into_iter().map(|a| a.user_id).collect();
+    assert_eq!(ids, vec!["u1".to_string()]);
+    assert_eq!(m.active_account().unwrap().unwrap().user_id, "u1");
+}
+
+#[tokio::test]
+async fn sign_out_of_an_unknown_account_sends_nothing() {
+    let server = MockServer::start().await;
+    let m = manager(&server, Arc::new(ManualClock::new(0)));
+    Mock::given(path("/token/revoke"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+    m.sign_out_and_revoke("nobody").await.unwrap();
+    assert_eq!(m.sign_out_taking_refresh_token("nobody").unwrap(), None);
+}
+
+#[tokio::test]
+async fn discovery_reads_the_revocation_endpoint() {
+    let server = MockServer::start().await;
+    Mock::given(path("/.well-known/oauth-authorization-server"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "issuer": server.uri(), "authorization_endpoint": format!("{}/authorize", server.uri()),
+            "token_endpoint": format!("{}/token", server.uri()),
+            "revocation_endpoint": format!("{}/oauth/revoke", server.uri()),
+        })))
+        .mount(&server)
+        .await;
+    let c = OAuthConfig::discover(&http(), &server.uri(), "tv", "alummahnow://cb", vec![])
+        .await
+        .unwrap();
+    assert_eq!(c.revocation_url(), format!("{}/oauth/revoke", server.uri()));
+    let mut d = c.clone();
+    d.revocation_endpoint = None;
+    assert_eq!(d.revocation_url(), format!("{}/token/revoke", server.uri()));
+}
+
+#[tokio::test]
+async fn loopback_redirect_is_used_for_authorize_and_the_code_exchange() {
+    let server = MockServer::start().await;
+    let m = manager(&server, Arc::new(ManualClock::new(0)));
+    let loopback = "http://127.0.0.1:53111/auth/callback";
+    let p = m
+        .begin_login_with_redirect(LoginPrompt::Login, Some(loopback))
+        .unwrap();
+    let url = reqwest::Url::parse(&p.url).unwrap();
+    let q: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
+    assert_eq!(q["redirect_uri"], loopback);
+    assert_eq!(q["prompt"], "login");
+    Mock::given(method("POST"))
+        .and(path("/token"))
+        .and(body_string_contains(
+            "redirect_uri=http%3A%2F%2F127.0.0.1%3A53111%2Fauth%2Fcallback",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(token_body("u1", "at", Some("rt"), 3600)))
+        .expect(1)
+        .mount(&server)
+        .await;
+    // Another port is a different redirect: refused before any network call.
+    let other = m
+        .begin_login_with_redirect(LoginPrompt::Default, Some(loopback))
+        .unwrap();
+    let wrong_port = format!(
+        "http://127.0.0.1:53112/auth/callback?code=c&state={}",
+        other.state
+    );
+    assert!(matches!(
+        m.complete_login(&wrong_port).await,
+        Err(Error::InvalidInput(_))
+    ));
+    let info = m
+        .complete_login(&format!("{loopback}?code=c&state={}", p.state))
+        .await
+        .unwrap();
+    assert_eq!(info.user_id, "u1");
+    // Only loopback or the registered redirect may be used.
+    assert!(matches!(
+        m.begin_login_with_redirect(LoginPrompt::Default, Some("https://evil.example/cb")),
+        Err(Error::InvalidInput(_))
+    ));
 }

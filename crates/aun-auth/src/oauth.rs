@@ -18,6 +18,8 @@ pub struct OAuthConfig {
     pub token_endpoint: String,
     /// RFC 8628 endpoint; `None` until the auth server ships it (Epic 9.2).
     pub device_authorization_endpoint: Option<String>,
+    /// RFC 7009 endpoint; `None` means `{issuer}/token/revoke`.
+    pub revocation_endpoint: Option<String>,
     /// e.g. `viewer-mobile`, `studio-desktop`
     pub client_id: String,
     /// e.g. `alummahnow://auth/callback`
@@ -31,9 +33,17 @@ struct Metadata {
     authorization_endpoint: String,
     token_endpoint: String,
     device_authorization_endpoint: Option<String>,
+    revocation_endpoint: Option<String>,
 }
 
 impl OAuthConfig {
+    /// The RFC 7009 revocation endpoint: the configured one, else `{issuer}/token/revoke`.
+    pub fn revocation_url(&self) -> String {
+        self.revocation_endpoint
+            .clone()
+            .unwrap_or_else(|| format!("{}/token/revoke", self.issuer.trim_end_matches('/')))
+    }
+
     /// Reads `/.well-known/oauth-authorization-server` from the issuer.
     pub async fn discover(
         http: &reqwest::Client,
@@ -61,11 +71,15 @@ impl OAuthConfig {
         if let Some(d) = &m.device_authorization_endpoint {
             ensure_secure_url(d)?;
         }
+        if let Some(r) = &m.revocation_endpoint {
+            ensure_secure_url(r)?;
+        }
         Ok(Self {
             issuer: m.issuer,
             authorization_endpoint: m.authorization_endpoint,
             token_endpoint: m.token_endpoint,
             device_authorization_endpoint: m.device_authorization_endpoint,
+            revocation_endpoint: m.revocation_endpoint,
             client_id: client_id.into(),
             redirect_uri: redirect_uri.into(),
             scopes,
@@ -160,6 +174,8 @@ pub struct PendingAuthorization {
     pub url: String,
     pub state: String,
     pub pkce: Pkce,
+    /// The `redirect_uri` sent to `/authorize`; the code exchange must send the same one.
+    pub redirect_uri: String,
 }
 
 impl std::fmt::Debug for PendingAuthorization {
@@ -216,14 +232,35 @@ impl OAuthClient {
 
     /// Builds the authorization URL with a fresh `state` and PKCE S256 challenge.
     pub fn authorize(&self, extra: &[(&str, &str)]) -> Result<PendingAuthorization> {
+        self.authorize_with_redirect(extra, None)
+    }
+
+    /// [`Self::authorize`] with a per-attempt redirect. Desktop apps receive the code on a loopback
+    /// listener whose port the OS picks for each attempt (RFC 8252 §7.3), so `redirect_uri` may be
+    /// `http://127.0.0.1:{port}/…` or `http://[::1]:{port}/…`; anything else must equal the
+    /// configured redirect.
+    pub fn authorize_with_redirect(
+        &self,
+        extra: &[(&str, &str)],
+        redirect_uri: Option<&str>,
+    ) -> Result<PendingAuthorization> {
         ensure_secure_url(&self.config.authorization_endpoint)?;
+        let redirect_uri = match redirect_uri {
+            None => self.config.redirect_uri.clone(),
+            Some(r) if r == self.config.redirect_uri || is_loopback_redirect(r) => r.to_owned(),
+            Some(r) => {
+                return Err(Error::InvalidInput(format!(
+                    "redirect {r:?} is neither the registered redirect nor a loopback address"
+                )));
+            }
+        };
         let pkce = Pkce::generate()?;
         let state = random_token(16)?;
         let scope = self.config.scopes.join(" ");
         let mut params: Vec<(&str, &str)> = vec![
             ("response_type", "code"),
             ("client_id", &self.config.client_id),
-            ("redirect_uri", &self.config.redirect_uri),
+            ("redirect_uri", &redirect_uri),
             ("state", &state),
             ("code_challenge", &pkce.challenge),
             ("code_challenge_method", Pkce::METHOD),
@@ -238,6 +275,7 @@ impl OAuthClient {
             url: url.into(),
             state,
             pkce,
+            redirect_uri,
         })
     }
 
@@ -250,9 +288,12 @@ impl OAuthClient {
     ) -> Result<TokenSet> {
         let url =
             reqwest::Url::parse(redirect_url).map_err(|e| Error::InvalidInput(format!("redirect: {e}")))?;
-        let expected = reqwest::Url::parse(&self.config.redirect_uri).ok();
+        let expected = reqwest::Url::parse(&pending.redirect_uri).ok();
         if let Some(exp) = expected
-            && (exp.scheme() != url.scheme() || exp.host_str() != url.host_str() || exp.path() != url.path())
+            && (exp.scheme() != url.scheme()
+                || exp.host_str() != url.host_str()
+                || exp.port() != url.port()
+                || exp.path() != url.path())
         {
             return Err(Error::InvalidInput(
                 "redirect does not match the registered redirect_uri".into(),
@@ -277,7 +318,7 @@ impl OAuthClient {
             &[
                 ("grant_type", "authorization_code"),
                 ("code", code),
-                ("redirect_uri", &self.config.redirect_uri),
+                ("redirect_uri", &pending.redirect_uri),
                 ("client_id", &self.config.client_id),
                 ("code_verifier", &pending.pkce.verifier),
             ],
@@ -302,6 +343,25 @@ impl OAuthClient {
             t.refresh_token = Some(refresh_token.to_owned());
         }
         Ok(t)
+    }
+
+    /// RFC 7009: revokes a refresh token. The server answers 200 for unknown or already revoked
+    /// tokens too, so only transport failures and server errors are errors.
+    pub async fn revoke_refresh_token(&self, refresh_token: &str) -> Result<()> {
+        let endpoint = self.config.revocation_url();
+        ensure_secure_url(&endpoint)?;
+        let form = [
+            ("token", refresh_token),
+            ("token_type_hint", "refresh_token"),
+            ("client_id", self.config.client_id.as_str()),
+        ];
+        let resp = self.http.post(&endpoint).form(&form).send().await.map_err(net)?;
+        let status = resp.status();
+        if status.is_success() {
+            return Ok(());
+        }
+        let body = resp.text().await.map_err(net)?;
+        Err(oauth_error(status.as_u16(), &body))
     }
 
     /// RFC 8628 §3.1: asks for a device and user code.
@@ -411,6 +471,28 @@ fn oauth_error(status: u16, body: &str) -> Error {
     }
 }
 
+/// `http://127.0.0.1:{port}/…`, `http://[::1]:{port}/…` or `http://localhost:{port}/…`
+/// (RFC 8252 §7.3), with an explicit port and no credentials, query or fragment.
+pub fn is_loopback_redirect(uri: &str) -> bool {
+    let Ok(u) = reqwest::Url::parse(uri) else {
+        return false;
+    };
+    let loopback = u.host_str().is_some_and(|h| {
+        h.eq_ignore_ascii_case("localhost")
+            || h.trim_start_matches('[')
+                .trim_end_matches(']')
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback())
+    });
+    u.scheme() == "http"
+        && loopback
+        && u.port().is_some()
+        && u.username().is_empty()
+        && u.password().is_none()
+        && u.query().is_none()
+        && u.fragment().is_none()
+}
+
 /// Seconds to wait before the next device poll after a `slow_down` (RFC 8628 §3.5: +5 s).
 pub fn slowed_interval(current: u64) -> u64 {
     current + 5
@@ -457,6 +539,19 @@ mod tests {
         assert_eq!(LoginPrompt::Silent.as_param(), Some("none"));
         assert_eq!(LoginPrompt::Login.as_param(), Some("login"));
         assert_eq!(LoginPrompt::SelectAccount.as_param(), Some("select_account"));
+    }
+
+    #[test]
+    fn loopback_redirects() {
+        assert!(is_loopback_redirect("http://127.0.0.1:53111/auth/callback"));
+        assert!(is_loopback_redirect("http://[::1]:8080/cb"));
+        assert!(is_loopback_redirect("http://localhost:1/cb"));
+        assert!(!is_loopback_redirect("http://127.0.0.1/cb"), "port required");
+        assert!(!is_loopback_redirect("https://127.0.0.1:1/cb"));
+        assert!(!is_loopback_redirect("http://example.com:1/cb"));
+        assert!(!is_loopback_redirect("http://127.0.0.1:1/cb?x=1"));
+        assert!(!is_loopback_redirect("http://u:p@127.0.0.1:1/cb"));
+        assert!(!is_loopback_redirect("alummahnow://auth/callback"));
     }
 
     #[test]

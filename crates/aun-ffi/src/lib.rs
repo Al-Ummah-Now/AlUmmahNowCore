@@ -12,6 +12,7 @@ mod diagnostics;
 mod error;
 mod media;
 mod platform;
+mod runtime;
 mod search;
 mod upload;
 
