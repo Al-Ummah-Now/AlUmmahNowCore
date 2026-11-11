@@ -1,14 +1,14 @@
-name: apt-get install (retried)
+name: apt-get install (mirror fallback, retried)
 description: >-
-  Installs Ubuntu packages without letting one bad mirror fail the job
-  (2026-11-11: release v2026.11.11.5 failed at "Install Chromium and ffmpeg
-  (stage seed)" with apt exit 100, "Some index files failed to download").
-  Sets Acquire::Retries for the whole job, then retries update + install with
-  backoff; an install that still fails after the last attempt fails the step.
+  Installs Ubuntu packages without letting one bad mirror fail or hang the job
+  (2026-11-11: azure.archive.ubuntu.com stopped resolving; release
+  v2026.11.11.5 and several E2E jobs failed with apt exit 100 or hung).
+  apt-setup.sh finds a mirror that answers; the install is time-boxed and
+  retried, with the mirror re-checked between attempts.
 
 inputs:
   packages:
-    description: 'Space-separated package names'
+    description: 'Space-separated package names (globs such as ./dist/*.deb allowed)'
     required: true
   no-install-recommends:
     description: 'Pass --no-install-recommends'
@@ -23,15 +23,14 @@ runs:
       env:
         PACKAGES: ${{ inputs.packages }}
         NO_RECOMMENDS: ${{ inputs.no-install-recommends }}
+        SETUP: ${{ github.action_path }}/apt-setup.sh
       run: |
-        printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' \
-          | sudo tee /etc/apt/apt.conf.d/80-ci-retries > /dev/null
         extra=()
         [ "$NO_RECOMMENDS" = true ] && extra+=(--no-install-recommends)
-        # shellcheck disable=SC2086 # PACKAGES is a word list
-        for attempt in 1 2 3 4; do
-          if sudo apt-get update -qq && sudo apt-get install -y -qq "${extra[@]}" $PACKAGES; then exit 0; fi
+        for attempt in 1 2 3; do
+          # shellcheck disable=SC2086 # PACKAGES is a word list (and may hold a glob)
+          if bash "$SETUP" && timeout 600 sudo apt-get install -y -qq "${extra[@]}" $PACKAGES; then exit 0; fi
           echo "::warning::apt-get install $PACKAGES failed (attempt $attempt), retrying"
-          sleep $((attempt * 20))
+          sleep $((attempt * 15))
         done
         exit 1
