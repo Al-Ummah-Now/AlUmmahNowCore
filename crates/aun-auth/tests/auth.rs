@@ -575,3 +575,83 @@ async fn refuses_cleartext_endpoints() {
         "nothing was sent"
     );
 }
+
+#[tokio::test]
+async fn sign_out_and_revoke_revokes_the_refresh_token() {
+    let server = MockServer::start().await;
+    let m = manager(&server, Arc::new(ManualClock::new(1_000)));
+    sign_in(&m, &server, "u1").await;
+    Mock::given(method("POST"))
+        .and(path("/token/revoke"))
+        .and(body_string_contains("token=rt-u1"))
+        .and(body_string_contains("token_type_hint=refresh_token"))
+        .and(body_string_contains("client_id=viewer-mobile"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&server)
+        .await;
+    assert!(m.sign_out_and_revoke("u1").await.unwrap());
+    assert_eq!(m.accounts().unwrap().len(), 0);
+    assert_eq!(m.access_token().await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn failed_revocation_never_blocks_sign_out() {
+    let server = MockServer::start().await;
+    let m = manager(&server, Arc::new(ManualClock::new(1_000)));
+    let events = Arc::new(Events::default());
+    m.add_listener(events.clone());
+    sign_in(&m, &server, "u1").await;
+    Mock::given(method("POST"))
+        .and(path("/token/revoke"))
+        .respond_with(ResponseTemplate::new(503))
+        .expect(1)
+        .mount(&server)
+        .await;
+    assert!(!m.sign_out_and_revoke("u1").await.unwrap());
+    assert!(m.accounts().unwrap().is_empty());
+    assert!(
+        events
+            .0
+            .lock()
+            .unwrap()
+            .contains(&AuthEvent::SignedOut { user_id: "u1".into() })
+    );
+
+    // Unreachable server: still signed out.
+    let m = manager(&server, Arc::new(ManualClock::new(1_000)));
+    sign_in(&m, &server, "u2").await;
+    drop(server);
+    assert!(!m.sign_out_and_revoke("u2").await.unwrap());
+    assert!(m.accounts().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn logout_url_points_at_the_issuer() {
+    let cfg = OAuthConfig {
+        issuer: "https://auth.qa.alummahnow.net/".into(),
+        authorization_endpoint: "https://auth.qa.alummahnow.net/authorize".into(),
+        token_endpoint: "https://auth.qa.alummahnow.net/token".into(),
+        device_authorization_endpoint: None,
+        client_id: "studio-mobile".into(),
+        redirect_uri: "alummahnow-studio://auth/callback".into(),
+        scopes: vec![],
+    };
+    assert_eq!(
+        cfg.revocation_endpoint(),
+        "https://auth.qa.alummahnow.net/token/revoke"
+    );
+    let m = AuthManager::new(
+        OAuthClient::new(cfg.clone(), http()),
+        Arc::new(MemorySecureStorage::new()),
+    );
+    assert_eq!(
+        m.logout_url(None).unwrap(),
+        "https://auth.qa.alummahnow.net/logout"
+    );
+    assert_eq!(
+        m.logout_url(Some("https://videos.qa.alummahnow.net/studio?a=1"))
+            .unwrap(),
+        "https://auth.qa.alummahnow.net/logout?return=https%3A%2F%2Fvideos.qa.alummahnow.net%2Fstudio%3Fa%3D1"
+    );
+}

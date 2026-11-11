@@ -221,7 +221,27 @@ impl AuthManager {
         self.store.put(&a)
     }
 
-    /// Removes the account and its tokens from this device. If it was active, the most recently
+    /// Signs out: removes the account from this device (exactly like [`Self::sign_out`]), then
+    /// revokes its refresh token at the auth server (RFC 7009) so a copied token stops working.
+    /// Revocation is best effort: the account is gone locally even when the server can't be
+    /// reached, and the error is returned only as `Ok(false)`. Returns `Ok(true)` when revoked
+    /// (or there was no refresh token).
+    pub async fn sign_out_and_revoke(&self, user_id: &str) -> Result<bool> {
+        let refresh = self.store.get(user_id)?.and_then(|a| a.tokens.refresh_token);
+        self.sign_out(user_id)?;
+        let Some(rt) = refresh else { return Ok(true) };
+        Ok(self.oauth.revoke_refresh_token(&rt).await.is_ok())
+    }
+
+    /// The auth server's sign-out page. Open it in the same browser session used for sign-in
+    /// (Custom Tabs / ASWebAuthenticationSession) after [`Self::sign_out_and_revoke`] so the next
+    /// sign-in asks for credentials instead of returning silently as the same account.
+    pub fn logout_url(&self, return_to: Option<&str>) -> Result<String> {
+        self.oauth.config.logout_url(return_to)
+    }
+
+    /// Removes the account and its tokens from this device only; the refresh token stays valid at
+    /// the server. Prefer [`Self::sign_out_and_revoke`]. If it was active, the most recently
     /// used remaining account becomes active.
     pub fn sign_out(&self, user_id: &str) -> Result<()> {
         let was_active = self.store.active()?.as_deref() == Some(user_id);

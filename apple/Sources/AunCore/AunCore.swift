@@ -1031,9 +1031,26 @@ public protocol AuthManagerProtocol: AnyObject, Sendable {
      */
     func completeLogin(redirectUrl: String) async throws  -> AccountInfo
     
+    /**
+     * The auth server's sign-out page (`{issuer}/logout`, optional `return`). Open it in the
+     * sign-in browser session after `sign_out_and_revoke` to end the browser session too.
+     */
+    func logoutUrl(returnTo: String?) throws  -> String
+    
     func setActiveChannel(channelId: String?) throws 
     
+    /**
+     * Removes the account from this device only; its refresh token stays valid at the server.
+     * Prefer `sign_out_and_revoke`.
+     */
     func signOut(userId: String) throws 
+    
+    /**
+     * Removes the account from this device, then revokes its refresh token at the auth server.
+     * Never fails because the server is unreachable: returns `false` when revocation could not
+     * be confirmed (the account is still signed out locally).
+     */
+    func signOutAndRevoke(userId: String) async throws  -> Bool
     
     func switchAccount(userId: String) throws  -> AccountInfo
     
@@ -1245,6 +1262,19 @@ open func completeLogin(redirectUrl: String)async throws  -> AccountInfo  {
         )
 }
     
+    /**
+     * The auth server's sign-out page (`{issuer}/logout`, optional `return`). Open it in the
+     * sign-in browser session after `sign_out_and_revoke` to end the browser session too.
+     */
+open func logoutUrl(returnTo: String?)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_authmanager_logout_url(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionString.lower(returnTo),$0
+    )
+})
+}
+    
 open func setActiveChannel(channelId: String?)throws   {try rustCallWithError(FfiConverterTypeAunError_lift) {
     uniffi_aun_core_fn_method_authmanager_set_active_channel(
             self.uniffiCloneHandle(),
@@ -1253,12 +1283,38 @@ open func setActiveChannel(channelId: String?)throws   {try rustCallWithError(Ff
 }
 }
     
+    /**
+     * Removes the account from this device only; its refresh token stays valid at the server.
+     * Prefer `sign_out_and_revoke`.
+     */
 open func signOut(userId: String)throws   {try rustCallWithError(FfiConverterTypeAunError_lift) {
     uniffi_aun_core_fn_method_authmanager_sign_out(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(userId),$0
     )
 }
+}
+    
+    /**
+     * Removes the account from this device, then revokes its refresh token at the auth server.
+     * Never fails because the server is unreachable: returns `false` when revocation could not
+     * be confirmed (the account is still signed out locally).
+     */
+open func signOutAndRevoke(userId: String)async throws  -> Bool  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_authmanager_sign_out_and_revoke(
+                    self.uniffiCloneHandle(),
+                    FfiConverterString.lower(userId)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_i8,
+            completeFunc: ffi_aun_core_rust_future_complete_i8,
+            freeFunc: ffi_aun_core_rust_future_free_i8,
+            liftFunc: FfiConverterBool.lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
 }
     
 open func switchAccount(userId: String)throws  -> AccountInfo  {
@@ -7444,10 +7500,16 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_method_authmanager_complete_login() != 16882) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_method_authmanager_logout_url() != 43467) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aun_core_checksum_method_authmanager_set_active_channel() != 23440) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_aun_core_checksum_method_authmanager_sign_out() != 31761) {
+    if (uniffi_aun_core_checksum_method_authmanager_sign_out() != 17394) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_authmanager_sign_out_and_revoke() != 28896) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_authmanager_switch_account() != 40927) {

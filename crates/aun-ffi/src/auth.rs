@@ -253,8 +253,23 @@ impl AuthManager {
         Ok(self.inner.set_active_channel(channel_id)?)
     }
 
+    /// Removes the account from this device only; its refresh token stays valid at the server.
+    /// Prefer `sign_out_and_revoke`.
     pub fn sign_out(&self, user_id: String) -> Result<(), AunError> {
         Ok(self.inner.sign_out(&user_id)?)
+    }
+
+    /// Removes the account from this device, then revokes its refresh token at the auth server.
+    /// Never fails because the server is unreachable: returns `false` when revocation could not
+    /// be confirmed (the account is still signed out locally).
+    pub async fn sign_out_and_revoke(&self, user_id: String) -> Result<bool, AunError> {
+        Ok(self.inner.sign_out_and_revoke(&user_id).await?)
+    }
+
+    /// The auth server's sign-out page (`{issuer}/logout`, optional `return`). Open it in the
+    /// sign-in browser session after `sign_out_and_revoke` to end the browser session too.
+    pub fn logout_url(&self, return_to: Option<String>) -> Result<String, AunError> {
+        Ok(self.inner.logout_url(return_to.as_deref())?)
     }
 
     /// A fresh access token for the active account (refreshes when close to expiry).

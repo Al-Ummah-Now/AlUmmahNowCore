@@ -17,6 +17,12 @@ FFI; such changes are listed under **Breaking**.
   never share a temp file. A throttled transfer now stops promptly on pause, cancel or shutdown.
 
 ### Added
+- `aun-auth`/FFI: `AuthManager.sign_out_and_revoke(user_id)` signs out on this device, then revokes
+  the account's refresh token at `{issuer}/token/revoke` (RFC 7009) so a copied token stops working
+  (AlUmmahNow#720). Revocation never blocks sign-out: it returns `false` when the server could not
+  confirm it. `AuthManager.logout_url(return_to)` gives the auth server's `/logout` page; open it in
+  the sign-in browser session to end the browser session too, so the next sign-in is not silent.
+  `sign_out` is unchanged (device only); apps should move to `sign_out_and_revoke`.
 - `aun-search` (new crate) and FFI: live search autocomplete for the native apps.
   `ApiClient.search_suggestions(SuggestionQuery)` calls `GET /api/search/suggestions` with `q`,
   `limit` (1-20, default 8), `types` and `channelId`, once and without retries (a 429 throws

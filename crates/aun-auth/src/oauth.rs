@@ -34,6 +34,25 @@ struct Metadata {
 }
 
 impl OAuthConfig {
+    /// RFC 7009 revocation endpoint: `{issuer}/token/revoke` (the auth server does not advertise
+    /// it in discovery metadata).
+    pub fn revocation_endpoint(&self) -> String {
+        format!("{}/token/revoke", self.issuer.trim_end_matches('/'))
+    }
+
+    /// The auth server's sign-out page (`{issuer}/logout`), which ends the browser session and
+    /// signs every web app out. `return_to` must be an allowed Al Ummah Now page.
+    pub fn logout_url(&self, return_to: Option<&str>) -> Result<String> {
+        let base = format!("{}/logout", self.issuer.trim_end_matches('/'));
+        ensure_secure_url(&base)?;
+        let url = match return_to {
+            Some(r) => reqwest::Url::parse_with_params(&base, &[("return", r)]),
+            None => reqwest::Url::parse(&base),
+        }
+        .map_err(|e| Error::InvalidInput(format!("logout url: {e}")))?;
+        Ok(url.into())
+    }
+
     /// Reads `/.well-known/oauth-authorization-server` from the issuer.
     pub async fn discover(
         http: &reqwest::Client,
@@ -302,6 +321,25 @@ impl OAuthClient {
             t.refresh_token = Some(refresh_token.to_owned());
         }
         Ok(t)
+    }
+
+    /// RFC 7009: revokes a refresh token (the server deletes its token family). The server answers
+    /// 200 for unknown tokens too, so only transport errors and 5xx fail.
+    pub async fn revoke_refresh_token(&self, refresh_token: &str) -> Result<()> {
+        let endpoint = self.config.revocation_endpoint();
+        ensure_secure_url(&endpoint)?;
+        let form = [
+            ("token", refresh_token),
+            ("token_type_hint", "refresh_token"),
+            ("client_id", self.config.client_id.as_str()),
+        ];
+        let resp = self.http.post(&endpoint).form(&form).send().await.map_err(net)?;
+        let status = resp.status();
+        if status.is_success() {
+            return Ok(());
+        }
+        let body = resp.text().await.map_err(net)?;
+        Err(oauth_error(status.as_u16(), &body))
     }
 
     /// RFC 8628 §3.1: asks for a device and user code.
