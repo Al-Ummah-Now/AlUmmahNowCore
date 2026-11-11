@@ -1022,6 +1022,13 @@ public protocol AuthManagerProtocol: AnyObject, Sendable {
     func beginLoginWithPrompt(prompt: LoginPrompt) throws  -> LoginRequest
     
     /**
+     * Step 1 for desktop apps that receive the code on a loopback listener (RFC 8252 §7.3):
+     * `redirect_uri` is `http://127.0.0.1:{port}/…` with the port the listener got. Pass the
+     * request the listener received, as a full URL with that same origin, to `complete_login`.
+     */
+    func beginLoginWithRedirect(prompt: LoginPrompt, redirectUri: String) throws  -> LoginRequest
+    
+    /**
      * Polls until approved; throws `Cancelled` if denied or cancelled.
      */
     func completeDeviceLogin(login: DeviceLogin) async throws  -> AccountInfo
@@ -1033,7 +1040,18 @@ public protocol AuthManagerProtocol: AnyObject, Sendable {
     
     func setActiveChannel(channelId: String?) throws 
     
+    /**
+     * Removes the account from this device at once, then revokes its refresh token on the
+     * server in the background (best effort; a failure never undoes the sign-out). Use
+     * `sign_out_and_revoke` to wait for the revocation.
+     */
     func signOut(userId: String) throws 
+    
+    /**
+     * Signs out on this device, then waits (up to 10 s) for the server to revoke the refresh
+     * token. Never fails because of the revocation.
+     */
+    func signOutAndRevoke(userId: String) async throws 
     
     func switchAccount(userId: String) throws  -> AccountInfo
     
@@ -1206,6 +1224,21 @@ open func beginLoginWithPrompt(prompt: LoginPrompt)throws  -> LoginRequest  {
 }
     
     /**
+     * Step 1 for desktop apps that receive the code on a loopback listener (RFC 8252 §7.3):
+     * `redirect_uri` is `http://127.0.0.1:{port}/…` with the port the listener got. Pass the
+     * request the listener received, as a full URL with that same origin, to `complete_login`.
+     */
+open func beginLoginWithRedirect(prompt: LoginPrompt, redirectUri: String)throws  -> LoginRequest  {
+    return try  FfiConverterTypeLoginRequest_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_authmanager_begin_login_with_redirect(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeLoginPrompt_lower(prompt),
+        FfiConverterString.lower(redirectUri),$0
+    )
+})
+}
+    
+    /**
      * Polls until approved; throws `Cancelled` if denied or cancelled.
      */
 open func completeDeviceLogin(login: DeviceLogin)async throws  -> AccountInfo  {
@@ -1253,12 +1286,38 @@ open func setActiveChannel(channelId: String?)throws   {try rustCallWithError(Ff
 }
 }
     
+    /**
+     * Removes the account from this device at once, then revokes its refresh token on the
+     * server in the background (best effort; a failure never undoes the sign-out). Use
+     * `sign_out_and_revoke` to wait for the revocation.
+     */
 open func signOut(userId: String)throws   {try rustCallWithError(FfiConverterTypeAunError_lift) {
     uniffi_aun_core_fn_method_authmanager_sign_out(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(userId),$0
     )
 }
+}
+    
+    /**
+     * Signs out on this device, then waits (up to 10 s) for the server to revoke the refresh
+     * token. Never fails because of the revocation.
+     */
+open func signOutAndRevoke(userId: String)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_authmanager_sign_out_and_revoke(
+                    self.uniffiCloneHandle(),
+                    FfiConverterString.lower(userId)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_void,
+            completeFunc: ffi_aun_core_rust_future_complete_void,
+            freeFunc: ffi_aun_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeAunError_lift
+        )
 }
     
 open func switchAccount(userId: String)throws  -> AccountInfo  {
@@ -3790,6 +3849,10 @@ public struct AuthConfig: Equatable, Hashable {
     public var authorizationEndpoint: String?
     public var tokenEndpoint: String?
     public var deviceAuthorizationEndpoint: String?
+    /**
+     * RFC 7009 endpoint; `None` means `{issuer}/token/revoke`.
+     */
+    public var revocationEndpoint: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -3806,7 +3869,10 @@ public struct AuthConfig: Equatable, Hashable {
         /**
          * Endpoints; when `None`, `{issuer}/authorize` and `{issuer}/token` are used. Prefer
          * `auth_manager_discover` which reads them from the server.
-         */authorizationEndpoint: String?, tokenEndpoint: String?, deviceAuthorizationEndpoint: String?) {
+         */authorizationEndpoint: String?, tokenEndpoint: String?, deviceAuthorizationEndpoint: String?, 
+        /**
+         * RFC 7009 endpoint; `None` means `{issuer}/token/revoke`.
+         */revocationEndpoint: String? = nil) {
         self.issuer = issuer
         self.clientId = clientId
         self.redirectUri = redirectUri
@@ -3814,6 +3880,7 @@ public struct AuthConfig: Equatable, Hashable {
         self.authorizationEndpoint = authorizationEndpoint
         self.tokenEndpoint = tokenEndpoint
         self.deviceAuthorizationEndpoint = deviceAuthorizationEndpoint
+        self.revocationEndpoint = revocationEndpoint
     }
 
     
@@ -3838,7 +3905,8 @@ public struct FfiConverterTypeAuthConfig: FfiConverterRustBuffer {
                 scopes: FfiConverterSequenceString.read(from: &buf), 
                 authorizationEndpoint: FfiConverterOptionString.read(from: &buf), 
                 tokenEndpoint: FfiConverterOptionString.read(from: &buf), 
-                deviceAuthorizationEndpoint: FfiConverterOptionString.read(from: &buf)
+                deviceAuthorizationEndpoint: FfiConverterOptionString.read(from: &buf), 
+                revocationEndpoint: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -3850,6 +3918,7 @@ public struct FfiConverterTypeAuthConfig: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.authorizationEndpoint, into: &buf)
         FfiConverterOptionString.write(value.tokenEndpoint, into: &buf)
         FfiConverterOptionString.write(value.deviceAuthorizationEndpoint, into: &buf)
+        FfiConverterOptionString.write(value.revocationEndpoint, into: &buf)
     }
 }
 
@@ -7438,6 +7507,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_method_authmanager_begin_login_with_prompt() != 25349) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_method_authmanager_begin_login_with_redirect() != 55946) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aun_core_checksum_method_authmanager_complete_device_login() != 8120) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -7447,7 +7519,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_method_authmanager_set_active_channel() != 23440) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_aun_core_checksum_method_authmanager_sign_out() != 31761) {
+    if (uniffi_aun_core_checksum_method_authmanager_sign_out() != 16949) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_authmanager_sign_out_and_revoke() != 31825) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_authmanager_switch_account() != 40927) {

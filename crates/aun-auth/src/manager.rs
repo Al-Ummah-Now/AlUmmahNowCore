@@ -16,6 +16,9 @@ use crate::oauth::{
 /// Refresh when the access token has less than this left.
 pub const REFRESH_SKEW_MS: i64 = 60_000;
 
+/// Upper bound on the revocation call during sign-out.
+pub const REVOKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// Events for the app (update the account switcher, prompt to sign in again).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthEvent {
@@ -110,8 +113,19 @@ impl AuthManager {
     /// [`Self::begin_login`] with an explicit `prompt`: `Silent` to re-authorize without UI
     /// (e.g. after [`AuthEvent::ReauthRequired`]), `Login` for "Add account".
     pub fn begin_login_with_prompt(&self, prompt: LoginPrompt) -> Result<PendingAuthorization> {
+        self.begin_login_with_redirect(prompt, None)
+    }
+
+    /// [`Self::begin_login_with_prompt`] with a per-attempt loopback redirect
+    /// (`http://127.0.0.1:{port}/…`) for desktop apps that receive the code on a local listener.
+    /// `None` uses the configured redirect.
+    pub fn begin_login_with_redirect(
+        &self,
+        prompt: LoginPrompt,
+        redirect_uri: Option<&str>,
+    ) -> Result<PendingAuthorization> {
         let extra: Vec<(&str, &str)> = prompt.as_param().map(|p| ("prompt", p)).into_iter().collect();
-        let p = self.oauth.authorize(&extra)?;
+        let p = self.oauth.authorize_with_redirect(&extra, redirect_uri)?;
         self.pending
             .lock()
             .map_err(|_| Error::Internal("poisoned".into()))?
@@ -221,17 +235,46 @@ impl AuthManager {
         self.store.put(&a)
     }
 
-    /// Removes the account and its tokens from this device. If it was active, the most recently
-    /// used remaining account becomes active.
+    /// Removes the account and its tokens from this device only. If it was active, the most
+    /// recently used remaining account becomes active. Prefer [`Self::sign_out_and_revoke`], which
+    /// also revokes the refresh token on the server.
     pub fn sign_out(&self, user_id: &str) -> Result<()> {
+        self.sign_out_taking_refresh_token(user_id).map(|_| ())
+    }
+
+    /// Signs out on this device, then revokes the account's refresh token (RFC 7009) so a copy of
+    /// it can no longer mint access tokens. The account is gone locally before the network call,
+    /// and a failed or slow revocation (bounded by [`REVOKE_TIMEOUT`]) never fails sign-out.
+    pub async fn sign_out_and_revoke(&self, user_id: &str) -> Result<()> {
+        if let Some(rt) = self.sign_out_taking_refresh_token(user_id)? {
+            self.revoke_refresh_token(&rt).await;
+        }
+        Ok(())
+    }
+
+    /// Best-effort revocation of a refresh token returned by
+    /// [`Self::sign_out_taking_refresh_token`]: errors are logged, never returned.
+    pub async fn revoke_refresh_token(&self, refresh_token: &str) {
+        match tokio::time::timeout(REVOKE_TIMEOUT, self.oauth.revoke_refresh_token(refresh_token)).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => tracing::warn!(error = %e, "refresh token revocation failed"),
+            Err(_) => tracing::warn!("refresh token revocation timed out"),
+        }
+    }
+
+    /// [`Self::sign_out`], returning the removed refresh token so the caller can revoke it
+    /// (e.g. on a background runtime).
+    pub fn sign_out_taking_refresh_token(&self, user_id: &str) -> Result<Option<String>> {
         let was_active = self.store.active()?.as_deref() == Some(user_id);
-        {
+        let refresh_token = {
             let _g = self
                 .store_lock
                 .lock()
                 .map_err(|_| Error::Internal("auth lock poisoned".into()))?;
+            let refresh_token = self.store.get(user_id)?.and_then(|a| a.tokens.refresh_token);
             self.store.remove(user_id)?;
-        }
+            refresh_token
+        };
         self.emit(AuthEvent::SignedOut {
             user_id: user_id.into(),
         });
@@ -240,7 +283,7 @@ impl AuthManager {
             self.store.set_active(next.as_deref())?;
             self.emit(AuthEvent::ActiveChanged { user_id: next });
         }
-        Ok(())
+        Ok(refresh_token)
     }
 
     /// A valid access token for the active account, refreshing first if it expires soon.

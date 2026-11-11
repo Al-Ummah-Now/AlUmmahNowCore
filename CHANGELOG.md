@@ -7,6 +7,21 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+### Security
+- `aun-auth`/FFI: sign-out revokes the refresh token (RFC 7009, AlUmmahNow#720). `AuthManager.sign_out`
+  removes the account from the device at once and revokes its refresh token in the background;
+  the new async `sign_out_and_revoke` waits for the revocation (at most 10 s). A failed or slow
+  revocation never fails or undoes sign-out. The endpoint is the discovered `revocation_endpoint`,
+  else `{issuer}/token/revoke`; `AuthConfig.revocation_endpoint` (default `None`) overrides it.
+  The browser session is not ended: apps that want single sign-out open `{issuer}/logout` themselves.
+
+### Added
+- `aun-auth`/FFI: `AuthManager.begin_login_with_redirect(prompt, redirect_uri)` for desktop apps that
+  receive the code on a loopback listener with an OS-assigned port (RFC 8252 §7.3). The redirect
+  must be `http://127.0.0.1:{port}/…`, `http://[::1]:{port}/…` or `http://localhost:{port}/…` (or
+  the registered redirect); the code exchange sends the same redirect, and a callback on another
+  port is refused.
+
 ### Changed
 - `aun-sync`/`aun-upload`: an open store is now locked against other processes. `SyncEngine::open`
   takes an exclusive lock on `<store>.lock`, and `UploadEngine::open` one per account in the store
