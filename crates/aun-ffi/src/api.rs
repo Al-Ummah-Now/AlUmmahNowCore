@@ -222,6 +222,16 @@ pub(crate) fn build_path_request(call: PathCall) -> Result<RequestSpec, AunError
             });
         }
     };
+    if let Some(h) = call.headers.keys().find(|h| {
+        matches!(
+            h.to_ascii_lowercase().as_str(),
+            "authorization" | "cookie" | "host" | "content-length"
+        )
+    }) {
+        return Err(AunError::InvalidInput {
+            detail: format!("header {h} is set by the client"),
+        });
+    }
     let path = fill_path(t, &call.path_params, t)?;
     let mut req = RequestSpec::new(method, path, "path_call");
     if call.auth_required {
@@ -230,7 +240,7 @@ pub(crate) fn build_path_request(call: PathCall) -> Result<RequestSpec, AunError
     finish_request(
         req,
         call.query,
-        HashMap::new(),
+        call.headers,
         call.body_json,
         call.idempotency_key,
     )
