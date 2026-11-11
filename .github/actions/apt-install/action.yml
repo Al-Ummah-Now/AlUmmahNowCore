@@ -1,0 +1,37 @@
+name: apt-get install (retried)
+description: >-
+  Installs Ubuntu packages without letting one bad mirror fail the job
+  (2026-11-11: release v2026.11.11.5 failed at "Install Chromium and ffmpeg
+  (stage seed)" with apt exit 100, "Some index files failed to download").
+  Sets Acquire::Retries for the whole job, then retries update + install with
+  backoff; an install that still fails after the last attempt fails the step.
+
+inputs:
+  packages:
+    description: 'Space-separated package names'
+    required: true
+  no-install-recommends:
+    description: 'Pass --no-install-recommends'
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: apt-get install ${{ inputs.packages }}
+      shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+        NO_RECOMMENDS: ${{ inputs.no-install-recommends }}
+      run: |
+        printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' \
+          | sudo tee /etc/apt/apt.conf.d/80-ci-retries > /dev/null
+        extra=()
+        [ "$NO_RECOMMENDS" = true ] && extra+=(--no-install-recommends)
+        # shellcheck disable=SC2086 # PACKAGES is a word list
+        for attempt in 1 2 3 4; do
+          if sudo apt-get update -qq && sudo apt-get install -y -qq "${extra[@]}" $PACKAGES; then exit 0; fi
+          echo "::warning::apt-get install $PACKAGES failed (attempt $attempt), retrying"
+          sleep $((attempt * 20))
+        done
+        exit 1
