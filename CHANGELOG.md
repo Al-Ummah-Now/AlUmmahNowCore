@@ -7,6 +7,8 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+## [0.3.0-rc.2] - 2026-11-12
+
 ### Added
 - `aun-common`/FFI: one display-name rule for every native app (owner rule 2026-11-12, mirrors the
   web `resolveDisplayName`): display name in the locale → plain display name → first + last
