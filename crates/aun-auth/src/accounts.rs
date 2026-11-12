@@ -7,6 +7,7 @@
 
 use std::sync::Arc;
 
+use aun_common::display_name::{NameFields, resolve_display_name};
 use aun_common::platform::SecureStorage;
 use aun_common::{Error, Result};
 use base64::Engine;
@@ -122,9 +123,28 @@ pub struct IdentityClaims {
     pub sub: Option<String>,
     pub email: Option<String>,
     pub name: Option<String>,
+    pub given_name: Option<String>,
+    pub family_name: Option<String>,
     pub picture: Option<String>,
     /// OpenAuth puts the subject's properties here (`{type, properties: {id, email}}`).
     pub properties: Option<serde_json::Value>,
+}
+
+/// The account label by the platform name rule ([`aun_common::display_name`]): `name`, then
+/// given + family name. No handle (handles belong to channels) and never the email: with no
+/// name it is `None` and the app falls back to the email.
+fn account_name(claims: &IdentityClaims, prop: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+    let fields = NameFields {
+        display_name: claims
+            .name
+            .clone()
+            .or_else(|| prop("displayName"))
+            .or_else(|| prop("name")),
+        first_name: claims.given_name.clone().or_else(|| prop("firstName")),
+        last_name: claims.family_name.clone().or_else(|| prop("lastName")),
+        ..Default::default()
+    };
+    Some(resolve_display_name(&fields, None)).filter(|n| !n.is_empty())
 }
 
 pub fn decode_claims(jwt: &str) -> Option<IdentityClaims> {
@@ -157,7 +177,7 @@ pub fn identity_from_tokens(tokens: &TokenSet) -> Result<AccountInfo> {
     Ok(AccountInfo {
         user_id,
         email: claims.email.clone().or_else(|| prop("email")),
-        display_name: claims.name.clone().or_else(|| prop("name")),
+        display_name: account_name(&claims, &prop),
         avatar_url: claims.picture.clone(),
         ..Default::default()
     })
@@ -196,6 +216,49 @@ mod tests {
             ..t
         };
         assert!(identity_from_tokens(&opaque).is_err());
+    }
+
+    fn name_for(payload: serde_json::Value) -> Option<String> {
+        let t = TokenSet {
+            access_token: jwt(payload),
+            refresh_token: None,
+            id_token: None,
+            expires_at_ms: None,
+            scope: None,
+        };
+        identity_from_tokens(&t).unwrap().display_name
+    }
+
+    #[test]
+    fn account_name_follows_the_display_name_rule() {
+        use serde_json::json;
+        assert_eq!(
+            name_for(json!({"sub": "u", "name": " Sara  Ali ", "given_name": "X"})).as_deref(),
+            Some("Sara Ali")
+        );
+        assert_eq!(
+            name_for(json!({"sub": "u", "name": "  ", "given_name": "Sara", "family_name": "Ali"}))
+                .as_deref(),
+            Some("Sara Ali")
+        );
+        assert_eq!(
+            name_for(json!({"sub": "u", "family_name": "علي"})).as_deref(),
+            Some("علي")
+        );
+        assert_eq!(
+            name_for(json!({"sub": "u", "properties": {"id": "u", "firstName": "Sara", "userName": "sara"}}))
+                .as_deref(),
+            Some("Sara")
+        );
+        assert_eq!(
+            name_for(json!({"sub": "u", "preferred_username": "sara", "email": "s@example.com"})),
+            None
+        );
+        // No handle (handles belong to channels) and never the email: the app decides on it.
+        assert_eq!(
+            name_for(json!({"sub": "u", "properties": {"id": "u", "email": "s@example.com"}})),
+            None
+        );
     }
 
     #[test]
