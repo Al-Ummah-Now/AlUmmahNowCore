@@ -1,6 +1,7 @@
 //! Shared foundations for `aun-core`: the error model and the platform-adapter traits that native
 //! apps implement. See `docs/PLAN.md` §4 and §6.
 
+pub mod display_name;
 mod error;
 pub mod lock;
 pub mod platform;

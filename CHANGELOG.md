@@ -7,6 +7,19 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+### Added
+- `aun-common`/FFI: one display-name rule for every native app (owner rule 2026-11-12, mirrors the
+  web `resolveDisplayName`): display name in the locale → plain display name → first + last
+  (whichever exists) → a name in another language → `""`. No `@handle` (handles belong to
+  channels). Blank values count as missing; never the email. FFI:
+  `resolve_display_name(NameFields, locale)` and `resolve_display_name_json(profile_json, locale)`,
+  which prefers the API's `resolvedDisplayName` and falls back to the rule.
+
+### Changed
+- `aun-auth`: `AccountInfo.display_name` follows the rule over the token claims (`name`, then
+  `given_name` + `family_name`; OpenAuth `properties` too). A blank `name` is now `None` instead
+  of whitespace; it is never a handle or the email.
+
 ## [0.3.0-rc.1] - 2026-11-11
 
 ### Security

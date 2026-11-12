@@ -4219,6 +4219,79 @@ public func FfiConverterTypeModelDescriptor_lower(_ value: ModelDescriptor) -> R
 
 
 /**
+ * The name fields of a profile, as the API sends them. Maps are keyed by language (`en`, `ar`).
+ */
+public struct NameFields: Equatable, Hashable {
+    public var displayName: String?
+    public var displayNameLocalized: [String: String]
+    public var firstName: String?
+    public var firstNameLocalized: [String: String]
+    public var lastName: String?
+    public var lastNameLocalized: [String: String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(displayName: String? = nil, displayNameLocalized: [String: String] = [:], firstName: String? = nil, firstNameLocalized: [String: String] = [:], lastName: String? = nil, lastNameLocalized: [String: String] = [:]) {
+        self.displayName = displayName
+        self.displayNameLocalized = displayNameLocalized
+        self.firstName = firstName
+        self.firstNameLocalized = firstNameLocalized
+        self.lastName = lastName
+        self.lastNameLocalized = lastNameLocalized
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension NameFields: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNameFields: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NameFields {
+        return
+            try NameFields(
+                displayName: FfiConverterOptionString.read(from: &buf), 
+                displayNameLocalized: FfiConverterDictionaryStringString.read(from: &buf), 
+                firstName: FfiConverterOptionString.read(from: &buf), 
+                firstNameLocalized: FfiConverterDictionaryStringString.read(from: &buf), 
+                lastName: FfiConverterOptionString.read(from: &buf), 
+                lastNameLocalized: FfiConverterDictionaryStringString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: NameFields, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.displayName, into: &buf)
+        FfiConverterDictionaryStringString.write(value.displayNameLocalized, into: &buf)
+        FfiConverterOptionString.write(value.firstName, into: &buf)
+        FfiConverterDictionaryStringString.write(value.firstNameLocalized, into: &buf)
+        FfiConverterOptionString.write(value.lastName, into: &buf)
+        FfiConverterDictionaryStringString.write(value.lastNameLocalized, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNameFields_lift(_ buf: RustBuffer) throws -> NameFields {
+    return try FfiConverterTypeNameFields.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNameFields_lower(_ value: NameFields) -> RustBuffer {
+    return FfiConverterTypeNameFields.lower(value)
+}
+
+
+/**
  * Network state from the OS.
  */
 public struct NetworkState: Equatable, Hashable {
@@ -7383,6 +7456,34 @@ public func waveformConfigDefault() -> WaveformConfig  {
 })
 }
 /**
+ * The name a user is shown by, everywhere: display name in `locale`, plain display name, first +
+ * last (whichever exists), then a name in another language. No `@handle` (handles belong to
+ * channels). Blank values count as missing. Never the email; `""` when there is no name (the
+ * caller may then show the email).
+ */
+public func resolveDisplayName(fields: NameFields, locale: String?) -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_aun_core_fn_func_resolve_display_name(
+        FfiConverterTypeNameFields_lower(fields),
+        FfiConverterOptionString.lower(locale),$0
+    )
+})
+}
+/**
+ * The name for one profile JSON object from the API (e.g. `result.profile`, a comment author):
+ * the server's `resolvedDisplayName` when set, else [`resolve_display_name`] over its
+ * `displayName`/`displayNameLocalized`/`firstName`/`lastName` (and localized) fields. `""` when the text is not
+ * JSON or holds no name.
+ */
+public func resolveDisplayNameJson(profileJson: String, locale: String?) -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_aun_core_fn_func_resolve_display_name_json(
+        FfiConverterString.lower(profileJson),
+        FfiConverterOptionString.lower(locale),$0
+    )
+})
+}
+/**
  * Groups suggestions for display: completions, videos, channels, playlists, categories.
  */
 public func groupSearchSuggestions(suggestions: [SearchSuggestion]) -> [SuggestionGroup]  {
@@ -7569,6 +7670,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_func_waveform_config_default() != 63036) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_func_resolve_display_name() != 21568) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_func_resolve_display_name_json() != 23552) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_func_group_search_suggestions() != 56162) {
