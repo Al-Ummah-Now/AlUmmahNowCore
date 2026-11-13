@@ -20,12 +20,12 @@
     {
       "common": { "save": "حفظ", "welcome": "أهلاً {{name}}!" },
       "videos": {
-        "count_zero": "لا توجد فيديوهات",
-        "count_one": "فيديو واحد",
-        "count_two": "فيديوهان",
-        "count_few": "{{count}} فيديوهات",
-        "count_many": "{{count}} فيديو",
-        "count_other": "{{count}} فيديو"
+        "count_zero": "لا توجد مرئيات",
+        "count_one": "مرئي واحد",
+        "count_two": "مرئيان",
+        "count_few": "{{count}} مرئيات",
+        "count_many": "{{count}} مرئيًا",
+        "count_other": "{{count}} مرئي"
       }
     }
   ]
