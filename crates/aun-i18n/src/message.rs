@@ -333,14 +333,14 @@ mod tests {
 
     #[test]
     fn arabic_plural_all_forms() {
-        let p = "{count, plural, zero {لا فيديوهات} one {فيديو واحد} two {فيديوهان} few {# فيديوهات} many {# فيديو} other {# فيديو}}";
+        let p = "{count, plural, zero {لا مرئيات} one {مرئي واحد} two {مرئيان} few {# مرئيات} many {# مرئيًا} other {# مرئي}}";
         let cases = [
-            (0, "لا فيديوهات"),
-            (1, "فيديو واحد"),
-            (2, "فيديوهان"),
-            (5, "5 فيديوهات"),
-            (11, "11 فيديو"),
-            (100, "100 فيديو"),
+            (0, "لا مرئيات"),
+            (1, "مرئي واحد"),
+            (2, "مرئيان"),
+            (5, "5 مرئيات"),
+            (11, "11 مرئيًا"),
+            (100, "100 مرئي"),
         ];
         for (n, want) in cases {
             assert_eq!(fmt("ar", p, &[("count", FormatArg::Int(n))]), want, "{n}");
@@ -391,7 +391,7 @@ mod tests {
         let s = fmt("en", "By {name}", &[("name", "علي".into())]);
         assert_eq!(s, format!("By {FSI}علي{PDI}"));
         let s = format_message(
-            "{count, plural, few {# فيديوهات} other {# فيديو}}",
+            "{count, plural, few {# مرئيات} other {# مرئي}}",
             &args(&[("count", 5i64.into())]),
             &FormatContext {
                 locale: "ar",
@@ -399,7 +399,7 @@ mod tests {
                 bidi_isolation: false,
             },
         );
-        assert_eq!(s, "٥ فيديوهات");
+        assert_eq!(s, "٥ مرئيات");
     }
 
     #[test]

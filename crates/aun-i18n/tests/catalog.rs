@@ -22,8 +22,8 @@ const EN: &str = r#"{
 const AR: &str = r#"{
   "common": {"save": "حفظ", "welcome": "أهلاً {{name}}!"},
   "videos": {
-    "count_zero": "لا توجد فيديوهات", "count_one": "فيديو واحد", "count_two": "فيديوهان",
-    "count_few": "{{count}} فيديوهات", "count_many": "{{count}} فيديو", "count_other": "{{count}} فيديو"
+    "count_zero": "لا توجد مرئيات", "count_one": "مرئي واحد", "count_two": "مرئيان",
+    "count_few": "{{count}} مرئيات", "count_many": "{{count}} مرئيًا", "count_other": "{{count}} مرئي"
   }
 }"#;
 
@@ -59,12 +59,12 @@ fn fallback_chain_and_missing_keys() {
 fn plural_keys_follow_each_locale_rules() {
     let ar = catalog("ar");
     let want = [
-        (0, "لا توجد فيديوهات"),
-        (1, "فيديو واحد"),
-        (2, "فيديوهان"),
-        (3, "3 فيديوهات"),
-        (11, "11 فيديو"),
-        (102, "102 فيديو"),
+        (0, "لا توجد مرئيات"),
+        (1, "مرئي واحد"),
+        (2, "مرئيان"),
+        (3, "3 مرئيات"),
+        (11, "11 مرئيًا"),
+        (102, "102 مرئي"),
     ];
     for (n, w) in want {
         assert_eq!(
@@ -93,7 +93,7 @@ fn eastern_arabic_digits_and_bidi() {
     i18n.set_numeral_system(NumeralSystem::ArabicIndic);
     assert_eq!(
         i18n.format("videos.count", &args(&[("count", 5i64.into())])),
-        "٥ فيديوهات"
+        "٥ مرئيات"
     );
     assert_eq!(
         i18n.format("common.welcome", &args(&[("name", "Sara".into())])),
