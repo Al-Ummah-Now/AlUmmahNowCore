@@ -12,6 +12,6 @@ pub use model::{
     AudioParams, CaptionCue, Clip, Marker, Project, ProjectChapter, ProjectMetadata, ProjectSettings, Source,
     TitleClip, TitlePosition, TitleStyle, Track, TrackKind, Transition, VideoParams,
 };
-pub use ops::{EditOp, FlatClip, FlatTimeline, FlatTrack, NewClip};
+pub use ops::{EditOp, FlatClip, FlatTimeline, FlatTitle, FlatTrack, NewClip};
 pub use render::{RenderPlan, RenderRequest, RenderSegment, SegmentDecision, plan_render};
 pub use validate::ValidationIssue;

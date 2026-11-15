@@ -8,6 +8,13 @@ FFI; such changes are listed under **Breaking**.
 ## [Unreleased]
 
 ### Added
+- EDL titles (E19 19.5 + 19.9, brand-kit titles and lower thirds): `edl_apply_json` takes
+  `addTitle` (`trackId`, `title`), `setTitle` (`title`, replaced by id: move, retime, reword,
+  restyle) and `removeTitle` (`titleId`), with the same all-or-nothing validation as clip edits.
+  `edl_flatten_json` adds `titles` (titles of unmuted title tracks in time order: `titleId`,
+  `trackId`, `startMs`, `durationMs`, `text` by locale, `style`); `tracks` is unchanged.
+
+### Added
 - `AuthConfig.install_id` (FFI, default `None`) and `OAuthConfig::with_install_id`: the install's stable id is sent as `install_id` on the code exchange. Auth stores it on that install's refresh tokens, so "Sign out this device" in the videos admin ends exactly that install's sign-in (AlUmmahNow#442, AlUmmahNowAuth#363). The Admin apps pass their push-device install id.
 
 ## [0.4.0-rc.1] - 2026-11-14

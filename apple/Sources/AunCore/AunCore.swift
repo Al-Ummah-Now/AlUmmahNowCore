@@ -8039,7 +8039,8 @@ public func selftestThrow(kind: String)throws   {try rustCallWithError(FfiConver
 }
 /**
  * Applies one edit (`aun_media::edl::EditOp` JSON, e.g. `{"op":"split","clipId":"c1","atMs":5000,
- * "newId":"c2"}`) and returns the edited project. A refused edit returns an error and changes nothing.
+ * "newId":"c2"}`, or `addTitle` / `setTitle` / `removeTitle` for on-screen titles) and returns the
+ * edited project. A refused edit returns an error and changes nothing.
  */
 public func edlApplyJson(projectJson: String, opJson: String)throws  -> String  {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
@@ -8060,8 +8061,9 @@ public func edlChaptersJson(json: String)throws  -> String  {
 })
 }
 /**
- * The clip tracks in timeline order with source paths resolved (`aun_media::edl::FlatTimeline`
- * JSON), for building the platform composition that renders an export.
+ * The clip tracks in timeline order with source paths resolved, plus the titles of unmuted title
+ * tracks (`aun_media::edl::FlatTimeline` JSON), for building the platform composition that renders
+ * an export.
  */
 public func edlFlattenJson(projectJson: String)throws  -> String  {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
@@ -8506,13 +8508,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_func_selftest_throw() != 9695) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_aun_core_checksum_func_edl_apply_json() != 23963) {
+    if (uniffi_aun_core_checksum_func_edl_apply_json() != 18840) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_func_edl_chapters_json() != 53606) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_aun_core_checksum_func_edl_flatten_json() != 27197) {
+    if (uniffi_aun_core_checksum_func_edl_flatten_json() != 22156) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_func_edl_load_project() != 5471) {

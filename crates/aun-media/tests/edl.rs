@@ -783,3 +783,150 @@ fn flatten_resolves_sources_in_timeline_order() {
     bad.tracks[0].clips.pop();
     assert!(bad.flatten().is_ok());
 }
+
+// ---- titles (E19 19.5 + 19.9: brand-kit titles and lower thirds) ---------------------------------
+
+fn lower_third(id: &str, start_ms: u64, duration_ms: u64) -> Value {
+    json!({
+        "id": id, "startMs": start_ms, "durationMs": duration_ms,
+        "text": {"en": "Al Noor channel", "ar": "قناة النور"},
+        "style": {"fontFamily": "Noto Naskh Arabic", "sizePt": 28.0, "color": "#f7f1e8", "background": "#093041", "position": "lowerThird"}
+    })
+}
+
+fn with_title_track() -> Project {
+    let mut p = project(vec![clip("a", 0, 9000, 0)]);
+    p.tracks.push(track("t", TrackKind::Title, vec![]));
+    p
+}
+
+fn apply_json(p: &mut Project, op: Value) -> aun_common::Result<()> {
+    p.apply(serde_json::from_value(op).unwrap())
+}
+
+#[test]
+fn titles_are_added_moved_restyled_and_removed_as_json_ops() {
+    let mut p = with_title_track();
+    apply_json(
+        &mut p,
+        json!({"op": "addTitle", "trackId": "t", "title": lower_third("lt2", 5000, 2000)}),
+    )
+    .unwrap();
+    apply_json(
+        &mut p,
+        json!({"op": "addTitle", "trackId": "t", "title": lower_third("lt1", 1000, 3000)}),
+    )
+    .unwrap();
+    let ids = |p: &Project| {
+        p.tracks[1]
+            .titles
+            .iter()
+            .map(|t| t.id.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(ids(&p), ["lt1", "lt2"], "kept in time order");
+
+    let mut moved = lower_third("lt1", 7000, 1500);
+    moved["style"]["position"] = json!("top");
+    apply_json(&mut p, json!({"op": "setTitle", "title": moved})).unwrap();
+    assert_eq!(ids(&p), ["lt2", "lt1"]);
+    let lt1 = &p.tracks[1].titles[1];
+    assert_eq!(
+        (lt1.start_ms, lt1.duration_ms, lt1.style.position),
+        (7000, 1500, TitlePosition::Top)
+    );
+    assert_eq!(lt1.text["ar"], "قناة النور");
+
+    apply_json(&mut p, json!({"op": "removeTitle", "titleId": "lt2"})).unwrap();
+    assert_eq!(ids(&p), ["lt1"]);
+    assert!(matches!(
+        apply_json(&mut p, json!({"op": "removeTitle", "titleId": "lt2"})),
+        Err(Error::NotFound(_))
+    ));
+}
+
+#[test]
+fn a_bad_title_edit_is_refused_and_changes_nothing() {
+    let mut p = with_title_track();
+    apply_json(
+        &mut p,
+        json!({"op": "addTitle", "trackId": "t", "title": lower_third("lt", 0, 2000)}),
+    )
+    .unwrap();
+    let before = p.clone();
+    // not a title track
+    assert!(matches!(
+        apply_json(
+            &mut p,
+            json!({"op": "addTitle", "trackId": "v", "title": lower_third("x", 0, 1000)})
+        ),
+        Err(Error::InvalidInput(_))
+    ));
+    // duplicate id, zero length, no text, bad colour
+    assert!(
+        apply_json(
+            &mut p,
+            json!({"op": "addTitle", "trackId": "t", "title": lower_third("lt", 0, 1000)})
+        )
+        .is_err()
+    );
+    assert!(
+        apply_json(
+            &mut p,
+            json!({"op": "addTitle", "trackId": "t", "title": lower_third("z", 0, 0)})
+        )
+        .is_err()
+    );
+    let mut empty = lower_third("lt", 0, 1000);
+    empty["text"] = json!({"en": "", "ar": ""});
+    assert!(apply_json(&mut p, json!({"op": "setTitle", "title": empty})).is_err());
+    let mut red = lower_third("lt", 0, 1000);
+    red["style"]["color"] = json!("red");
+    assert!(apply_json(&mut p, json!({"op": "setTitle", "title": red})).is_err());
+    // locked track
+    p.tracks[1].locked = true;
+    assert!(matches!(
+        apply_json(&mut p, json!({"op": "removeTitle", "titleId": "lt"})),
+        Err(Error::Conflict(_))
+    ));
+    p.tracks[1].locked = false;
+    assert_eq!(p, before);
+    let unknown_field = serde_json::from_value::<aun_media::edl::EditOp>(
+        json!({"op": "removeTitle", "titleId": "lt", "x": 1}),
+    );
+    assert!(unknown_field.is_err());
+}
+
+#[test]
+fn flatten_lists_titles_of_unmuted_title_tracks_in_time_order() {
+    let mut p = with_title_track();
+    for (id, start) in [("tb", 6000), ("ta", 500)] {
+        apply_json(
+            &mut p,
+            json!({"op": "addTitle", "trackId": "t", "title": lower_third(id, start, 2000)}),
+        )
+        .unwrap();
+    }
+    let mut hidden = track("h", TrackKind::Title, vec![]);
+    hidden.muted = true;
+    hidden
+        .titles
+        .push(serde_json::from_value::<TitleClip>(lower_third("hidden", 0, 1000)).unwrap());
+    p.tracks.push(hidden);
+
+    let flat = p.flatten().unwrap();
+    assert_eq!(flat.duration_ms, 9000, "titles do not lengthen the export");
+    assert_eq!(flat.tracks.len(), 1, "title tracks are not composition tracks");
+    assert_eq!(
+        flat.titles
+            .iter()
+            .map(|t| t.title_id.as_str())
+            .collect::<Vec<_>>(),
+        ["ta", "tb"]
+    );
+    let v = serde_json::to_value(&flat).unwrap();
+    assert_eq!(v["titles"][0]["trackId"], "t");
+    assert_eq!(v["titles"][0]["text"]["ar"], "قناة النور");
+    assert_eq!(v["titles"][0]["style"]["position"], "lowerThird");
+    assert_eq!(v["titles"][1]["startMs"], 6000);
+}
