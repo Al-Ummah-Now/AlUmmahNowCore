@@ -24,6 +24,10 @@ pub struct AuthConfig {
     /// RFC 7009 endpoint; `None` means `{issuer}/token/revoke`.
     #[uniffi(default = None)]
     pub revocation_endpoint: Option<String>,
+    /// This install's stable id (the Admin apps' push-device key). Sent as `install_id` on the
+    /// code exchange, so "Sign out this device" in the videos admin ends this install's sign-in.
+    #[uniffi(default = None)]
+    pub install_id: Option<String>,
 }
 
 /// A signed-in account (no secrets).
@@ -193,6 +197,7 @@ impl AuthManager {
             client_id: config.client_id,
             redirect_uri: config.redirect_uri,
             scopes: config.scopes,
+            install_id: config.install_id,
         };
         Ok(Arc::new(Self {
             inner: Arc::new(aun_auth::AuthManager::new(
