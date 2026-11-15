@@ -22,7 +22,7 @@ pub use models::{
     ChunkSink, DownloadListener, FetchInfo, ModelDescriptor, ModelFetcher, ModelManager, ModelStatus,
     ModelTier, model_catalog,
 };
-pub use subtitles::{SubtitleOptions, to_srt, to_webvtt};
+pub use subtitles::{CaptionSegment, SubtitleOptions, caption_segments, to_srt, to_webvtt};
 #[cfg(feature = "whisper")]
 pub use whisper::WhisperTranscriber;
 
