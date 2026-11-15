@@ -7,6 +7,8 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+## [0.4.0-rc.1] - 2026-11-14
+
 ### Added
 - Desktop Studio (E19, decisions D10/D11 of 2026-11-14), FFI:
   - EDL editing: `edl_apply_json(project, op)` applies one edit (`split`, `trim`,
