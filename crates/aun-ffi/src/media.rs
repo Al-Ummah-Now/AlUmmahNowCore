@@ -408,7 +408,8 @@ pub fn edl_chapters_json(json: String) -> Result<String, AunError> {
 // ---- EDL editing (E19 19.5) ------------------------------------------------------------------------
 
 /// Applies one edit (`aun_media::edl::EditOp` JSON, e.g. `{"op":"split","clipId":"c1","atMs":5000,
-/// "newId":"c2"}`) and returns the edited project. A refused edit returns an error and changes nothing.
+/// "newId":"c2"}`, or `addTitle` / `setTitle` / `removeTitle` for on-screen titles) and returns the
+/// edited project. A refused edit returns an error and changes nothing.
 #[uniffi::export]
 pub fn edl_apply_json(project_json: String, op_json: String) -> Result<String, AunError> {
     let mut project = aun_media::edl::load_project(&project_json)?;
@@ -417,8 +418,9 @@ pub fn edl_apply_json(project_json: String, op_json: String) -> Result<String, A
     Ok(project.to_json()?)
 }
 
-/// The clip tracks in timeline order with source paths resolved (`aun_media::edl::FlatTimeline`
-/// JSON), for building the platform composition that renders an export.
+/// The clip tracks in timeline order with source paths resolved, plus the titles of unmuted title
+/// tracks (`aun_media::edl::FlatTimeline` JSON), for building the platform composition that renders
+/// an export.
 #[uniffi::export]
 pub fn edl_flatten_json(project_json: String) -> Result<String, AunError> {
     let project = aun_media::edl::load_project(&project_json)?;

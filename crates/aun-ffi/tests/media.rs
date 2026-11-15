@@ -155,6 +155,31 @@ fn edl_edits_cross_the_boundary_as_json() {
 }
 
 #[test]
+fn brand_kit_titles_cross_the_boundary_as_json() {
+    let mut v: serde_json::Value = serde_json::from_str(&edl_load_project(EDL_V0.into()).unwrap()).unwrap();
+    v["tracks"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({"id": "brand", "kind": "title"}));
+    let title = serde_json::json!({
+        "op": "addTitle", "trackId": "brand",
+        "title": {
+            "id": "lt", "startMs": 1000, "durationMs": 4000,
+            "text": {"en": "Al Noor channel", "ar": "قناة النور"},
+            "style": {"fontFamily": "Noto Naskh Arabic", "sizePt": 28.0, "color": "#f7f1e8", "position": "lowerThird"}
+        }
+    });
+    let edited = edl_apply_json(v.to_string(), title.to_string()).unwrap();
+    let flat: serde_json::Value = serde_json::from_str(&edl_flatten_json(edited.clone()).unwrap()).unwrap();
+    assert_eq!(flat["titles"][0]["titleId"], "lt");
+    assert_eq!(flat["titles"][0]["text"]["ar"], "قناة النور");
+    assert_eq!(flat["titles"][0]["style"]["position"], "lowerThird");
+    let removed = edl_apply_json(edited, r#"{"op":"removeTitle","titleId":"lt"}"#.into()).unwrap();
+    let flat: serde_json::Value = serde_json::from_str(&edl_flatten_json(removed).unwrap()).unwrap();
+    assert_eq!(flat["titles"].as_array().unwrap().len(), 0);
+}
+
+#[test]
 fn caption_segments_ladder_and_renditions_listing() {
     let transcript =
         r#"{"language":"ar","segments":[{"start_ms":0,"end_ms":1200,"text":" السلام عليكم ","words":[]}]}"#;

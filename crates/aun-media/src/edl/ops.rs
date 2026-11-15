@@ -4,7 +4,9 @@
 use aun_common::{Error, Result};
 use serde::{Deserialize, Serialize};
 
-use super::model::{Clip, Project, Track, TrackKind};
+use std::collections::BTreeMap;
+
+use super::model::{Clip, Project, TitleClip, TitleStyle, Track, TrackKind};
 
 fn not_found(id: &str) -> Error {
     Error::NotFound(format!("clip {id}"))
@@ -261,6 +263,48 @@ impl Project {
         })
     }
 
+    /// Adds an on-screen title (for example a brand-kit lower third) to a title track.
+    pub fn add_title(&mut self, track_id: &str, title: TitleClip) -> Result<()> {
+        self.transact(|project| {
+            let track = unlocked_track(project, track_id)?;
+            if track.kind != TrackKind::Title {
+                return Err(Error::InvalidInput(format!(
+                    "track {track_id} is not a title track"
+                )));
+            }
+            let at = track
+                .titles
+                .iter()
+                .position(|t| t.start_ms > title.start_ms)
+                .unwrap_or(track.titles.len());
+            track.titles.insert(at, title);
+            Ok(())
+        })
+    }
+
+    /// Replaces the title with the same id: moves, retimes, rewords or restyles it.
+    pub fn set_title(&mut self, title: TitleClip) -> Result<()> {
+        self.transact(|project| {
+            let track = unlocked_track_with_title(project, &title.id)?;
+            track.titles.retain(|t| t.id != title.id);
+            let at = track
+                .titles
+                .iter()
+                .position(|t| t.start_ms > title.start_ms)
+                .unwrap_or(track.titles.len());
+            track.titles.insert(at, title);
+            Ok(())
+        })
+    }
+
+    pub fn remove_title(&mut self, title_id: &str) -> Result<()> {
+        self.transact(|project| {
+            let track = unlocked_track_with_title(project, title_id)?;
+            track.titles.retain(|t| t.id != title_id);
+            Ok(())
+        })
+    }
+
     /// Applies one edit. Every app sends edits this way, so the rules match everywhere.
     pub fn apply(&mut self, op: EditOp) -> Result<()> {
         match op {
@@ -283,13 +327,18 @@ impl Project {
                 start_ms,
             } => self.move_clip(&clip_id, &track_id, start_ms),
             EditOp::Append { track_id, clip } => self.append_clip(&track_id, clip),
+            EditOp::AddTitle { track_id, title } => self.add_title(&track_id, title),
+            EditOp::SetTitle { title } => self.set_title(title),
+            EditOp::RemoveTitle { title_id } => self.remove_title(&title_id),
         }
     }
 }
 
 impl Project {
     /// The clip tracks in timeline order with each clip's source path resolved, for the platform
-    /// composition APIs (AVMutableComposition, MediaComposition, GES) that render an export.
+    /// composition APIs (AVMutableComposition, MediaComposition, GES) that render an export, plus
+    /// the titles of every title track that isn't muted (muted hides a title track), in time order.
+    /// Titles don't lengthen the export: `duration_ms` comes from the clips.
     pub fn flatten(&self) -> Result<FlatTimeline> {
         self.ensure_valid()?;
         let mut duration_ms = 0;
@@ -327,7 +376,27 @@ impl Project {
                 clips,
             });
         }
-        Ok(FlatTimeline { duration_ms, tracks })
+        let mut titles: Vec<FlatTitle> = self
+            .tracks
+            .iter()
+            .filter(|t| t.kind == TrackKind::Title && !t.muted)
+            .flat_map(|track| {
+                track.titles.iter().map(|title| FlatTitle {
+                    title_id: title.id.clone(),
+                    track_id: track.id.clone(),
+                    start_ms: title.start_ms,
+                    duration_ms: title.duration_ms,
+                    text: title.text.clone(),
+                    style: title.style.clone(),
+                })
+            })
+            .collect();
+        titles.sort_by_key(|t| t.start_ms);
+        Ok(FlatTimeline {
+            duration_ms,
+            tracks,
+            titles,
+        })
     }
 }
 
@@ -336,6 +405,19 @@ impl Project {
 pub struct FlatTimeline {
     pub duration_ms: u64,
     pub tracks: Vec<FlatTrack>,
+    pub titles: Vec<FlatTitle>,
+}
+
+/// A title to draw over the picture from `start_ms` for `duration_ms`. `text` maps locale → string.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlatTitle {
+    pub title_id: String,
+    pub track_id: String,
+    pub start_ms: u64,
+    pub duration_ms: u64,
+    pub text: BTreeMap<String, String>,
+    pub style: TitleStyle,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -366,6 +448,18 @@ fn unlocked_track<'a>(project: &'a mut Project, track_id: &str) -> Result<&'a mu
         .iter_mut()
         .find(|t| t.id == track_id)
         .ok_or_else(|| Error::NotFound(format!("track {track_id}")))?;
+    if track.locked {
+        return Err(Error::Conflict(format!("track {} is locked", track.id)));
+    }
+    Ok(track)
+}
+
+fn unlocked_track_with_title<'a>(project: &'a mut Project, title_id: &str) -> Result<&'a mut Track> {
+    let track = project
+        .tracks
+        .iter_mut()
+        .find(|t| t.titles.iter().any(|x| x.id == title_id))
+        .ok_or_else(|| Error::NotFound(format!("title {title_id}")))?;
     if track.locked {
         return Err(Error::Conflict(format!("track {} is locked", track.id)));
     }
@@ -435,6 +529,16 @@ pub enum EditOp {
     Append {
         track_id: String,
         clip: NewClip,
+    },
+    AddTitle {
+        track_id: String,
+        title: TitleClip,
+    },
+    SetTitle {
+        title: TitleClip,
+    },
+    RemoveTitle {
+        title_id: String,
     },
 }
 
