@@ -7,6 +7,8 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+## [0.4.0-rc.2] - 2026-11-15
+
 ### Added
 - EDL titles (E19 19.5 + 19.9, brand-kit titles and lower thirds): `edl_apply_json` takes
   `addTitle` (`trackId`, `title`), `setTitle` (`title`, replaced by id: move, retime, reword,
