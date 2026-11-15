@@ -8,6 +8,22 @@ FFI; such changes are listed under **Breaking**.
 ## [Unreleased]
 
 ### Added
+- Desktop Studio (E19, decisions D10/D11 of 2026-11-14), FFI:
+  - EDL editing: `edl_apply_json(project, op)` applies one edit (`split`, `trim`,
+    `rippleDeleteClip`, `rippleDeleteRange`, and new `join`, `move`, `append`) atomically;
+    `edl_flatten_json(project)` lists clip tracks in timeline order with source paths for the
+    platform composition APIs. `aun-media`: `Project::{join_clips, move_clip, append_clip, apply,
+    flatten}`, `EditOp`, `NewClip`.
+  - On-device transcription (D10): `ModelStore` (list, resumable checksum-verified download,
+    path, delete), `transcription_on_device_available()`, `transcribe_on_device_json(...)` with a
+    `MediaProgress` callback and `MediaCancel`, and `transcript_to_caption_segments_json` for the
+    server's on-device transcript upload (`[{startMs,endMs,text}]`, ≤ two lines per cue).
+    Desktop builds (Windows, Linux, macOS dylib and the XCFramework's macOS slice) are built with
+    `whisper`; the Swift package links libc++ and Accelerate on macOS.
+  - Pre-encoded renditions (D11): `hls_ladder(width, height, rotation)` and `hls_encode_fps`
+    mirror the server's ladder (checked against a fixture generated from AlUmmahNow
+    `apps/media/container/ladder.mjs`); `hls_package_mp4` remuxes one rung's progressive MP4 into
+    fMP4 HLS cut like the server's encode (no re-encoding); `renditions_files` lists the upload.
 - `aun-common`/FFI: one display-name rule for every native app (owner rule 2026-11-12, mirrors the
   web `resolveDisplayName`): display name in the locale → plain display name → first + last
   (whichever exists) → a name in another language → `""`. No `@handle` (handles belong to

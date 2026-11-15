@@ -1898,6 +1898,402 @@ public func FfiConverterTypeMediaCancel_lower(_ value: MediaCancel) -> UInt64 {
 
 
 /**
+ * Progress of a long media operation.
+ */
+public protocol MediaProgress: AnyObject, Sendable {
+    
+    /**
+     * `done` out of `total` (bytes for downloads, percent for transcription).
+     */
+    func onProgress(done: UInt64, total: UInt64) 
+    
+}
+/**
+ * Progress of a long media operation.
+ */
+open class MediaProgressImpl: MediaProgress, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aun_core_fn_clone_mediaprogress(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aun_core_fn_free_mediaprogress(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * `done` out of `total` (bytes for downloads, percent for transcription).
+     */
+open func onProgress(done: UInt64, total: UInt64)  {try! rustCall() {
+    uniffi_aun_core_fn_method_mediaprogress_on_progress(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt64.lower(done),
+        FfiConverterUInt64.lower(total),$0
+    )
+}
+}
+    
+
+    
+}
+
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfaceMediaProgress {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    //
+    // This creates 1-element array, since this seems to be the only way to construct a const
+    // pointer that we can pass to the Rust code.
+    static let vtable: [UniffiVTableCallbackInterfaceMediaProgress] = [UniffiVTableCallbackInterfaceMediaProgress(
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            do {
+                try FfiConverterTypeMediaProgress.handleMap.remove(handle: uniffiHandle)
+            } catch {
+                print("Uniffi callback interface MediaProgress: handle missing in uniffiFree")
+            }
+        },
+        uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
+            do {
+                return try FfiConverterTypeMediaProgress.handleMap.clone(handle: uniffiHandle)
+            } catch {
+                fatalError("Uniffi callback interface MediaProgress: handle missing in uniffiClone")
+            }
+        },
+        onProgress: { (
+            uniffiHandle: UInt64,
+            done: UInt64,
+            total: UInt64,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterTypeMediaProgress.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return uniffiObj.onProgress(
+                     done: try FfiConverterUInt64.lift(done),
+                     total: try FfiConverterUInt64.lift(total)
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCall(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn
+            )
+        }
+    )]
+}
+
+private func uniffiCallbackInitMediaProgress() {
+    uniffi_aun_core_fn_init_callback_vtable_mediaprogress(UniffiCallbackInterfaceMediaProgress.vtable)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMediaProgress: FfiConverter {
+    fileprivate static let handleMap = UniffiHandleMap<MediaProgress>()
+
+    typealias FfiType = UInt64
+    typealias SwiftType = MediaProgress
+
+    public static func lift(_ handle: UInt64) throws -> MediaProgress {
+        if ((handle & 1) == 0) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return MediaProgressImpl(unsafeFromHandle: handle)
+        } else {
+            // Swift-generated handle, get the object from the handle map
+            return try handleMap.remove(handle: handle)
+        }
+    }
+
+    public static func lower(_ value: MediaProgress) -> UInt64 {
+         if let rustImpl = value as? MediaProgressImpl {
+             // Rust-implemented object.  Clone the handle and return it
+            return rustImpl.uniffiCloneHandle()
+         } else {
+            // Swift object, generate a new vtable handle and return that.
+            return handleMap.insert(obj: value)
+         }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MediaProgress {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: MediaProgress, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMediaProgress_lift(_ handle: UInt64) throws -> MediaProgress {
+    return try FfiConverterTypeMediaProgress.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMediaProgress_lower(_ value: MediaProgress) -> UInt64 {
+    return FfiConverterTypeMediaProgress.lower(value)
+}
+
+
+
+
+
+
+/**
+ * Whisper models on this computer: list, download (resumable, checksum-verified), delete.
+ */
+public protocol ModelStoreProtocol: AnyObject, Sendable {
+    
+    func delete(id: String) throws 
+    
+    func diskUsageBytes() throws  -> UInt64
+    
+    /**
+     * Downloads and verifies a model; returns its path. Cancelling keeps the partial file.
+     */
+    func download(id: String, progress: MediaProgress, cancel: MediaCancel?) async throws  -> String
+    
+    func list() throws  -> [ModelStatus]
+    
+    /**
+     * The installed model's file, or `None`.
+     */
+    func path(id: String) throws  -> String?
+    
+}
+/**
+ * Whisper models on this computer: list, download (resumable, checksum-verified), delete.
+ */
+open class ModelStore: ModelStoreProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aun_core_fn_clone_modelstore(self.handle, $0) }
+    }
+    /**
+     * `dir` is the app's own models folder (created when needed).
+     */
+public convenience init(dir: String) {
+    let handle =
+        try! rustCall() {
+    uniffi_aun_core_fn_constructor_modelstore_new(
+        FfiConverterString.lower(dir),$0
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aun_core_fn_free_modelstore(handle, $0) }
+    }
+
+    
+
+    
+open func delete(id: String)throws   {try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_modelstore_delete(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),$0
+    )
+}
+}
+    
+open func diskUsageBytes()throws  -> UInt64  {
+    return try  FfiConverterUInt64.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_modelstore_disk_usage_bytes(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * Downloads and verifies a model; returns its path. Cancelling keeps the partial file.
+     */
+open func download(id: String, progress: MediaProgress, cancel: MediaCancel?)async throws  -> String  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_modelstore_download(
+                    self.uniffiCloneHandle(),
+                    FfiConverterString.lower(id),FfiConverterTypeMediaProgress_lower(progress),FfiConverterOptionTypeMediaCancel.lower(cancel)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterString.lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+open func list()throws  -> [ModelStatus]  {
+    return try  FfiConverterSequenceTypeModelStatus.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_modelstore_list(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * The installed model's file, or `None`.
+     */
+open func path(id: String)throws  -> String?  {
+    return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_modelstore_path(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),$0
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeModelStore: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = ModelStore
+
+    public static func lift(_ handle: UInt64) throws -> ModelStore {
+        return ModelStore(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: ModelStore) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ModelStore {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: ModelStore, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeModelStore_lift(_ handle: UInt64) throws -> ModelStore {
+    return try FfiConverterTypeModelStore.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeModelStore_lower(_ value: ModelStore) -> UInt64 {
+    return FfiConverterTypeModelStore.lower(value)
+}
+
+
+
+
+
+
+/**
  * Persistent offline write queue (likes, comments, notes made while offline).
  */
 public protocol OfflineQueueProtocol: AnyObject, Sendable {
@@ -4023,6 +4419,153 @@ public func FfiConverterTypeEdlIssue_lower(_ value: EdlIssue) -> RustBuffer {
 }
 
 
+public struct HlsPackage: Equatable, Hashable {
+    public var files: [StagedFile]
+    public var segmentSeconds: [Double]
+    public var durationMs: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(files: [StagedFile], segmentSeconds: [Double], durationMs: UInt64) {
+        self.files = files
+        self.segmentSeconds = segmentSeconds
+        self.durationMs = durationMs
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension HlsPackage: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeHlsPackage: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HlsPackage {
+        return
+            try HlsPackage(
+                files: FfiConverterSequenceTypeStagedFile.read(from: &buf), 
+                segmentSeconds: FfiConverterSequenceDouble.read(from: &buf), 
+                durationMs: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: HlsPackage, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeStagedFile.write(value.files, into: &buf)
+        FfiConverterSequenceDouble.write(value.segmentSeconds, into: &buf)
+        FfiConverterUInt64.write(value.durationMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHlsPackage_lift(_ buf: RustBuffer) throws -> HlsPackage {
+    return try FfiConverterTypeHlsPackage.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHlsPackage_lower(_ value: HlsPackage) -> RustBuffer {
+    return FfiConverterTypeHlsPackage.lower(value)
+}
+
+
+/**
+ * One rung of the server's HLS ladder.
+ */
+public struct HlsRung: Equatable, Hashable {
+    public var name: String
+    public var width: UInt32
+    public var height: UInt32
+    public var maxrate: UInt32
+    public var bufsize: UInt32
+    public var audioBitrate: UInt32
+    public var profile: String
+    public var gopSeconds: UInt32
+    public var segmentSeconds: UInt32
+    public var maxFps: Double
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, width: UInt32, height: UInt32, maxrate: UInt32, bufsize: UInt32, audioBitrate: UInt32, profile: String, gopSeconds: UInt32, segmentSeconds: UInt32, maxFps: Double) {
+        self.name = name
+        self.width = width
+        self.height = height
+        self.maxrate = maxrate
+        self.bufsize = bufsize
+        self.audioBitrate = audioBitrate
+        self.profile = profile
+        self.gopSeconds = gopSeconds
+        self.segmentSeconds = segmentSeconds
+        self.maxFps = maxFps
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension HlsRung: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeHlsRung: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HlsRung {
+        return
+            try HlsRung(
+                name: FfiConverterString.read(from: &buf), 
+                width: FfiConverterUInt32.read(from: &buf), 
+                height: FfiConverterUInt32.read(from: &buf), 
+                maxrate: FfiConverterUInt32.read(from: &buf), 
+                bufsize: FfiConverterUInt32.read(from: &buf), 
+                audioBitrate: FfiConverterUInt32.read(from: &buf), 
+                profile: FfiConverterString.read(from: &buf), 
+                gopSeconds: FfiConverterUInt32.read(from: &buf), 
+                segmentSeconds: FfiConverterUInt32.read(from: &buf), 
+                maxFps: FfiConverterDouble.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: HlsRung, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterUInt32.write(value.width, into: &buf)
+        FfiConverterUInt32.write(value.height, into: &buf)
+        FfiConverterUInt32.write(value.maxrate, into: &buf)
+        FfiConverterUInt32.write(value.bufsize, into: &buf)
+        FfiConverterUInt32.write(value.audioBitrate, into: &buf)
+        FfiConverterString.write(value.profile, into: &buf)
+        FfiConverterUInt32.write(value.gopSeconds, into: &buf)
+        FfiConverterUInt32.write(value.segmentSeconds, into: &buf)
+        FfiConverterDouble.write(value.maxFps, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHlsRung_lift(_ buf: RustBuffer) throws -> HlsRung {
+    return try FfiConverterTypeHlsRung.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHlsRung_lower(_ value: HlsRung) -> RustBuffer {
+    return FfiConverterTypeHlsRung.lower(value)
+}
+
+
 /**
  * Open `url` in ASWebAuthenticationSession / Custom Tabs / the system browser.
  */
@@ -4215,6 +4758,70 @@ public func FfiConverterTypeModelDescriptor_lift(_ buf: RustBuffer) throws -> Mo
 #endif
 public func FfiConverterTypeModelDescriptor_lower(_ value: ModelDescriptor) -> RustBuffer {
     return FfiConverterTypeModelDescriptor.lower(value)
+}
+
+
+public struct ModelStatus: Equatable, Hashable {
+    public var model: ModelDescriptor
+    public var installed: Bool
+    /**
+     * Bytes of an interrupted download that the next download resumes from.
+     */
+    public var partialBytes: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(model: ModelDescriptor, installed: Bool, 
+        /**
+         * Bytes of an interrupted download that the next download resumes from.
+         */partialBytes: UInt64) {
+        self.model = model
+        self.installed = installed
+        self.partialBytes = partialBytes
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ModelStatus: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeModelStatus: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ModelStatus {
+        return
+            try ModelStatus(
+                model: FfiConverterTypeModelDescriptor.read(from: &buf), 
+                installed: FfiConverterBool.read(from: &buf), 
+                partialBytes: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ModelStatus, into buf: inout [UInt8]) {
+        FfiConverterTypeModelDescriptor.write(value.model, into: &buf)
+        FfiConverterBool.write(value.installed, into: &buf)
+        FfiConverterUInt64.write(value.partialBytes, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeModelStatus_lift(_ buf: RustBuffer) throws -> ModelStatus {
+    return try FfiConverterTypeModelStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeModelStatus_lower(_ value: ModelStatus) -> RustBuffer {
+    return FfiConverterTypeModelStatus.lower(value)
 }
 
 
@@ -4809,6 +5416,60 @@ public func FfiConverterTypeSilenceConfig_lift(_ buf: RustBuffer) throws -> Sile
 #endif
 public func FfiConverterTypeSilenceConfig_lower(_ value: SilenceConfig) -> RustBuffer {
     return FfiConverterTypeSilenceConfig.lower(value)
+}
+
+
+public struct StagedFile: Equatable, Hashable {
+    public var path: String
+    public var bytes: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(path: String, bytes: UInt64) {
+        self.path = path
+        self.bytes = bytes
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension StagedFile: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeStagedFile: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> StagedFile {
+        return
+            try StagedFile(
+                path: FfiConverterString.read(from: &buf), 
+                bytes: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: StagedFile, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterUInt64.write(value.bytes, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStagedFile_lift(_ buf: RustBuffer) throws -> StagedFile {
+    return try FfiConverterTypeStagedFile.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStagedFile_lower(_ value: StagedFile) -> RustBuffer {
+    return FfiConverterTypeStagedFile.lower(value)
 }
 
 
@@ -6717,6 +7378,31 @@ fileprivate struct FfiConverterSequenceFloat: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceDouble: FfiConverterRustBuffer {
+    typealias SwiftType = [Double]
+
+    public static func write(_ value: [Double], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterDouble.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Double] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [Double]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterDouble.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
     typealias SwiftType = [String]
 
@@ -6817,6 +7503,31 @@ fileprivate struct FfiConverterSequenceTypeEdlIssue: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeHlsRung: FfiConverterRustBuffer {
+    typealias SwiftType = [HlsRung]
+
+    public static func write(_ value: [HlsRung], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeHlsRung.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [HlsRung] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [HlsRung]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeHlsRung.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeModelDescriptor: FfiConverterRustBuffer {
     typealias SwiftType = [ModelDescriptor]
 
@@ -6834,6 +7545,31 @@ fileprivate struct FfiConverterSequenceTypeModelDescriptor: FfiConverterRustBuff
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeModelDescriptor.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeModelStatus: FfiConverterRustBuffer {
+    typealias SwiftType = [ModelStatus]
+
+    public static func write(_ value: [ModelStatus], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeModelStatus.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ModelStatus] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ModelStatus]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeModelStatus.read(from: &buf))
         }
         return seq
     }
@@ -6909,6 +7645,31 @@ fileprivate struct FfiConverterSequenceTypeSearchSuggestion: FfiConverterRustBuf
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeSearchSuggestion.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeStagedFile: FfiConverterRustBuffer {
+    typealias SwiftType = [StagedFile]
+
+    public static func write(_ value: [StagedFile], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeStagedFile.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [StagedFile] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [StagedFile]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeStagedFile.read(from: &buf))
         }
         return seq
     }
@@ -7265,12 +8026,35 @@ public func selftestThrow(kind: String)throws   {try rustCallWithError(FfiConver
 }
 }
 /**
+ * Applies one edit (`aun_media::edl::EditOp` JSON, e.g. `{"op":"split","clipId":"c1","atMs":5000,
+ * "newId":"c2"}`) and returns the edited project. A refused edit returns an error and changes nothing.
+ */
+public func edlApplyJson(projectJson: String, opJson: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_func_edl_apply_json(
+        FfiConverterString.lower(projectJson),
+        FfiConverterString.lower(opJson),$0
+    )
+})
+}
+/**
  * Chapters derived from the project's chapter markers, as JSON.
  */
 public func edlChaptersJson(json: String)throws  -> String  {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
     uniffi_aun_core_fn_func_edl_chapters_json(
         FfiConverterString.lower(json),$0
+    )
+})
+}
+/**
+ * The clip tracks in timeline order with source paths resolved (`aun_media::edl::FlatTimeline`
+ * JSON), for building the platform composition that renders an export.
+ */
+public func edlFlattenJson(projectJson: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_func_edl_flatten_json(
+        FfiConverterString.lower(projectJson),$0
     )
 })
 }
@@ -7302,6 +8086,46 @@ public func edlValidate(json: String)throws  -> [EdlIssue]  {
         FfiConverterString.lower(json),$0
     )
 })
+}
+/**
+ * The frame rate to encode a source of `fps` at (sources above 31 fps are encoded at 30).
+ */
+public func hlsEncodeFps(fps: Double) -> Double  {
+    return try!  FfiConverterDouble.lift(try! rustCall() {
+    uniffi_aun_core_fn_func_hls_encode_fps(
+        FfiConverterDouble.lower(fps),$0
+    )
+})
+}
+/**
+ * The rungs the server encodes for a source of this coded size and rotation, lowest first.
+ */
+public func hlsLadder(width: UInt32, height: UInt32, rotation: Int32)throws  -> [HlsRung]  {
+    return try  FfiConverterSequenceTypeHlsRung.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_func_hls_ladder(
+        FfiConverterUInt32.lower(width),
+        FfiConverterUInt32.lower(height),
+        FfiConverterInt32.lower(rotation),$0
+    )
+})
+}
+/**
+ * Packages one rung's progressive MP4 into fMP4 HLS in `out_dir` (`index.m3u8`, `init.mp4`,
+ * `seg_00001.m4s`…), cut like the server's encode. No re-encoding.
+ */
+public func hlsPackageMp4(inputMp4: String, outDir: String, segmentSeconds: UInt32, cancel: MediaCancel?)async throws  -> HlsPackage  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_func_hls_package_mp4(FfiConverterString.lower(inputMp4),FfiConverterString.lower(outDir),FfiConverterUInt32.lower(segmentSeconds),FfiConverterOptionTypeMediaCancel.lower(cancel)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeHlsPackage_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
 }
 public func mediaDetectSilence(path: String, config: SilenceConfig, cancel: MediaCancel?)async throws  -> [TimeRange]  {
     return
@@ -7403,6 +8227,18 @@ public func mediaSelectThumbnailTimestamps(durationMs: UInt64, scenes: [SceneCha
     )
 })
 }
+/**
+ * The `files` list for `POST /api/videos/:id/renditions`: every file under `root_dir/<rung>/`
+ * as `<rung>/<file>`, each rung's playlist first.
+ */
+public func renditionsFiles(rootDir: String, rungs: [String])throws  -> [StagedFile]  {
+    return try  FfiConverterSequenceTypeStagedFile.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_func_renditions_files(
+        FfiConverterString.lower(rootDir),
+        FfiConverterSequenceString.lower(rungs),$0
+    )
+})
+}
 public func silenceConfigDefault() -> SilenceConfig  {
     return try!  FfiConverterTypeSilenceConfig_lift(try! rustCall() {
     uniffi_aun_core_fn_func_silence_config_default($0
@@ -7418,6 +8254,37 @@ public func subtitleOptionsDefault() -> SubtitleOptions  {
 public func thumbnailConfigDefault() -> ThumbnailConfig  {
     return try!  FfiConverterTypeThumbnailConfig_lift(try! rustCall() {
     uniffi_aun_core_fn_func_thumbnail_config_default($0
+    )
+})
+}
+/**
+ * Transcribes a media file on this computer with a downloaded model and returns the transcript
+ * (`aun_media::transcribe::Transcript` JSON). `language` is ISO 639-1 or `None` to detect it.
+ * Progress is reported in percent.
+ */
+public func transcribeOnDeviceJson(modelPath: String, mediaPath: String, language: String?, progress: MediaProgress, cancel: MediaCancel?)async throws  -> String  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_func_transcribe_on_device_json(FfiConverterString.lower(modelPath),FfiConverterString.lower(mediaPath),FfiConverterOptionString.lower(language),FfiConverterTypeMediaProgress_lower(progress),FfiConverterOptionTypeMediaCancel.lower(cancel)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterString.lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+/**
+ * Caption cues for the server's on-device transcript upload (`[{startMs,endMs,text}]` JSON), at
+ * most two `max_line_chars` lines each.
+ */
+public func transcriptToCaptionSegmentsJson(transcriptJson: String, maxLineChars: UInt32)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_func_transcript_to_caption_segments_json(
+        FfiConverterString.lower(transcriptJson),
+        FfiConverterUInt32.lower(maxLineChars),$0
     )
 })
 }
@@ -7446,6 +8313,15 @@ public func transcriptToWebvtt(transcriptJson: String, options: SubtitleOptions)
 public func transcriptionModelCatalog() -> [ModelDescriptor]  {
     return try!  FfiConverterSequenceTypeModelDescriptor.lift(try! rustCall() {
     uniffi_aun_core_fn_func_transcription_model_catalog($0
+    )
+})
+}
+/**
+ * Whether this build can transcribe on the device (built with whisper.cpp).
+ */
+public func transcriptionOnDeviceAvailable() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_aun_core_fn_func_transcription_on_device_available($0
     )
 })
 }
@@ -7618,7 +8494,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_func_selftest_throw() != 9695) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_func_edl_apply_json() != 23963) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aun_core_checksum_func_edl_chapters_json() != 53606) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_func_edl_flatten_json() != 27197) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_func_edl_load_project() != 5471) {
@@ -7628,6 +8510,15 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_func_edl_validate() != 27908) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_func_hls_encode_fps() != 8214) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_func_hls_ladder() != 55911) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_func_hls_package_mp4() != 25186) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_func_media_detect_silence() != 40351) {
@@ -7651,6 +8542,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_func_media_select_thumbnail_timestamps() != 30512) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_func_renditions_files() != 33574) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aun_core_checksum_func_silence_config_default() != 16950) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -7660,6 +8554,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_func_thumbnail_config_default() != 45225) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_func_transcribe_on_device_json() != 54716) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_func_transcript_to_caption_segments_json() != 53969) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aun_core_checksum_func_transcript_to_srt() != 46581) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -7667,6 +8567,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_func_transcription_model_catalog() != 19893) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_func_transcription_on_device_available() != 40083) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_func_waveform_config_default() != 63036) {
@@ -7807,6 +8710,24 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_method_mediacancel_is_cancelled() != 47078) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_method_mediaprogress_on_progress() != 13314) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_modelstore_delete() != 676) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_modelstore_disk_usage_bytes() != 504) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_modelstore_download() != 337) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_modelstore_list() != 19366) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_modelstore_path() != 16002) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aun_core_checksum_method_connectivity_current() != 40856) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -7891,12 +8812,16 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_constructor_mediacancel_new() != 53288) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_constructor_modelstore_new() != 3285) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aun_core_checksum_constructor_uploadengine_new() != 6121) {
         return InitializationResult.apiChecksumMismatch
     }
 
     uniffiCallbackInitAuthListener()
     uniffiCallbackInitConnectivity()
+    uniffiCallbackInitMediaProgress()
     uniffiCallbackInitSecureStorage()
     uniffiCallbackInitSelfTestListener()
     uniffiCallbackInitTokenSource()

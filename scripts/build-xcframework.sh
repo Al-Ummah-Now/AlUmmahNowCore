@@ -23,6 +23,8 @@ OUT=build
 rm -rf "$OUT/AunCoreFFI.xcframework" "$OUT/xcf" && mkdir -p "$OUT/xcf"
 
 build() { cargo build -p aun-ffi --lib --release --target "$1"; }
+# macOS (desktop Studio) also carries on-device transcription (D10, whisper.cpp; needs cmake)
+build_macos() { cargo build -p aun-ffi --lib --release --features whisper --target "$1"; }
 build_tier3() { cargo +nightly build -Z build-std=std,panic_unwind -p aun-ffi --lib --release --target "$1"; }
 
 # Headers + module map from the generated Swift bindings
@@ -36,7 +38,7 @@ mkdir -p apple/Sources/AunCore
 cp bindings/swift/generated/AunCore.swift apple/Sources/AunCore/AunCore.swift
 
 ARGS=()
-build aarch64-apple-darwin; build x86_64-apple-darwin
+build_macos aarch64-apple-darwin; build_macos x86_64-apple-darwin
 mkdir -p "$OUT/xcf/macos"
 lipo -create target/aarch64-apple-darwin/release/$LIB target/x86_64-apple-darwin/release/$LIB -output "$OUT/xcf/macos/$LIB"
 ARGS+=(-library "$OUT/xcf/macos/$LIB" -headers "$OUT/xcf/include")
