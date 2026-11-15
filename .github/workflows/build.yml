@@ -95,6 +95,22 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
+      # whisper.cpp's ggml refuses MSVC on ARM64: build that target with clang-cl (LLVM is on the
+      # image) through Ninja inside the x64-to-ARM64 MSVC environment
+      - if: matrix.target == 'aarch64-pc-windows-msvc'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64_arm64
+      - if: matrix.target == 'aarch64-pc-windows-msvc'
+        shell: bash
+        run: |
+          {
+            echo "CMAKE_GENERATOR=Ninja"
+            echo "CC_aarch64_pc_windows_msvc=clang-cl"
+            echo "CXX_aarch64_pc_windows_msvc=clang-cl"
+            echo "CFLAGS_aarch64_pc_windows_msvc=--target=arm64-pc-windows-msvc"
+            echo "CXXFLAGS_aarch64_pc_windows_msvc=--target=arm64-pc-windows-msvc"
+          } >> "$GITHUB_ENV"
       # Desktop builds carry on-device transcription (D10, whisper.cpp; cmake and MSVC are on the image)
       - run: cargo build -p aun-ffi --lib --release --features whisper --target ${{ matrix.target }}
       - uses: actions/upload-artifact@v7
