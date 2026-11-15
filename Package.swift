@@ -31,7 +31,13 @@ let package = Package(
             name: "AunCore",
             dependencies: ["AunCoreFFI"],
             path: "apple/Sources/AunCore",
-            linkerSettings: [.linkedFramework("SystemConfiguration"), .linkedFramework("Security")]
+            linkerSettings: [
+                .linkedFramework("SystemConfiguration"),
+                .linkedFramework("Security"),
+                // The macOS slice includes whisper.cpp (on-device transcription, D10)
+                .linkedLibrary("c++", .when(platforms: [.macOS])),
+                .linkedFramework("Accelerate", .when(platforms: [.macOS])),
+            ]
         ),
         .testTarget(name: "AunCoreTests", dependencies: ["AunCore"], path: "apple/Tests/AunCoreTests"),
     ]

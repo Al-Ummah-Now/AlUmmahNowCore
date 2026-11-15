@@ -322,15 +322,7 @@ pub struct ModelDescriptor {
 pub fn transcription_model_catalog() -> Vec<ModelDescriptor> {
     aun_media::transcribe::model_catalog()
         .into_iter()
-        .map(|m| ModelDescriptor {
-            id: m.id,
-            tier: m.tier.into(),
-            quantization: m.quantization,
-            file_name: m.file_name,
-            url: m.url,
-            size_bytes: m.size_bytes,
-            sha256: m.sha256,
-        })
+        .map(descriptor)
         .collect()
 }
 
@@ -411,4 +403,278 @@ pub fn edl_validate(json: String) -> Result<Vec<EdlIssue>, AunError> {
 pub fn edl_chapters_json(json: String) -> Result<String, AunError> {
     let project = aun_media::edl::load_project(&json)?;
     self::json(&project.chapters())
+}
+
+// ---- EDL editing (E19 19.5) ------------------------------------------------------------------------
+
+/// Applies one edit (`aun_media::edl::EditOp` JSON, e.g. `{"op":"split","clipId":"c1","atMs":5000,
+/// "newId":"c2"}`) and returns the edited project. A refused edit returns an error and changes nothing.
+#[uniffi::export]
+pub fn edl_apply_json(project_json: String, op_json: String) -> Result<String, AunError> {
+    let mut project = aun_media::edl::load_project(&project_json)?;
+    let op: aun_media::edl::EditOp = from_json(&op_json, "edit")?;
+    project.apply(op)?;
+    Ok(project.to_json()?)
+}
+
+/// The clip tracks in timeline order with source paths resolved (`aun_media::edl::FlatTimeline`
+/// JSON), for building the platform composition that renders an export.
+#[uniffi::export]
+pub fn edl_flatten_json(project_json: String) -> Result<String, AunError> {
+    let project = aun_media::edl::load_project(&project_json)?;
+    json(&project.flatten()?)
+}
+
+// ---- On-device transcription (D10) -------------------------------------------------------------------
+
+/// Progress of a long media operation.
+#[uniffi::export(with_foreign)]
+pub trait MediaProgress: Send + Sync {
+    /// `done` out of `total` (bytes for downloads, percent for transcription).
+    fn on_progress(&self, done: u64, total: u64);
+}
+
+struct ForeignDownload(Arc<dyn MediaProgress>);
+
+impl aun_media::transcribe::DownloadListener for ForeignDownload {
+    fn on_progress(&self, downloaded_bytes: u64, total_bytes: u64) {
+        self.0.on_progress(downloaded_bytes, total_bytes);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ModelStatus {
+    pub model: ModelDescriptor,
+    pub installed: bool,
+    /// Bytes of an interrupted download that the next download resumes from.
+    pub partial_bytes: u64,
+}
+
+fn descriptor(m: aun_media::transcribe::ModelDescriptor) -> ModelDescriptor {
+    ModelDescriptor {
+        id: m.id,
+        tier: m.tier.into(),
+        quantization: m.quantization,
+        file_name: m.file_name,
+        url: m.url,
+        size_bytes: m.size_bytes,
+        sha256: m.sha256,
+    }
+}
+
+/// Whisper models on this computer: list, download (resumable, checksum-verified), delete.
+#[derive(Debug, uniffi::Object)]
+pub struct ModelStore {
+    manager: Arc<aun_media::transcribe::ModelManager>,
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl ModelStore {
+    /// `dir` is the app's own models folder (created when needed).
+    #[uniffi::constructor]
+    pub fn new(dir: String) -> Arc<Self> {
+        let fetcher = Arc::new(aun_media::transcribe::HttpModelFetcher::new());
+        Arc::new(Self {
+            manager: Arc::new(aun_media::transcribe::ModelManager::new(dir, fetcher)),
+        })
+    }
+
+    pub fn list(&self) -> Result<Vec<ModelStatus>, AunError> {
+        Ok(self
+            .manager
+            .list()?
+            .into_iter()
+            .map(|s| ModelStatus {
+                model: descriptor(s.descriptor),
+                installed: s.installed,
+                partial_bytes: s.partial_bytes,
+            })
+            .collect())
+    }
+
+    /// The installed model's file, or `None`.
+    pub fn path(&self, id: String) -> Result<Option<String>, AunError> {
+        Ok(self.manager.model_path(&id)?)
+    }
+
+    pub fn delete(&self, id: String) -> Result<(), AunError> {
+        Ok(self.manager.delete(&id)?)
+    }
+
+    pub fn disk_usage_bytes(&self) -> Result<u64, AunError> {
+        Ok(self.manager.disk_usage_bytes()?)
+    }
+
+    /// Downloads and verifies a model; returns its path. Cancelling keeps the partial file.
+    pub async fn download(
+        &self,
+        id: String,
+        progress: Arc<dyn MediaProgress>,
+        cancel: Option<Arc<MediaCancel>>,
+    ) -> Result<String, AunError> {
+        let t = token(cancel);
+        Ok(self
+            .manager
+            .download(&id, Arc::new(ForeignDownload(progress)), &t)
+            .await?)
+    }
+}
+
+/// Whether this build can transcribe on the device (built with whisper.cpp).
+#[uniffi::export]
+pub fn transcription_on_device_available() -> bool {
+    cfg!(feature = "whisper")
+}
+
+/// Transcribes a media file on this computer with a downloaded model and returns the transcript
+/// (`aun_media::transcribe::Transcript` JSON). `language` is ISO 639-1 or `None` to detect it.
+/// Progress is reported in percent.
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn transcribe_on_device_json(
+    model_path: String,
+    media_path: String,
+    language: Option<String>,
+    progress: Arc<dyn MediaProgress>,
+    cancel: Option<Arc<MediaCancel>>,
+) -> Result<String, AunError> {
+    #[cfg(feature = "whisper")]
+    {
+        let t = token(cancel);
+        let transcript = blocking(move || {
+            let transcriber = aun_media::transcribe::WhisperTranscriber::new(&PathBuf::from(model_path))?;
+            let options = aun_media::transcribe::TranscribeOptions {
+                language,
+                threads: None,
+            };
+            aun_media::transcribe::transcribe_file(
+                &transcriber,
+                &PathBuf::from(media_path),
+                &options,
+                &mut |p| progress.on_progress(u64::from(p), 100),
+                &t,
+            )
+        })
+        .await?;
+        json(&transcript)
+    }
+    #[cfg(not(feature = "whisper"))]
+    {
+        let _ = (model_path, media_path, language, progress, cancel);
+        Err(AunError::Unsupported {
+            detail: "this build has no on-device transcription".to_owned(),
+        })
+    }
+}
+
+/// Caption cues for the server's on-device transcript upload (`[{startMs,endMs,text}]` JSON), at
+/// most two `max_line_chars` lines each.
+#[uniffi::export]
+pub fn transcript_to_caption_segments_json(
+    transcript_json: String,
+    max_line_chars: u32,
+) -> Result<String, AunError> {
+    let t: aun_media::transcribe::Transcript = from_json(&transcript_json, "transcript")?;
+    json(&aun_media::transcribe::caption_segments(&t, max_line_chars))
+}
+
+// ---- Pre-encoded renditions (D11) ----------------------------------------------------------------------
+
+/// One rung of the server's HLS ladder.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct HlsRung {
+    pub name: String,
+    pub width: u32,
+    pub height: u32,
+    pub maxrate: u32,
+    pub bufsize: u32,
+    pub audio_bitrate: u32,
+    pub profile: String,
+    pub gop_seconds: u32,
+    pub segment_seconds: u32,
+    pub max_fps: f64,
+}
+
+/// The rungs the server encodes for a source of this coded size and rotation, lowest first.
+#[uniffi::export]
+pub fn hls_ladder(width: u32, height: u32, rotation: i32) -> Result<Vec<HlsRung>, AunError> {
+    Ok(aun_media::hls::ladder(width, height, rotation)?
+        .into_iter()
+        .map(|r| HlsRung {
+            name: r.name,
+            width: r.width,
+            height: r.height,
+            maxrate: r.maxrate,
+            bufsize: r.bufsize,
+            audio_bitrate: r.audio_bitrate,
+            profile: r.profile,
+            gop_seconds: r.gop_seconds,
+            segment_seconds: r.segment_seconds,
+            max_fps: r.max_fps,
+        })
+        .collect())
+}
+
+/// The frame rate to encode a source of `fps` at (sources above 31 fps are encoded at 30).
+#[uniffi::export]
+pub fn hls_encode_fps(fps: f64) -> f64 {
+    aun_media::hls::encode_fps(fps)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct StagedFile {
+    pub path: String,
+    pub bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct HlsPackage {
+    pub files: Vec<StagedFile>,
+    pub segment_seconds: Vec<f64>,
+    pub duration_ms: u64,
+}
+
+fn staged(files: Vec<aun_media::hls::PackagedFile>) -> Vec<StagedFile> {
+    files
+        .into_iter()
+        .map(|f| StagedFile {
+            path: f.path,
+            bytes: f.bytes,
+        })
+        .collect()
+}
+
+/// Packages one rung's progressive MP4 into fMP4 HLS in `out_dir` (`index.m3u8`, `init.mp4`,
+/// `seg_00001.m4s`…), cut like the server's encode. No re-encoding.
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn hls_package_mp4(
+    input_mp4: String,
+    out_dir: String,
+    segment_seconds: u32,
+    cancel: Option<Arc<MediaCancel>>,
+) -> Result<HlsPackage, AunError> {
+    let t = token(cancel);
+    let pkg = blocking(move || {
+        aun_media::hls::package_mp4(
+            &PathBuf::from(input_mp4),
+            &PathBuf::from(out_dir),
+            segment_seconds,
+            &t,
+        )
+    })
+    .await?;
+    Ok(HlsPackage {
+        files: staged(pkg.files),
+        segment_seconds: pkg.segment_seconds,
+        duration_ms: pkg.duration_ms,
+    })
+}
+
+/// The `files` list for `POST /api/videos/:id/renditions`: every file under `root_dir/<rung>/`
+/// as `<rung>/<file>`, each rung's playlist first.
+#[uniffi::export]
+pub fn renditions_files(root_dir: String, rungs: Vec<String>) -> Result<Vec<StagedFile>, AunError> {
+    Ok(staged(aun_media::hls::renditions_files(
+        &PathBuf::from(root_dir),
+        &rungs,
+    )?))
 }

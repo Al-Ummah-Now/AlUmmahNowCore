@@ -33,9 +33,10 @@ jobs:
       - name: Swift smoke test against the XCFramework
         run: AUN_LOCAL_XCFRAMEWORK=1 swift test
       - name: macOS universal dylib (for the NuGet osx runtime)
+        # Desktop builds carry on-device transcription (D10, whisper.cpp)
         run: |
-          cargo build -p aun-ffi --lib --release --target aarch64-apple-darwin
-          cargo build -p aun-ffi --lib --release --target x86_64-apple-darwin
+          cargo build -p aun-ffi --lib --release --features whisper --target aarch64-apple-darwin
+          cargo build -p aun-ffi --lib --release --features whisper --target x86_64-apple-darwin
           mkdir -p dist/osx
           lipo -create target/aarch64-apple-darwin/release/libaun_core.dylib \
             target/x86_64-apple-darwin/release/libaun_core.dylib -output dist/osx/libaun_core.dylib
@@ -94,7 +95,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
-      - run: cargo build -p aun-ffi --lib --release --target ${{ matrix.target }}
+      # Desktop builds carry on-device transcription (D10, whisper.cpp; cmake and MSVC are on the image)
+      - run: cargo build -p aun-ffi --lib --release --features whisper --target ${{ matrix.target }}
       - uses: actions/upload-artifact@v7
         with:
           name: native-${{ matrix.rid }}
@@ -120,8 +122,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
+      - name: Install build tools for whisper.cpp
+        uses: ./.github/actions/apt-install
+        with:
+          packages: cmake clang libclang-dev
       # Built on 22.04 so the .so links against an older glibc (2.35) and runs on more distros.
-      - run: cargo build -p aun-ffi --lib --release --target ${{ matrix.target }}
+      # Desktop builds carry on-device transcription (D10, whisper.cpp).
+      - run: cargo build -p aun-ffi --lib --release --features whisper --target ${{ matrix.target }}
       - uses: actions/upload-artifact@v7
         with:
           name: native-${{ matrix.rid }}

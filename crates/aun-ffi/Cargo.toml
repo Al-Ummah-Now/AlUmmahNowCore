@@ -19,13 +19,15 @@ required-features = ["cli"]
 [features]
 default = []
 cli = ["uniffi/cli"]
+# On-device transcription (D10) via whisper.cpp: desktop builds turn it on (needs cmake + a C++ toolchain).
+whisper = ["aun-media/whisper"]
 
 [dependencies]
 aun-common.workspace = true
 aun-api.workspace = true
 aun-auth.workspace = true
 aun-upload.workspace = true
-aun-media.workspace = true
+aun-media = { workspace = true, features = ["http-download"] }
 aun-search.workspace = true
 serde.workspace = true
 tracing.workspace = true
