@@ -640,3 +640,146 @@ fn render_plans_survive_json() {
     let json = plan.job.to_json().unwrap();
     assert_eq!(aun_media::job::JobPlan::from_json(&json).unwrap(), plan.job);
 }
+
+// ---- join / move / append / apply / flatten (E19 19.5) ------------------------------------------
+
+#[test]
+fn join_undoes_a_split_and_keeps_transitions_on_the_joined_clip() {
+    let mut p = project(vec![clip("a", 0, 8000, 0), clip("b", 0, 5000, 7000)]);
+    p.transitions.push(Transition {
+        id: "tr".into(),
+        kind: TransitionKind::Crossfade,
+        from_clip_id: "a".into(),
+        to_clip_id: "b".into(),
+        duration_ms: 1000,
+    });
+    let before = p.clone();
+    p.split_clip("a", 3000, "a2").unwrap();
+    assert_eq!(p.transitions[0].from_clip_id, "a2");
+    p.join_clips("a", "a2").unwrap();
+    assert_eq!(p, before);
+}
+
+#[test]
+fn join_refuses_clips_that_are_not_halves_of_one_cut() {
+    // A gap between them, another source range, and the wrong order
+    let mut p = project(vec![clip("a", 0, 3000, 0), clip("b", 3000, 6000, 3500)]);
+    let before = p.clone();
+    assert!(matches!(p.join_clips("a", "b"), Err(Error::InvalidInput(_))));
+    let mut p2 = project(vec![clip("a", 0, 3000, 0), clip("b", 4000, 6000, 3000)]);
+    assert!(p2.join_clips("a", "b").is_err());
+    let mut p3 = project(vec![clip("a", 0, 3000, 0), clip("b", 3000, 6000, 3000)]);
+    assert!(p3.join_clips("b", "a").is_err());
+    assert!(matches!(p.join_clips("a", "ghost"), Err(Error::NotFound(_))));
+    assert_eq!(p, before);
+}
+
+#[test]
+fn move_places_a_clip_and_refuses_landing_on_another() {
+    let mut p = project(vec![clip("a", 0, 3000, 0), clip("b", 0, 3000, 5000)]);
+    p.tracks.push(track("v2", TrackKind::Video, vec![]));
+    p.move_clip("a", "v", 10_000).unwrap();
+    assert_eq!(
+        p.tracks[0]
+            .clips
+            .iter()
+            .map(|c| c.id.as_str())
+            .collect::<Vec<_>>(),
+        ["b", "a"]
+    );
+    assert_eq!(p.tracks[0].clips[1].timeline_start_ms, 10_000);
+    p.move_clip("a", "v2", 0).unwrap();
+    assert!(p.tracks[0].clips.iter().all(|c| c.id != "a"));
+    assert_eq!(p.tracks[1].clips[0].id, "a");
+    let before = p.clone();
+    assert!(p.move_clip("a", "v", 6000).is_err(), "would overlap b");
+    assert!(matches!(p.move_clip("a", "nope", 0), Err(Error::NotFound(_))));
+    assert_eq!(p, before);
+}
+
+#[test]
+fn move_onto_a_track_of_another_kind_or_a_locked_track_is_refused() {
+    let mut p = project(vec![clip("a", 0, 3000, 0)]);
+    p.tracks.push(track("t", TrackKind::Title, vec![]));
+    let mut locked = track("v2", TrackKind::Video, vec![]);
+    locked.locked = true;
+    p.tracks.push(locked);
+    let before = p.clone();
+    assert!(p.move_clip("a", "t", 0).is_err());
+    assert!(matches!(p.move_clip("a", "v2", 0), Err(Error::Conflict(_))));
+    assert_eq!(p, before);
+}
+
+#[test]
+fn append_goes_to_the_end_of_the_track_unless_placed() {
+    let mut p = project(vec![clip("a", 0, 3000, 0)]);
+    let new = |id: &str, start: Option<u64>| aun_media::edl::NewClip {
+        id: id.into(),
+        source_id: "cam".into(),
+        in_ms: 10_000,
+        out_ms: 12_000,
+        timeline_start_ms: start,
+        speed: None,
+        volume: None,
+    };
+    p.append_clip("v", new("b", None)).unwrap();
+    assert_eq!(p.tracks[0].clips[1].timeline_start_ms, 3000);
+    p.append_clip("v", new("c", Some(20_000))).unwrap();
+    assert_eq!(p.tracks[0].clips[2].timeline_start_ms, 20_000);
+    let before = p.clone();
+    assert!(p.append_clip("v", new("a", None)).is_err(), "duplicate id");
+    let mut ghost = new("d", None);
+    ghost.source_id = "ghost".into();
+    assert!(p.append_clip("v", ghost).is_err());
+    assert_eq!(p, before);
+}
+
+#[test]
+fn edits_arrive_as_json_ops() {
+    let mut p = project(vec![clip("a", 0, 9000, 0)]);
+    let ops = [
+        json!({"op": "split", "clipId": "a", "atMs": 3000, "newId": "a2"}),
+        json!({"op": "trim", "clipId": "a2", "inMs": 4000, "outMs": 9000}),
+        json!({"op": "rippleDeleteClip", "clipId": "a"}),
+        json!({"op": "append", "trackId": "v", "clip": {"id": "z", "sourceId": "cam", "inMs": 0, "outMs": 1000}}),
+        json!({"op": "move", "clipId": "z", "trackId": "v", "startMs": 30000}),
+        json!({"op": "rippleDeleteRange", "startMs": 0, "endMs": 1000}),
+    ];
+    for op in ops {
+        p.apply(serde_json::from_value(op).unwrap()).unwrap();
+    }
+    let clips = &p.tracks[0].clips;
+    assert_eq!(
+        clips.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
+        ["a2", "z"]
+    );
+    assert_eq!((clips[0].in_ms, clips[0].timeline_start_ms), (4000, 0));
+    assert_eq!(clips[1].timeline_start_ms, 29_000);
+    let unknown = serde_json::from_value::<aun_media::edl::EditOp>(json!({"op": "explode", "clipId": "a"}));
+    assert!(unknown.is_err());
+    let extra = serde_json::from_value::<aun_media::edl::EditOp>(
+        json!({"op": "rippleDeleteClip", "clipId": "a", "x": 1}),
+    );
+    assert!(extra.is_err());
+}
+
+#[test]
+fn flatten_resolves_sources_in_timeline_order() {
+    let mut p = project(vec![clip("b", 5000, 8000, 4000), clip("a", 0, 4000, 0)]);
+    p.tracks.push(track("t", TrackKind::Title, vec![]));
+    let flat = p.flatten().unwrap();
+    assert_eq!(flat.duration_ms, 7000);
+    assert_eq!(flat.tracks.len(), 1, "title tracks are not composition tracks");
+    let clips = &flat.tracks[0].clips;
+    assert_eq!(
+        clips.iter().map(|c| c.clip_id.as_str()).collect::<Vec<_>>(),
+        ["a", "b"]
+    );
+    assert_eq!(clips[0].path, "/media/cam.mp4");
+    let v = serde_json::to_value(&flat).unwrap();
+    assert_eq!(v["tracks"][0]["clips"][1]["timelineStartMs"], 4000);
+    let mut bad = project(vec![clip("a", 0, 4000, 0), clip("b", 0, 4000, 1000)]);
+    assert!(bad.flatten().is_err());
+    bad.tracks[0].clips.pop();
+    assert!(bad.flatten().is_ok());
+}

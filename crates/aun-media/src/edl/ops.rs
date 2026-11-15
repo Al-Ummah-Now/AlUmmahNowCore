@@ -2,8 +2,9 @@
 //! failed edit leaves the project untouched.
 
 use aun_common::{Error, Result};
+use serde::{Deserialize, Serialize};
 
-use super::model::{Clip, Project, Track};
+use super::model::{Clip, Project, Track, TrackKind};
 
 fn not_found(id: &str) -> Error {
     Error::NotFound(format!("clip {id}"))
@@ -177,6 +178,264 @@ impl Project {
             Ok(())
         })
     }
+
+    /// Joins two clips back into one: `right` must directly follow `left` on the same track and
+    /// continue the same source at the same speed and volume (the inverse of [`Self::split_clip`]).
+    pub fn join_clips(&mut self, left_id: &str, right_id: &str) -> Result<()> {
+        self.transact(|project| {
+            let track = project.unlocked_track_with_clip(left_id)?;
+            let li = track
+                .clips
+                .iter()
+                .position(|c| c.id == left_id)
+                .ok_or_else(|| not_found(left_id))?;
+            let ri = track
+                .clips
+                .iter()
+                .position(|c| c.id == right_id)
+                .ok_or_else(|| not_found(right_id))?;
+            let (left, right) = (&track.clips[li], &track.clips[ri]);
+            let right_out = right.out_ms;
+            if left.source_id != right.source_id
+                || left.out_ms != right.in_ms
+                || left.timeline_end_ms() != right.timeline_start_ms
+                || left.speed != right.speed
+                || left.volume != right.volume
+            {
+                return Err(Error::InvalidInput(format!(
+                    "{right_id} does not continue {left_id}: only the two halves of a cut can be joined"
+                )));
+            }
+            track.clips[li].out_ms = right_out;
+            track.clips.remove(ri);
+            project.transitions.retain(|t| {
+                !(t.from_clip_id == left_id && t.to_clip_id == right_id) && t.to_clip_id != right_id
+            });
+            for transition in &mut project.transitions {
+                if transition.from_clip_id == right_id {
+                    transition.from_clip_id = left_id.to_owned();
+                }
+            }
+            Ok(())
+        })
+    }
+
+    /// Moves a clip to `start_ms` on `track_id` (its own track or another of the same kind).
+    /// Its transitions are dropped; landing on another clip is refused.
+    pub fn move_clip(&mut self, clip_id: &str, track_id: &str, start_ms: u64) -> Result<()> {
+        self.transact(|project| {
+            let from = project.unlocked_track_with_clip(clip_id)?;
+            let index = from
+                .clips
+                .iter()
+                .position(|c| c.id == clip_id)
+                .ok_or_else(|| not_found(clip_id))?;
+            let mut clip = from.clips.remove(index);
+            clip.timeline_start_ms = start_ms;
+            let to = unlocked_track(project, track_id)?;
+            insert_sorted(to, clip);
+            project
+                .transitions
+                .retain(|t| t.from_clip_id != clip_id && t.to_clip_id != clip_id);
+            Ok(())
+        })
+    }
+
+    /// Adds a clip to a track, at `clip.timeline_start_ms` or, when that is `None`, at the end of
+    /// the track.
+    pub fn append_clip(&mut self, track_id: &str, clip: NewClip) -> Result<()> {
+        self.transact(|project| {
+            let track = unlocked_track(project, track_id)?;
+            let end = track.clips.iter().map(Clip::timeline_end_ms).max().unwrap_or(0);
+            let clip = Clip {
+                id: clip.id,
+                source_id: clip.source_id,
+                in_ms: clip.in_ms,
+                out_ms: clip.out_ms,
+                timeline_start_ms: clip.timeline_start_ms.unwrap_or(end),
+                speed: clip.speed.unwrap_or(1.0),
+                volume: clip.volume.unwrap_or(1.0),
+            };
+            insert_sorted(track, clip);
+            Ok(())
+        })
+    }
+
+    /// Applies one edit. Every app sends edits this way, so the rules match everywhere.
+    pub fn apply(&mut self, op: EditOp) -> Result<()> {
+        match op {
+            EditOp::Split {
+                clip_id,
+                at_ms,
+                new_id,
+            } => self.split_clip(&clip_id, at_ms, &new_id),
+            EditOp::Trim {
+                clip_id,
+                in_ms,
+                out_ms,
+            } => self.trim_clip(&clip_id, in_ms, out_ms),
+            EditOp::RippleDeleteClip { clip_id } => self.ripple_delete_clip(&clip_id),
+            EditOp::RippleDeleteRange { start_ms, end_ms } => self.ripple_delete_range(start_ms, end_ms),
+            EditOp::Join { left_id, right_id } => self.join_clips(&left_id, &right_id),
+            EditOp::Move {
+                clip_id,
+                track_id,
+                start_ms,
+            } => self.move_clip(&clip_id, &track_id, start_ms),
+            EditOp::Append { track_id, clip } => self.append_clip(&track_id, clip),
+        }
+    }
+}
+
+impl Project {
+    /// The clip tracks in timeline order with each clip's source path resolved, for the platform
+    /// composition APIs (AVMutableComposition, MediaComposition, GES) that render an export.
+    pub fn flatten(&self) -> Result<FlatTimeline> {
+        self.ensure_valid()?;
+        let mut duration_ms = 0;
+        let mut tracks = Vec::new();
+        for track in self
+            .tracks
+            .iter()
+            .filter(|t| matches!(t.kind, TrackKind::Video | TrackKind::Audio))
+        {
+            let mut clips = Vec::with_capacity(track.clips.len());
+            let mut ordered: Vec<&Clip> = track.clips.iter().collect();
+            ordered.sort_by_key(|c| c.timeline_start_ms);
+            for clip in ordered {
+                let source = self
+                    .sources
+                    .iter()
+                    .find(|s| s.id == clip.source_id)
+                    .ok_or_else(|| Error::NotFound(format!("source {}", clip.source_id)))?;
+                duration_ms = duration_ms.max(clip.timeline_end_ms());
+                clips.push(FlatClip {
+                    clip_id: clip.id.clone(),
+                    source_id: clip.source_id.clone(),
+                    path: source.path.clone(),
+                    in_ms: clip.in_ms,
+                    out_ms: clip.out_ms,
+                    timeline_start_ms: clip.timeline_start_ms,
+                    speed: clip.speed,
+                    volume: clip.volume,
+                });
+            }
+            tracks.push(FlatTrack {
+                id: track.id.clone(),
+                kind: track.kind,
+                muted: track.muted,
+                clips,
+            });
+        }
+        Ok(FlatTimeline { duration_ms, tracks })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlatTimeline {
+    pub duration_ms: u64,
+    pub tracks: Vec<FlatTrack>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlatTrack {
+    pub id: String,
+    pub kind: TrackKind,
+    pub muted: bool,
+    pub clips: Vec<FlatClip>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlatClip {
+    pub clip_id: String,
+    pub source_id: String,
+    pub path: String,
+    pub in_ms: u64,
+    pub out_ms: u64,
+    pub timeline_start_ms: u64,
+    pub speed: f64,
+    pub volume: f64,
+}
+
+fn unlocked_track<'a>(project: &'a mut Project, track_id: &str) -> Result<&'a mut Track> {
+    let track = project
+        .tracks
+        .iter_mut()
+        .find(|t| t.id == track_id)
+        .ok_or_else(|| Error::NotFound(format!("track {track_id}")))?;
+    if track.locked {
+        return Err(Error::Conflict(format!("track {} is locked", track.id)));
+    }
+    Ok(track)
+}
+
+fn insert_sorted(track: &mut Track, clip: Clip) {
+    let at = track
+        .clips
+        .iter()
+        .position(|c| c.timeline_start_ms > clip.timeline_start_ms)
+        .unwrap_or(track.clips.len());
+    track.clips.insert(at, clip);
+}
+
+/// A clip to add; omitted fields take their defaults (end of track, speed 1, volume 1).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NewClip {
+    pub id: String,
+    pub source_id: String,
+    pub in_ms: u64,
+    pub out_ms: u64,
+    #[serde(default)]
+    pub timeline_start_ms: Option<u64>,
+    #[serde(default)]
+    pub speed: Option<f64>,
+    #[serde(default)]
+    pub volume: Option<f64>,
+}
+
+/// One edit as the apps send it: `{"op":"split","clipId":"c1","atMs":5000,"newId":"c2"}`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    tag = "op",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum EditOp {
+    Split {
+        clip_id: String,
+        at_ms: u64,
+        new_id: String,
+    },
+    Trim {
+        clip_id: String,
+        in_ms: u64,
+        out_ms: u64,
+    },
+    RippleDeleteClip {
+        clip_id: String,
+    },
+    RippleDeleteRange {
+        start_ms: u64,
+        end_ms: u64,
+    },
+    Join {
+        left_id: String,
+        right_id: String,
+    },
+    Move {
+        clip_id: String,
+        track_id: String,
+        start_ms: u64,
+    },
+    Append {
+        track_id: String,
+        clip: NewClip,
+    },
 }
 
 /// The span after removing `[cut_start, cut_end)` and closing the gap; `None` if nothing remains.
