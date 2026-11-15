@@ -109,7 +109,7 @@ jobs:
             echo "CC_aarch64_pc_windows_msvc=clang-cl"
             echo "CXX_aarch64_pc_windows_msvc=clang-cl"
             echo "CFLAGS_aarch64_pc_windows_msvc=--target=arm64-pc-windows-msvc"
-            echo "CXXFLAGS_aarch64_pc_windows_msvc=--target=arm64-pc-windows-msvc"
+            echo "CXXFLAGS_aarch64_pc_windows_msvc=--target=arm64-pc-windows-msvc /EHsc"
           } >> "$GITHUB_ENV"
       # Desktop builds carry on-device transcription (D10, whisper.cpp; cmake and MSVC are on the image)
       - run: cargo build -p aun-ffi --lib --release --features whisper --target ${{ matrix.target }}
