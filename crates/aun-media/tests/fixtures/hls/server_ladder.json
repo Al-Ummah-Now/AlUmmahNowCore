@@ -1,0 +1,858 @@
+{
+ "segmentSeconds": 6,
+ "gopSeconds": 2,
+ "rungs": [
+  {
+   "name": "360p",
+   "short": 360,
+   "maxrate": 800000,
+   "audio": 96000
+  },
+  {
+   "name": "480p",
+   "short": 480,
+   "maxrate": 1400000,
+   "audio": 128000
+  },
+  {
+   "name": "720p",
+   "short": 720,
+   "maxrate": 2800000,
+   "audio": 128000
+  },
+  {
+   "name": "1080p",
+   "short": 1080,
+   "maxrate": 5000000,
+   "audio": 128000
+  }
+ ],
+ "cases": [
+  {
+   "width": 1920,
+   "height": 1080,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 640,
+     "height": 360,
+     "maxrate": 800000,
+     "audio": 96000
+    },
+    {
+     "name": "480p",
+     "width": 854,
+     "height": 480,
+     "maxrate": 1400000,
+     "audio": 128000
+    },
+    {
+     "name": "720p",
+     "width": 1280,
+     "height": 720,
+     "maxrate": 2800000,
+     "audio": 128000
+    },
+    {
+     "name": "1080p",
+     "width": 1920,
+     "height": 1080,
+     "maxrate": 5000000,
+     "audio": 128000
+    }
+   ]
+  },
+  {
+   "width": 1280,
+   "height": 720,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 640,
+     "height": 360,
+     "maxrate": 800000,
+     "audio": 96000
+    },
+    {
+     "name": "480p",
+     "width": 854,
+     "height": 480,
+     "maxrate": 1400000,
+     "audio": 128000
+    },
+    {
+     "name": "720p",
+     "width": 1280,
+     "height": 720,
+     "maxrate": 2800000,
+     "audio": 128000
+    }
+   ]
+  },
+  {
+   "width": 1080,
+   "height": 1920,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 360,
+     "height": 640,
+     "maxrate": 800000,
+     "audio": 96000
+    },
+    {
+     "name": "480p",
+     "width": 480,
+     "height": 854,
+     "maxrate": 1400000,
+     "audio": 128000
+    },
+    {
+     "name": "720p",
+     "width": 720,
+     "height": 1280,
+     "maxrate": 2800000,
+     "audio": 128000
+    },
+    {
+     "name": "1080p",
+     "width": 1080,
+     "height": 1920,
+     "maxrate": 5000000,
+     "audio": 128000
+    }
+   ]
+  },
+  {
+   "width": 1916,
+   "height": 1076,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 642,
+     "height": 360,
+     "maxrate": 800000,
+     "audio": 96000
+    },
+    {
+     "name": "480p",
+     "width": 854,
+     "height": 480,
+     "maxrate": 1400000,
+     "audio": 128000
+    },
+    {
+     "name": "720p",
+     "width": 1282,
+     "height": 720,
+     "maxrate": 2800000,
+     "audio": 128000
+    },
+    {
+     "name": "1080p",
+     "width": 1916,
+     "height": 1076,
+     "maxrate": 5000000,
+     "audio": 128000
+    }
+   ]
+  },
+  {
+   "width": 321,
+   "height": 241,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 320,
+     "height": 240,
+     "maxrate": 800000,
+     "audio": 96000
+    }
+   ]
+  },
+  {
+   "width": 640,
+   "height": 360,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 640,
+     "height": 360,
+     "maxrate": 800000,
+     "audio": 96000
+    }
+   ]
+  },
+  {
+   "width": 854,
+   "height": 480,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 640,
+     "height": 360,
+     "maxrate": 800000,
+     "audio": 96000
+    },
+    {
+     "name": "480p",
+     "width": 854,
+     "height": 480,
+     "maxrate": 1400000,
+     "audio": 128000
+    }
+   ]
+  },
+  {
+   "width": 3840,
+   "height": 2160,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 640,
+     "height": 360,
+     "maxrate": 800000,
+     "audio": 96000
+    },
+    {
+     "name": "480p",
+     "width": 854,
+     "height": 480,
+     "maxrate": 1400000,
+     "audio": 128000
+    },
+    {
+     "name": "720p",
+     "width": 1280,
+     "height": 720,
+     "maxrate": 2800000,
+     "audio": 128000
+    },
+    {
+     "name": "1080p",
+     "width": 1920,
+     "height": 1080,
+     "maxrate": 5000000,
+     "audio": 128000
+    }
+   ]
+  },
+  {
+   "width": 2560,
+   "height": 1440,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 640,
+     "height": 360,
+     "maxrate": 800000,
+     "audio": 96000
+    },
+    {
+     "name": "480p",
+     "width": 854,
+     "height": 480,
+     "maxrate": 1400000,
+     "audio": 128000
+    },
+    {
+     "name": "720p",
+     "width": 1280,
+     "height": 720,
+     "maxrate": 2800000,
+     "audio": 128000
+    },
+    {
+     "name": "1080p",
+     "width": 1920,
+     "height": 1080,
+     "maxrate": 5000000,
+     "audio": 128000
+    }
+   ]
+  },
+  {
+   "width": 1440,
+   "height": 1080,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 480,
+     "height": 360,
+     "maxrate": 800000,
+     "audio": 96000
+    },
+    {
+     "name": "480p",
+     "width": 640,
+     "height": 480,
+     "maxrate": 1400000,
+     "audio": 128000
+    },
+    {
+     "name": "720p",
+     "width": 960,
+     "height": 720,
+     "maxrate": 2800000,
+     "audio": 128000
+    },
+    {
+     "name": "1080p",
+     "width": 1440,
+     "height": 1080,
+     "maxrate": 5000000,
+     "audio": 128000
+    }
+   ]
+  },
+  {
+   "width": 720,
+   "height": 576,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 450,
+     "height": 360,
+     "maxrate": 800000,
+     "audio": 96000
+    },
+    {
+     "name": "480p",
+     "width": 600,
+     "height": 480,
+     "maxrate": 1400000,
+     "audio": 128000
+    }
+   ]
+  },
+  {
+   "width": 720,
+   "height": 480,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 540,
+     "height": 360,
+     "maxrate": 800000,
+     "audio": 96000
+    },
+    {
+     "name": "480p",
+     "width": 720,
+     "height": 480,
+     "maxrate": 1400000,
+     "audio": 128000
+    }
+   ]
+  },
+  {
+   "width": 1920,
+   "height": 800,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 864,
+     "height": 360,
+     "maxrate": 800000,
+     "audio": 96000
+    },
+    {
+     "name": "480p",
+     "width": 1152,
+     "height": 480,
+     "maxrate": 1400000,
+     "audio": 128000
+    },
+    {
+     "name": "720p",
+     "width": 1728,
+     "height": 720,
+     "maxrate": 2800000,
+     "audio": 128000
+    }
+   ]
+  },
+  {
+   "width": 1080,
+   "height": 1080,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 360,
+     "height": 360,
+     "maxrate": 800000,
+     "audio": 96000
+    },
+    {
+     "name": "480p",
+     "width": 480,
+     "height": 480,
+     "maxrate": 1400000,
+     "audio": 128000
+    },
+    {
+     "name": "720p",
+     "width": 720,
+     "height": 720,
+     "maxrate": 2800000,
+     "audio": 128000
+    },
+    {
+     "name": "1080p",
+     "width": 1080,
+     "height": 1080,
+     "maxrate": 5000000,
+     "audio": 128000
+    }
+   ]
+  },
+  {
+   "width": 1920,
+   "height": 1080,
+   "rotation": 90,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 360,
+     "height": 640,
+     "maxrate": 800000,
+     "audio": 96000
+    },
+    {
+     "name": "480p",
+     "width": 480,
+     "height": 854,
+     "maxrate": 1400000,
+     "audio": 128000
+    },
+    {
+     "name": "720p",
+     "width": 720,
+     "height": 1280,
+     "maxrate": 2800000,
+     "audio": 128000
+    },
+    {
+     "name": "1080p",
+     "width": 1080,
+     "height": 1920,
+     "maxrate": 5000000,
+     "audio": 128000
+    }
+   ]
+  },
+  {
+   "width": 1920,
+   "height": 1080,
+   "rotation": -90,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 360,
+     "height": 640,
+     "maxrate": 800000,
+     "audio": 96000
+    },
+    {
+     "name": "480p",
+     "width": 480,
+     "height": 854,
+     "maxrate": 1400000,
+     "audio": 128000
+    },
+    {
+     "name": "720p",
+     "width": 720,
+     "height": 1280,
+     "maxrate": 2800000,
+     "audio": 128000
+    },
+    {
+     "name": "1080p",
+     "width": 1080,
+     "height": 1920,
+     "maxrate": 5000000,
+     "audio": 128000
+    }
+   ]
+  },
+  {
+   "width": 1920,
+   "height": 1080,
+   "rotation": 180,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 640,
+     "height": 360,
+     "maxrate": 800000,
+     "audio": 96000
+    },
+    {
+     "name": "480p",
+     "width": 854,
+     "height": 480,
+     "maxrate": 1400000,
+     "audio": 128000
+    },
+    {
+     "name": "720p",
+     "width": 1280,
+     "height": 720,
+     "maxrate": 2800000,
+     "audio": 128000
+    },
+    {
+     "name": "1080p",
+     "width": 1920,
+     "height": 1080,
+     "maxrate": 5000000,
+     "audio": 128000
+    }
+   ]
+  },
+  {
+   "width": 1280,
+   "height": 720,
+   "rotation": 270,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 360,
+     "height": 640,
+     "maxrate": 800000,
+     "audio": 96000
+    },
+    {
+     "name": "480p",
+     "width": 480,
+     "height": 854,
+     "maxrate": 1400000,
+     "audio": 128000
+    },
+    {
+     "name": "720p",
+     "width": 720,
+     "height": 1280,
+     "maxrate": 2800000,
+     "audio": 128000
+    }
+   ]
+  },
+  {
+   "width": 176,
+   "height": 144,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 176,
+     "height": 144,
+     "maxrate": 800000,
+     "audio": 96000
+    }
+   ]
+  },
+  {
+   "width": 200,
+   "height": 400,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 200,
+     "height": 400,
+     "maxrate": 800000,
+     "audio": 96000
+    }
+   ]
+  },
+  {
+   "width": 1366,
+   "height": 768,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 640,
+     "height": 360,
+     "maxrate": 800000,
+     "audio": 96000
+    },
+    {
+     "name": "480p",
+     "width": 854,
+     "height": 480,
+     "maxrate": 1400000,
+     "audio": 128000
+    },
+    {
+     "name": "720p",
+     "width": 1280,
+     "height": 720,
+     "maxrate": 2800000,
+     "audio": 128000
+    }
+   ]
+  },
+  {
+   "width": 1000,
+   "height": 1000,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 360,
+     "height": 360,
+     "maxrate": 800000,
+     "audio": 96000
+    },
+    {
+     "name": "480p",
+     "width": 480,
+     "height": 480,
+     "maxrate": 1400000,
+     "audio": 128000
+    },
+    {
+     "name": "720p",
+     "width": 720,
+     "height": 720,
+     "maxrate": 2800000,
+     "audio": 128000
+    }
+   ]
+  },
+  {
+   "width": 999,
+   "height": 561,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 642,
+     "height": 360,
+     "maxrate": 800000,
+     "audio": 96000
+    },
+    {
+     "name": "480p",
+     "width": 854,
+     "height": 480,
+     "maxrate": 1400000,
+     "audio": 128000
+    }
+   ]
+  },
+  {
+   "width": 1279,
+   "height": 719,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 640,
+     "height": 360,
+     "maxrate": 800000,
+     "audio": 96000
+    },
+    {
+     "name": "480p",
+     "width": 854,
+     "height": 480,
+     "maxrate": 1400000,
+     "audio": 128000
+    },
+    {
+     "name": "720p",
+     "width": 1278,
+     "height": 718,
+     "maxrate": 2800000,
+     "audio": 128000
+    }
+   ]
+  },
+  {
+   "width": 1088,
+   "height": 1920,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 360,
+     "height": 636,
+     "maxrate": 800000,
+     "audio": 96000
+    },
+    {
+     "name": "480p",
+     "width": 480,
+     "height": 848,
+     "maxrate": 1400000,
+     "audio": 128000
+    },
+    {
+     "name": "720p",
+     "width": 720,
+     "height": 1270,
+     "maxrate": 2800000,
+     "audio": 128000
+    },
+    {
+     "name": "1080p",
+     "width": 1080,
+     "height": 1906,
+     "maxrate": 5000000,
+     "audio": 128000
+    }
+   ]
+  },
+  {
+   "width": 480,
+   "height": 854,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 360,
+     "height": 640,
+     "maxrate": 800000,
+     "audio": 96000
+    },
+    {
+     "name": "480p",
+     "width": 480,
+     "height": 854,
+     "maxrate": 1400000,
+     "audio": 128000
+    }
+   ]
+  },
+  {
+   "width": 352,
+   "height": 288,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 352,
+     "height": 288,
+     "maxrate": 800000,
+     "audio": 96000
+    }
+   ]
+  },
+  {
+   "width": 2048,
+   "height": 858,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 860,
+     "height": 360,
+     "maxrate": 800000,
+     "audio": 96000
+    },
+    {
+     "name": "480p",
+     "width": 1146,
+     "height": 480,
+     "maxrate": 1400000,
+     "audio": 128000
+    },
+    {
+     "name": "720p",
+     "width": 1718,
+     "height": 720,
+     "maxrate": 2800000,
+     "audio": 128000
+    }
+   ]
+  },
+  {
+   "width": 1920,
+   "height": 1088,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 636,
+     "height": 360,
+     "maxrate": 800000,
+     "audio": 96000
+    },
+    {
+     "name": "480p",
+     "width": 848,
+     "height": 480,
+     "maxrate": 1400000,
+     "audio": 128000
+    },
+    {
+     "name": "720p",
+     "width": 1270,
+     "height": 720,
+     "maxrate": 2800000,
+     "audio": 128000
+    },
+    {
+     "name": "1080p",
+     "width": 1906,
+     "height": 1080,
+     "maxrate": 5000000,
+     "audio": 128000
+    }
+   ]
+  },
+  {
+   "width": 3024,
+   "height": 4032,
+   "rotation": 0,
+   "ladder": [
+    {
+     "name": "360p",
+     "width": 360,
+     "height": 480,
+     "maxrate": 800000,
+     "audio": 96000
+    },
+    {
+     "name": "480p",
+     "width": 480,
+     "height": 640,
+     "maxrate": 1400000,
+     "audio": 128000
+    },
+    {
+     "name": "720p",
+     "width": 720,
+     "height": 960,
+     "maxrate": 2800000,
+     "audio": 128000
+    },
+    {
+     "name": "1080p",
+     "width": 1080,
+     "height": 1440,
+     "maxrate": 5000000,
+     "audio": 128000
+    }
+   ]
+  }
+ ]
+}

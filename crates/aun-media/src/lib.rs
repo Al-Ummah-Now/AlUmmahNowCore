@@ -21,6 +21,7 @@ pub mod analysis;
 pub mod audio;
 pub mod edl;
 pub mod handoff;
+pub mod hls;
 mod isobmff;
 pub mod job;
 pub mod probe;
