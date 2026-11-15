@@ -25,6 +25,11 @@ pub struct OAuthConfig {
     /// e.g. `alummahnow://auth/callback`
     pub redirect_uri: String,
     pub scopes: Vec<String>,
+    /// This app install's stable id (the push-device key the Admin apps register). Sent as
+    /// `install_id` on the code exchange: Auth stores it on the install's refresh tokens, so
+    /// "Sign out this device" in the videos admin ends exactly this install's sign-in
+    /// (AlUmmahNow#442, AlUmmahNowAuth#363). `None` sends nothing.
+    pub install_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -83,7 +88,15 @@ impl OAuthConfig {
             client_id: client_id.into(),
             redirect_uri: redirect_uri.into(),
             scopes,
+            install_id: None,
         })
+    }
+
+    /// The same config, sending `install_id` on the code exchange.
+    #[must_use]
+    pub fn with_install_id(mut self, install_id: impl Into<String>) -> Self {
+        self.install_id = Some(install_id.into());
+        self
     }
 }
 
@@ -314,17 +327,17 @@ impl OAuthClient {
         let code = q
             .get("code")
             .ok_or_else(|| Error::InvalidInput("redirect has no code".into()))?;
-        self.token_request(
-            &[
-                ("grant_type", "authorization_code"),
-                ("code", code),
-                ("redirect_uri", &pending.redirect_uri),
-                ("client_id", &self.config.client_id),
-                ("code_verifier", &pending.pkce.verifier),
-            ],
-            now_ms,
-        )
-        .await
+        let mut form: Vec<(&str, &str)> = vec![
+            ("grant_type", "authorization_code"),
+            ("code", code),
+            ("redirect_uri", &pending.redirect_uri),
+            ("client_id", &self.config.client_id),
+            ("code_verifier", &pending.pkce.verifier),
+        ];
+        if let Some(install_id) = self.config.install_id.as_deref().filter(|id| !id.is_empty()) {
+            form.push(("install_id", install_id));
+        }
+        self.token_request(&form, now_ms).await
     }
 
     /// Refreshes. Servers rotate refresh tokens: when the response has none, the old one is kept.

@@ -4276,6 +4276,11 @@ public struct AuthConfig: Equatable, Hashable {
      * RFC 7009 endpoint; `None` means `{issuer}/token/revoke`.
      */
     public var revocationEndpoint: String?
+    /**
+     * This install's stable id (the Admin apps' push-device key). Sent as `install_id` on the
+     * code exchange, so "Sign out this device" in the videos admin ends this install's sign-in.
+     */
+    public var installId: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -4295,7 +4300,11 @@ public struct AuthConfig: Equatable, Hashable {
          */authorizationEndpoint: String?, tokenEndpoint: String?, deviceAuthorizationEndpoint: String?, 
         /**
          * RFC 7009 endpoint; `None` means `{issuer}/token/revoke`.
-         */revocationEndpoint: String? = nil) {
+         */revocationEndpoint: String? = nil, 
+        /**
+         * This install's stable id (the Admin apps' push-device key). Sent as `install_id` on the
+         * code exchange, so "Sign out this device" in the videos admin ends this install's sign-in.
+         */installId: String? = nil) {
         self.issuer = issuer
         self.clientId = clientId
         self.redirectUri = redirectUri
@@ -4304,6 +4313,7 @@ public struct AuthConfig: Equatable, Hashable {
         self.tokenEndpoint = tokenEndpoint
         self.deviceAuthorizationEndpoint = deviceAuthorizationEndpoint
         self.revocationEndpoint = revocationEndpoint
+        self.installId = installId
     }
 
     
@@ -4329,7 +4339,8 @@ public struct FfiConverterTypeAuthConfig: FfiConverterRustBuffer {
                 authorizationEndpoint: FfiConverterOptionString.read(from: &buf), 
                 tokenEndpoint: FfiConverterOptionString.read(from: &buf), 
                 deviceAuthorizationEndpoint: FfiConverterOptionString.read(from: &buf), 
-                revocationEndpoint: FfiConverterOptionString.read(from: &buf)
+                revocationEndpoint: FfiConverterOptionString.read(from: &buf), 
+                installId: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -4342,6 +4353,7 @@ public struct FfiConverterTypeAuthConfig: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.tokenEndpoint, into: &buf)
         FfiConverterOptionString.write(value.deviceAuthorizationEndpoint, into: &buf)
         FfiConverterOptionString.write(value.revocationEndpoint, into: &buf)
+        FfiConverterOptionString.write(value.installId, into: &buf)
     }
 }
 

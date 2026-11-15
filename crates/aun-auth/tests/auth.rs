@@ -51,6 +51,7 @@ fn config(server: &MockServer, device: bool) -> OAuthConfig {
         client_id: "viewer-mobile".into(),
         redirect_uri: "alummahnow://auth/callback".into(),
         scopes: vec!["openid".into(), "profile".into()],
+        install_id: None,
     }
 }
 
@@ -216,6 +217,41 @@ async fn silent_reauthorize_after_rejected_refresh() {
     assert!(!info.needs_reauth);
     assert_eq!(m.accounts().unwrap().len(), 1);
     assert_eq!(m.access_token().await.unwrap().as_deref(), Some("at-u1-2"));
+}
+
+/// The Admin apps' install id rides the code exchange, so Auth can end exactly this install's
+/// sign-in ("Sign out this device", AlUmmahNow#442); without one, no `install_id` is sent.
+#[tokio::test]
+async fn code_exchange_sends_the_install_id_only_when_set() {
+    for install_id in [Some("ins0123456789abcdef"), None] {
+        let server = MockServer::start().await;
+        let mut cfg = config(&server, false);
+        if let Some(id) = install_id {
+            cfg = cfg.with_install_id(id);
+        }
+        let oauth = OAuthClient::new(cfg, http());
+        let p = oauth.authorize(&[]).unwrap();
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .and(body_string_contains("grant_type=authorization_code"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(token_body("u1", "at", Some("rt"), 900)))
+            .mount(&server)
+            .await;
+        oauth
+            .exchange_code(
+                &p,
+                &format!("alummahnow://auth/callback?code=c1&state={}", p.state),
+                0,
+            )
+            .await
+            .unwrap();
+        let requests = server.received_requests().await.unwrap();
+        let body = String::from_utf8(requests.last().unwrap().body.clone()).unwrap();
+        match install_id {
+            Some(id) => assert!(body.contains(&format!("install_id={id}")), "{body}"),
+            None => assert!(!body.contains("install_id"), "{body}"),
+        }
+    }
 }
 
 #[tokio::test]
