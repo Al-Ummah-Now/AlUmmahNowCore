@@ -147,6 +147,101 @@ fn wrap(text: &str, max_chars: u32) -> Vec<String> {
     lines
 }
 
+/// One caption cue as the server's on-device transcript upload takes it
+/// (`POST /api/videos/:id/captions/drafts/:language/transcript`, D10).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptionSegment {
+    pub start_ms: u64,
+    pub end_ms: u64,
+    pub text: String,
+}
+
+/// Cues of at most two `max_line_chars` lines each. Longer speech is split at word timings when
+/// the model gave them, otherwise in proportion to the characters.
+pub fn caption_segments(transcript: &Transcript, max_line_chars: u32) -> Vec<CaptionSegment> {
+    let budget = (max_line_chars.max(1) as usize) * 2;
+    let mut out = Vec::new();
+    for segment in cues(transcript) {
+        let (start, end) = cue_times(segment);
+        let text = segment.text.split_whitespace().collect::<Vec<_>>().join(" ");
+        if wrap(&text, max_line_chars).len() <= 2 {
+            out.push(CaptionSegment {
+                start_ms: start,
+                end_ms: end,
+                text,
+            });
+            continue;
+        }
+        let words: Vec<_> = segment
+            .words
+            .iter()
+            .filter(|w| !w.text.trim().is_empty())
+            .collect();
+        if !words.is_empty() {
+            let mut group: Vec<&super::TranscriptWord> = Vec::new();
+            let mut chars = 0usize;
+            let flush = |group: &mut Vec<&super::TranscriptWord>, out: &mut Vec<CaptionSegment>| {
+                if let (Some(first), Some(last)) = (group.first(), group.last()) {
+                    let s = first.start_ms.max(start);
+                    out.push(CaptionSegment {
+                        start_ms: s,
+                        end_ms: last.end_ms.min(end).max(s + 1),
+                        text: group.iter().map(|w| w.text.trim()).collect::<Vec<_>>().join(" "),
+                    });
+                }
+                group.clear();
+            };
+            for word in words {
+                let len = word.text.trim().chars().count();
+                if !group.is_empty() && chars + 1 + len > budget {
+                    flush(&mut group, &mut out);
+                    chars = 0;
+                }
+                chars += if group.is_empty() { len } else { len + 1 };
+                group.push(word);
+            }
+            flush(&mut group, &mut out);
+            continue;
+        }
+        // No word timings: share the time out by characters
+        let pieces = split_text(&text, budget);
+        let total: usize = pieces.iter().map(|p| p.chars().count()).sum::<usize>().max(1);
+        let span = end - start;
+        let mut done = 0usize;
+        for piece in pieces {
+            let s = start + (span as u128 * done as u128 / total as u128) as u64;
+            done += piece.chars().count();
+            let e = start + (span as u128 * done as u128 / total as u128) as u64;
+            out.push(CaptionSegment {
+                start_ms: s,
+                end_ms: e.max(s + 1),
+                text: piece,
+            });
+        }
+    }
+    out
+}
+
+fn split_text(text: &str, budget: usize) -> Vec<String> {
+    let mut pieces = Vec::new();
+    let mut current = String::new();
+    for word in text.split_whitespace() {
+        let len = word.chars().count();
+        if !current.is_empty() && current.chars().count() + 1 + len > budget {
+            pieces.push(std::mem::take(&mut current));
+        }
+        if !current.is_empty() {
+            current.push(' ');
+        }
+        current.push_str(word);
+    }
+    if !current.is_empty() {
+        pieces.push(current);
+    }
+    pieces
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::TranscriptWord;
@@ -267,5 +362,82 @@ mod tests {
         let t = transcript("", vec![]);
         assert_eq!(to_webvtt(&t, &SubtitleOptions::default()), "WEBVTT\n\n");
         assert_eq!(to_srt(&t, &SubtitleOptions::default()), "");
+    }
+    #[test]
+    fn caption_segments_keep_short_cues_and_split_long_ones_at_word_times() {
+        let words = |list: &[(u64, u64, &str)]| {
+            list.iter()
+                .map(|(s, e, t)| TranscriptWord {
+                    start_ms: *s,
+                    end_ms: *e,
+                    text: (*t).to_owned(),
+                    confidence: 0.9,
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut long = segment(
+            0,
+            9000,
+            "بسم الله الرحمن الرحيم الحمد لله رب العالمين الرحمن الرحيم مالك يوم الدين",
+        );
+        long.words = words(&[
+            (0, 500, "بسم"),
+            (500, 1000, "الله"),
+            (1000, 1800, "الرحمن"),
+            (1800, 2600, "الرحيم"),
+            (2600, 3200, "الحمد"),
+            (3200, 3600, "لله"),
+            (3600, 4000, "رب"),
+            (4000, 5000, "العالمين"),
+            (5000, 6000, "الرحمن"),
+            (6000, 7000, "الرحيم"),
+            (7000, 7600, "مالك"),
+            (7600, 8200, "يوم"),
+            (8200, 9000, "الدين"),
+        ]);
+        let t = transcript(
+            "ar",
+            vec![segment(0, 0, "  hi   there "), segment(10, 20, "   "), long],
+        );
+        let cues = caption_segments(&t, 20);
+        assert_eq!(
+            cues[0],
+            CaptionSegment {
+                start_ms: 0,
+                end_ms: 1,
+                text: "hi there".into()
+            }
+        );
+        assert!(cues.len() > 2, "the long segment is split");
+        for cue in &cues[1..] {
+            assert!(cue.text.chars().count() <= 40, "{cue:?}");
+            assert!(cue.end_ms > cue.start_ms);
+        }
+        assert_eq!(cues[1].start_ms, 0);
+        assert_eq!(cues.last().unwrap().end_ms, 9000);
+        let joined = cues[1..]
+            .iter()
+            .map(|c| c.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert_eq!(joined, t.segments[2].text);
+        let json = serde_json::to_value(&cues[0]).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({"startMs": 0, "endMs": 1, "text": "hi there"})
+        );
+    }
+
+    #[test]
+    fn caption_segments_share_time_by_characters_without_word_times() {
+        let t = transcript(
+            "en",
+            vec![segment(1000, 5000, "aaaa bbbb cccc dddd eeee ffff gggg hhhh")],
+        );
+        let cues = caption_segments(&t, 5);
+        assert_eq!(cues.len(), 4);
+        assert_eq!(cues[0].start_ms, 1000);
+        assert_eq!(cues[3].end_ms, 5000);
+        assert!(cues.windows(2).all(|w| w[0].end_ms == w[1].start_ms));
     }
 }
