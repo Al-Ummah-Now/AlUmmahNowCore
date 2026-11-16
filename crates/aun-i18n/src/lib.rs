@@ -7,7 +7,7 @@
 //! - [`plural`]: CLDR cardinal rules (Arabic zero/one/two/few/many/other, English, Urdu, Turkish,
 //!   Indonesian, Malay, French, …).
 //! - [`message`]: `{{name}}`, `{name}`, ICU `plural`/`select`/`number`.
-//! - [`numbers`]: Latin / Eastern Arabic digits, grouping, durations.
+//! - [`numbers`]: Arabic numerals 0–9 / Eastern Arabic (Hindi) numerals ٠–٩, grouping, durations.
 //! - [`bidi`]: direction detection and FSI/PDI isolation.
 
 pub mod bidi;

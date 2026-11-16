@@ -8,10 +8,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NumeralSystem {
-    /// 0123456789 (the default, also for Arabic, matching the web app).
+    /// Arabic numerals 0123456789 (the default for every language except Arabic).
     #[default]
     Latin,
-    /// Eastern Arabic ٠١٢٣٤٥٦٧٨٩ (Arabic `arab` numbering system).
+    /// Eastern Arabic (Hindi) numerals ٠١٢٣٤٥٦٧٨٩ (`arab` numbering system), always used for Arabic.
     ArabicIndic,
     /// Extended Arabic-Indic ۰۱۲۳۴۵۶۷۸۹ (Persian/Urdu `arabext`).
     ExtendedArabicIndic,
@@ -54,7 +54,7 @@ pub fn to_numerals(text: &str, system: NumeralSystem) -> String {
         .collect()
 }
 
-/// Converts Arabic-Indic and extended Arabic-Indic digits back to ASCII (for parsing user input).
+/// Converts Eastern Arabic (Hindi) ٠–٩ and Persian ۰–۹ digits to Arabic numerals 0–9 (for parsing user input).
 pub fn to_latin_digits(text: &str) -> String {
     text.chars()
         .map(|c| match c as u32 {

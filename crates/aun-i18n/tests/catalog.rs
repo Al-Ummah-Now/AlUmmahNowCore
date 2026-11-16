@@ -62,9 +62,9 @@ fn plural_keys_follow_each_locale_rules() {
         (0, "لا توجد مرئيات"),
         (1, "مرئي واحد"),
         (2, "مرئيان"),
-        (3, "3 مرئيات"),
-        (11, "11 مرئيًا"),
-        (102, "102 مرئي"),
+        (3, "٣ مرئيات"),
+        (11, "١١ مرئيًا"),
+        (102, "١٠٢ مرئي"),
     ];
     for (n, w) in want {
         assert_eq!(
@@ -89,8 +89,10 @@ fn plural_keys_follow_each_locale_rules() {
 
 #[test]
 fn eastern_arabic_digits_and_bidi() {
+    // Arabic always uses Eastern Arabic (Hindi) numerals, even when the setting says otherwise.
     let i18n = catalog("ar");
-    i18n.set_numeral_system(NumeralSystem::ArabicIndic);
+    i18n.set_numeral_system(NumeralSystem::Latin);
+    assert_eq!(i18n.numeral_system(), NumeralSystem::ArabicIndic);
     assert_eq!(
         i18n.format("videos.count", &args(&[("count", 5i64.into())])),
         "٥ مرئيات"
@@ -106,6 +108,19 @@ fn eastern_arabic_digits_and_bidi() {
         i18n.format_pattern("{n, plural, two {اثنان} other {#}}", &args(&[("n", 2i64.into())])),
         "اثنان"
     );
+    for text in [
+        i18n.format_integer(1_234_567),
+        i18n.format_number(12.5, Default::default()),
+        i18n.format_duration_clock(3_723_000),
+        i18n.format_duration_compact(300_000),
+        i18n.format("videos.count", &args(&[("count", 102i64.into())])),
+    ] {
+        assert!(!text.chars().any(|c| c.is_ascii_digit()), "{text}");
+    }
+    // English keeps Arabic numerals 0–9.
+    let en = catalog("en");
+    assert_eq!(en.numeral_system(), NumeralSystem::Latin);
+    assert_eq!(en.format_integer(1_234_567), "1,234,567");
 }
 
 #[derive(Default)]
