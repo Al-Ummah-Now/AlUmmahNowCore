@@ -27,6 +27,7 @@ pub struct I18nOptions {
     pub fallback_locale: String,
     /// Directory for cached bundles; `None` keeps everything in memory.
     pub cache_dir: Option<String>,
+    /// Digits for non-Arabic locales; Arabic always uses Eastern Arabic (Hindi) numerals ٠–٩.
     pub numerals: NumeralSystem,
     /// Wrap text arguments in FSI…PDI when their direction differs from the message's.
     pub bidi_isolation: bool,
@@ -267,10 +268,20 @@ impl I18n {
     }
 
     pub fn numeral_system(&self) -> NumeralSystem {
-        self.read().numerals
+        Self::numerals_of(&self.read())
     }
 
-    /// Changes the digit system (user setting "Eastern Arabic numerals"); notifies listeners as a
+    /// The digits to render: Arabic always uses Eastern Arabic (Hindi) numerals ٠–٩ (owner decision
+    /// 2026-11-15), whatever the setting; other languages use the setting.
+    fn numerals_of(st: &State) -> NumeralSystem {
+        if crate::locale::language_of(&st.locale) == "ar" {
+            NumeralSystem::ArabicIndic
+        } else {
+            st.numerals
+        }
+    }
+
+    /// Changes the digit system for non-Arabic locales (Arabic always uses ٠–٩); notifies listeners as a
     /// locale change so the UI re-renders.
     pub fn set_numeral_system(&self, numerals: NumeralSystem) {
         let change = {
@@ -355,7 +366,7 @@ impl I18n {
     pub fn format(&self, key: &str, args: &HashMap<String, FormatArg>) -> String {
         let (found, numerals) = {
             let st = self.read();
-            (self.resolve(&st, key, args.get("count")), st.numerals)
+            (self.resolve(&st, key, args.get("count")), Self::numerals_of(&st))
         };
         match found {
             Some((locale, pattern)) => format_message(
@@ -385,7 +396,7 @@ impl I18n {
             args,
             &FormatContext {
                 locale: &st.locale,
-                numerals: st.numerals,
+                numerals: Self::numerals_of(&st),
                 bidi_isolation: self.options.bidi_isolation,
             },
         )
@@ -400,21 +411,21 @@ impl I18n {
 
     pub fn format_number(&self, value: f64, options: NumberFormatOptions) -> String {
         let st = self.read();
-        numbers::format_number(value, &st.locale, st.numerals, options)
+        numbers::format_number(value, &st.locale, Self::numerals_of(&st), options)
     }
 
     pub fn format_integer(&self, value: i64) -> String {
         let st = self.read();
-        numbers::format_integer(value, &st.locale, st.numerals)
+        numbers::format_integer(value, &st.locale, Self::numerals_of(&st))
     }
 
     pub fn format_duration_clock(&self, duration_ms: u64) -> String {
-        numbers::format_duration_clock(duration_ms, self.read().numerals)
+        numbers::format_duration_clock(duration_ms, Self::numerals_of(&self.read()))
     }
 
     pub fn format_duration_compact(&self, duration_ms: u64) -> String {
         let st = self.read();
-        numbers::format_duration_compact(duration_ms, &st.locale, st.numerals)
+        numbers::format_duration_compact(duration_ms, &st.locale, Self::numerals_of(&st))
     }
 
     /// Refreshes the config and the bundles of the current fallback chain from the source:
