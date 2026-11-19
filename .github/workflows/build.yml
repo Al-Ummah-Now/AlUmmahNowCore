@@ -25,9 +25,14 @@ jobs:
           targets: aarch64-apple-darwin,x86_64-apple-darwin,aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
       - name: Nightly for tvOS (tier 3, -Zbuild-std)
         run: rustup toolchain install nightly --profile minimal --component rust-src
+      # whisper.cpp's CMake cache stores the compiler's full path; a new runner image (new MSVC/Xcode)
+      # must not reuse it (v0.4.0-rc.3: cached MSVC 14.51 path, image had 14.52)
+      - id: image
+        shell: bash
+        run: echo "version=${ImageVersion:-local}" >> "$GITHUB_OUTPUT"
       - uses: Swatinem/rust-cache@v2
         with:
-          key: apple
+          key: apple-${{ steps.image.outputs.version }}
       - name: Build XCFramework
         run: scripts/build-xcframework.sh
       - name: Swift smoke test against the XCFramework
@@ -61,9 +66,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      # whisper.cpp's CMake cache stores the compiler's full path; a new runner image (new MSVC/Xcode)
+      # must not reuse it (v0.4.0-rc.3: cached MSVC 14.51 path, image had 14.52)
+      - id: image
+        shell: bash
+        run: echo "version=${ImageVersion:-local}" >> "$GITHUB_OUTPUT"
       - uses: Swatinem/rust-cache@v2
         with:
-          key: android
+          key: android-${{ steps.image.outputs.version }}
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-ndk
@@ -92,9 +102,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      # whisper.cpp's CMake cache stores the compiler's full path; a new runner image (new MSVC/Xcode)
+      # must not reuse it (v0.4.0-rc.3: cached MSVC 14.51 path, image had 14.52)
+      - id: image
+        shell: bash
+        run: echo "version=${ImageVersion:-local}" >> "$GITHUB_OUTPUT"
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.target }}
+          key: ${{ matrix.target }}-${{ steps.image.outputs.version }}
       # whisper.cpp's ggml refuses MSVC on ARM64: build that target with clang-cl (LLVM is on the
       # image) through Ninja inside the x64-to-ARM64 MSVC environment
       - if: matrix.target == 'aarch64-pc-windows-msvc'
@@ -135,9 +150,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      # whisper.cpp's CMake cache stores the compiler's full path; a new runner image (new MSVC/Xcode)
+      # must not reuse it (v0.4.0-rc.3: cached MSVC 14.51 path, image had 14.52)
+      - id: image
+        shell: bash
+        run: echo "version=${ImageVersion:-local}" >> "$GITHUB_OUTPUT"
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.target }}
+          key: ${{ matrix.target }}-${{ steps.image.outputs.version }}
       - name: Install build tools for whisper.cpp
         uses: ./.github/actions/apt-install
         with:
@@ -157,9 +177,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      # whisper.cpp's CMake cache stores the compiler's full path; a new runner image (new MSVC/Xcode)
+      # must not reuse it (v0.4.0-rc.3: cached MSVC 14.51 path, image had 14.52)
+      - id: image
+        shell: bash
+        run: echo "version=${ImageVersion:-local}" >> "$GITHUB_OUTPUT"
       - uses: Swatinem/rust-cache@v2
         with:
-          key: bindings
+          key: bindings-${{ steps.image.outputs.version }}
       - uses: ./.github/actions/uniffi-bindgen-cs
       - run: scripts/gen-bindings.sh kotlin --release && scripts/gen-bindings.sh csharp --release
       - uses: actions/upload-artifact@v7
