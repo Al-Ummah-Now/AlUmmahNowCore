@@ -4045,6 +4045,11 @@ public struct ApiClientConfig: Equatable, Hashable {
      * Attempts including the first for idempotent requests; default 4.
      */
     public var maxAttempts: UInt32?
+    /**
+     * `X-AUN-Client`, e.g. `aun-ios/1.4.0 (iPadOS 18.1)` or `aun-tv/2.0 (AndroidTV 14)`: the app, its
+     * version and the OS, for the servers' request origin. Default: `aun-core/<version> (<os>)`.
+     */
+    public var client: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -4063,12 +4068,17 @@ public struct ApiClientConfig: Equatable, Hashable {
          */timeoutMs: UInt64?, 
         /**
          * Attempts including the first for idempotent requests; default 4.
-         */maxAttempts: UInt32?) {
+         */maxAttempts: UInt32?, 
+        /**
+         * `X-AUN-Client`, e.g. `aun-ios/1.4.0 (iPadOS 18.1)` or `aun-tv/2.0 (AndroidTV 14)`: the app, its
+         * version and the OS, for the servers' request origin. Default: `aun-core/<version> (<os>)`.
+         */client: String? = nil) {
         self.baseUrl = baseUrl
         self.userAgent = userAgent
         self.locale = locale
         self.timeoutMs = timeoutMs
         self.maxAttempts = maxAttempts
+        self.client = client
     }
 
     
@@ -4091,7 +4101,8 @@ public struct FfiConverterTypeApiClientConfig: FfiConverterRustBuffer {
                 userAgent: FfiConverterOptionString.read(from: &buf), 
                 locale: FfiConverterOptionString.read(from: &buf), 
                 timeoutMs: FfiConverterOptionUInt64.read(from: &buf), 
-                maxAttempts: FfiConverterOptionUInt32.read(from: &buf)
+                maxAttempts: FfiConverterOptionUInt32.read(from: &buf), 
+                client: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -4101,6 +4112,7 @@ public struct FfiConverterTypeApiClientConfig: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.locale, into: &buf)
         FfiConverterOptionUInt64.write(value.timeoutMs, into: &buf)
         FfiConverterOptionUInt32.write(value.maxAttempts, into: &buf)
+        FfiConverterOptionString.write(value.client, into: &buf)
     }
 }
 

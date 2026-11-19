@@ -92,6 +92,10 @@ pub struct ApiConfig {
     pub retry: RetryPolicy,
     /// Sent as `Accept-Language` (e.g. `ar`, `en`).
     pub locale: Option<String>,
+    /// Sent as `X-AUN-Client` (e.g. `aun-ios/1.4.0 (iPadOS 18.1)`): which app and OS is calling, for the
+    /// servers' request origin (errors and analytics; no identifier). Defaults to
+    /// `aun-core/<version> (<os>)` with the compile target's OS.
+    pub client: String,
 }
 
 impl ApiConfig {
@@ -102,8 +106,42 @@ impl ApiConfig {
             timeout: Duration::from_secs(30),
             retry: RetryPolicy::default(),
             locale: None,
+            client: default_client(),
         }
     }
+}
+
+/// The OS name the servers classify (`ios`, `android`, `macos`, `windows`, `linux`).
+pub fn target_os_name() -> &'static str {
+    if cfg!(target_os = "ios") {
+        "iOS"
+    } else if cfg!(target_os = "android") {
+        "Android"
+    } else if cfg!(target_os = "macos") {
+        "macOS"
+    } else if cfg!(target_os = "windows") {
+        "Windows"
+    } else if cfg!(target_os = "linux") {
+        "Linux"
+    } else {
+        "unknown"
+    }
+}
+
+/// `aun-core/<version> (<os>)`: what `X-AUN-Client` says when the app gave nothing more precise.
+pub fn default_client() -> String {
+    format!("aun-core/{} ({})", aun_common::VERSION, target_os_name())
+}
+
+/// A value safe for the `X-AUN-Client` header: `<app>/<version> (<os> <osver>)`, ASCII, at most
+/// 120 characters; anything else falls back to [`default_client`].
+pub fn sanitize_client(value: &str) -> String {
+    let v = value.trim();
+    let ok = !v.is_empty()
+        && v.len() <= 120
+        && v.chars()
+            .all(|c| c.is_ascii_alphanumeric() || " ./_-+()".contains(c));
+    if ok { v.to_owned() } else { default_client() }
 }
 
 /// Whether an operation needs a bearer token.

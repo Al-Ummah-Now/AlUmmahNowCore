@@ -7,6 +7,10 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+### Added
+
+- `X-AUN-Client` on every API request (`ApiConfig.client`, FFI `ApiClientConfig.client`, default `aun-core/<version> (<os>)`): which app, version and OS is calling, for the servers' request origin (errors and analytics; no identifier). Apps pass e.g. `aun-ios/1.4.0 (iPadOS 18.1)`; the field defaults to `None`, so existing callers keep compiling.
+
 ## [0.4.0-rc.2] - 2026-11-15
 
 ### Added
