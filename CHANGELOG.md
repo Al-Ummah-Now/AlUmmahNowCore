@@ -7,9 +7,15 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+## [0.4.0-rc.3] - 2026-11-19
+
 ### Added
 
 - `X-AUN-Client` on every API request (`ApiConfig.client`, FFI `ApiClientConfig.client`, default `aun-core/<version> (<os>)`): which app, version and OS is calling, for the servers' request origin (errors and analytics; no identifier). Apps pass e.g. `aun-ios/1.4.0 (iPadOS 18.1)`; the field defaults to `None`, so existing callers keep compiling.
+
+### Changed
+
+- Arabic always formats with Eastern Arabic numerals (٠–٩): the catalog formats messages, numbers and durations for Arabic locales with `NumeralSystem::ArabicIndic` whatever `numerals` says (owner decision 2026-11-15, AlUmmahNow #1488, #1496). Other languages keep the setting (default 0–9).
 
 ## [0.4.0-rc.2] - 2026-11-15
 
