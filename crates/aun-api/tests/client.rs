@@ -421,3 +421,42 @@ async fn refuses_redirect_to_cleartext() {
         .unwrap_err();
     assert!(matches!(err, Error::Network(_)), "{err:?}");
 }
+
+#[tokio::test]
+async fn every_request_says_which_client_is_calling() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/ping"))
+        .and(header("x-aun-client", "aun-ios/1.4.0 (iPadOS 18.1)"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("{}"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let mut c = config(&server);
+    c.client = aun_api::client::sanitize_client("aun-ios/1.4.0 (iPadOS 18.1)");
+    let client = reqwest_client_get(&c, "/api/ping").await;
+    assert_eq!(client, 200);
+}
+
+#[test]
+fn the_client_header_is_sanitised_and_defaults_to_the_core_and_os() {
+    assert_eq!(
+        aun_api::client::sanitize_client("aun-tv/2.0 (AndroidTV 14)"),
+        "aun-tv/2.0 (AndroidTV 14)"
+    );
+    let fallback = aun_api::client::default_client();
+    assert!(fallback.starts_with("aun-core/"));
+    assert_eq!(aun_api::client::sanitize_client("bad\r\nX-Injected: 1"), fallback);
+    assert_eq!(aun_api::client::sanitize_client(""), fallback);
+    assert_eq!(aun_api::client::sanitize_client(&"a".repeat(200)), fallback);
+}
+
+async fn reqwest_client_get(c: &ApiConfig, p: &str) -> u16 {
+    let http = aun_api::http_client(c).unwrap();
+    http.get(format!("{}{}", c.base_url, p))
+        .send()
+        .await
+        .unwrap()
+        .status()
+        .as_u16()
+}

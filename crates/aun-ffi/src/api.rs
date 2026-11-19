@@ -25,6 +25,10 @@ pub struct ApiClientConfig {
     pub timeout_ms: Option<u64>,
     /// Attempts including the first for idempotent requests; default 4.
     pub max_attempts: Option<u32>,
+    /// `X-AUN-Client`, e.g. `aun-ios/1.4.0 (iPadOS 18.1)` or `aun-tv/2.0 (AndroidTV 14)`: the app, its
+    /// version and the OS, for the servers' request origin. Default: `aun-core/<version> (<os>)`.
+    #[uniffi(default = None)]
+    pub client: Option<String>,
 }
 
 /// Supplies tokens to the API client. `aun-auth`'s `AuthManager` provides one; apps can also
@@ -261,6 +265,9 @@ impl ApiClient {
             c.user_agent = format!("{ua} aun-core/{}", aun_common::VERSION);
         }
         c.locale = config.locale;
+        if let Some(client) = config.client {
+            c.client = aun_api::client::sanitize_client(&client);
+        }
         if let Some(t) = config.timeout_ms {
             c.timeout = std::time::Duration::from_millis(t);
         }

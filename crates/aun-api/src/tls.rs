@@ -23,11 +23,22 @@ pub(crate) fn rustls_config() -> Result<rustls::ClientConfig> {
     Ok(cfg)
 }
 
+/// `X-AUN-Client` on every request (the servers' request origin: surface, app, version).
+fn client_headers(config: &ApiConfig) -> reqwest::header::HeaderMap {
+    let mut headers = reqwest::header::HeaderMap::new();
+    let value = crate::client::sanitize_client(&config.client);
+    if let Ok(v) = reqwest::header::HeaderValue::from_str(&value) {
+        headers.insert("x-aun-client", v);
+    }
+    headers
+}
+
 /// Shared HTTP client used by every module that talks to our servers.
 pub fn http_client(config: &ApiConfig) -> Result<reqwest::Client> {
     reqwest::Client::builder()
         .tls_backend_preconfigured(rustls_config()?)
         .user_agent(config.user_agent.clone())
+        .default_headers(client_headers(config))
         .timeout(config.timeout)
         .connect_timeout(std::time::Duration::from_secs(15))
         .pool_idle_timeout(std::time::Duration::from_secs(60))
