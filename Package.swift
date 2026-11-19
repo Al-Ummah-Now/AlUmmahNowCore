@@ -7,8 +7,8 @@
 import Foundation
 import PackageDescription
 
-let releaseVersion = "0.1.0"
-let releaseChecksum = "dda913b90a260a60a2a330cb90765f57c18e13ce87cf4c4b7445366d96478c71"
+let releaseVersion = "0.4.0-rc.3"
+let releaseChecksum = "b750a10d9656ecc6a102e716cfb615de4b9d757553b226d18006090c77283743"
 
 let useLocal = ProcessInfo.processInfo.environment["AUN_LOCAL_XCFRAMEWORK"] != nil
 let ffiTarget: Target = useLocal
