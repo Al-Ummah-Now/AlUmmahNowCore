@@ -1,0 +1,13 @@
+# whisper.cpp (ggml) compiles with -march=native unless told otherwise, which ties the shipped
+# desktop libraries to the CI runner's CPU: a user's older CPU then dies with SIGILL (illegal
+# instruction), as a CI job did when its cache came from a runner with newer instructions.
+# whisper-rs-sys passes GGML_* variables to CMake; Cargo tracks [env] in its fingerprint, so a
+# change here rebuilds whisper.cpp. A variable already set in the environment wins.
+[env]
+GGML_NATIVE = "OFF"
+# x86-64 baseline: AVX2 + FMA + F16C (x86-64-v3, Intel Haswell / AMD Excavator, 2013-15 onwards).
+# ggml ignores these on ARM, which keeps the compiler's default (apple-m1 on macOS, armv8-a on Linux).
+GGML_AVX = "ON"
+GGML_AVX2 = "ON"
+GGML_FMA = "ON"
+GGML_F16C = "ON"

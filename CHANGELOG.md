@@ -20,6 +20,10 @@ FFI; such changes are listed under **Breaking**.
 - Vulkan builds never link the Vulkan loader (`vulkan-1.dll`, `libvulkan.so.1`): `aun_core` opens it at run time (`crates/aun-media/build.rs`, `src/transcribe/vulkan_loader.c`), so the library still loads on computers without a GPU driver. CI checks the built DLL and `.so` for it.
 - Building `whisper-vulkan` needs the Vulkan headers and `glslc` (Windows: the LunarG Vulkan SDK with `VULKAN_SDK` set; Linux: `libvulkan-dev` and `glslc`).
 
+### Fixed
+
+- whisper.cpp was compiled for the build machine's own CPU (ggml's default `-march=native`), so a shipped desktop library could crash with an illegal instruction (SIGILL) on a user's older CPU. `.cargo/config.toml` now sets a portable baseline for every build: x86-64 needs AVX2, FMA and F16C (Intel Haswell / AMD Excavator or newer); ARM keeps the compiler's default.
+
 ## [0.4.0-rc.3] - 2026-11-19
 
 ### Added
