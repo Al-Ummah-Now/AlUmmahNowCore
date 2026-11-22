@@ -118,6 +118,15 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: amd64_arm64
+      # ggml's Vulkan shader generator is a host tool built by its own CMake run, which looks for cl
+      # on PATH: the x64 build needs the MSVC developer environment as well
+      - if: matrix.target == 'x86_64-pc-windows-msvc'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+      # VS 18's STL asks for Clang 22 (STL1000) and the image's clang-cl is older: Microsoft's override.
+      # The shader generator runs on the x64 build machine: built with the x64 compiler
+      # (.github/cmake/windows-x64-host.cmake), not the ARM64 cross compiler.
       - if: matrix.target == 'aarch64-pc-windows-msvc'
         shell: bash
         run: |
@@ -126,7 +135,8 @@ jobs:
             echo "CC_aarch64_pc_windows_msvc=clang-cl"
             echo "CXX_aarch64_pc_windows_msvc=clang-cl"
             echo "CFLAGS_aarch64_pc_windows_msvc=--target=arm64-pc-windows-msvc"
-            echo "CXXFLAGS_aarch64_pc_windows_msvc=--target=arm64-pc-windows-msvc /EHsc"
+            echo "CXXFLAGS_aarch64_pc_windows_msvc=--target=arm64-pc-windows-msvc /EHsc /D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH"
+            echo "GGML_VULKAN_SHADERS_GEN_TOOLCHAIN=$(cygpath -m "$GITHUB_WORKSPACE/.github/cmake/windows-x64-host.cmake")"
           } >> "$GITHUB_ENV"
       - name: Install the Vulkan SDK (headers and glslc)
         shell: pwsh
@@ -181,7 +191,18 @@ jobs:
       - name: Install build tools for whisper.cpp
         uses: ./.github/actions/apt-install
         with:
-          packages: cmake clang libclang-dev libvulkan-dev glslc
+          packages: cmake clang libclang-dev
+      # Ubuntu 22.04 has no glslc and old Vulkan headers, and LunarG ships no Linux arm64 SDK:
+      # conda-forge builds both (against an old glibc) for x86_64 and arm64
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: vulkan
+          create-args: -c conda-forge shaderc vulkan-headers libvulkan-loader
+          cache-environment: true
+      - name: Point the build at the Vulkan headers and glslc
+        run: |
+          test -x "$MAMBA_ROOT_PREFIX/envs/vulkan/bin/glslc"
+          echo "VULKAN_SDK=$MAMBA_ROOT_PREFIX/envs/vulkan" >> "$GITHUB_ENV"
       # Built on 22.04 so the .so links against an older glibc (2.35) and runs on more distros.
       # Desktop builds carry on-device transcription (D10, whisper.cpp) on the GPU (Vulkan), CPU fallback.
       - run: cargo build -p aun-ffi --lib --release --features whisper-vulkan --target ${{ matrix.target }}
