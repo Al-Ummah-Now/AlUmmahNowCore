@@ -23,8 +23,9 @@ OUT=build
 rm -rf "$OUT/AunCoreFFI.xcframework" "$OUT/xcf" && mkdir -p "$OUT/xcf"
 
 build() { cargo build -p aun-ffi --lib --release --target "$1"; }
-# macOS (desktop Studio) also carries on-device transcription (D10, whisper.cpp; needs cmake)
-build_macos() { cargo build -p aun-ffi --lib --release --features whisper --target "$1"; }
+# macOS (desktop Studio) also carries on-device transcription (D10, whisper.cpp; needs cmake), on the
+# GPU through Metal with the CPU as the fallback
+build_macos() { cargo build -p aun-ffi --lib --release --features whisper-metal --target "$1"; }
 build_tier3() { cargo +nightly build -Z build-std=std,panic_unwind -p aun-ffi --lib --release --target "$1"; }
 
 # Headers + module map from the generated Swift bindings

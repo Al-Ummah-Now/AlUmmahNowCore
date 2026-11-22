@@ -24,7 +24,7 @@ pub use models::{
 };
 pub use subtitles::{CaptionSegment, SubtitleOptions, caption_segments, to_srt, to_webvtt};
 #[cfg(feature = "whisper")]
-pub use whisper::WhisperTranscriber;
+pub use whisper::{WhisperTranscriber, inference_device};
 
 /// The sample rate [`Transcriber`] input must use.
 pub const TRANSCRIBE_SAMPLE_RATE: u32 = 16_000;
@@ -54,6 +54,19 @@ pub struct Transcript {
     /// ISO 639-1 language, detected or requested.
     pub language: String,
     pub segments: Vec<TranscriptSegment>,
+}
+
+/// The device whisper runs on: the first GPU ggml found, or the CPU.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InferenceDevice {
+    /// `true` on a GPU (`whisper-metal`, `whisper-vulkan` builds); `false` on the CPU, including the
+    /// fallback when a GPU build finds no usable GPU or Vulkan loader.
+    pub gpu: bool,
+    /// `"Metal"`, `"Vulkan"` or `"CPU"`.
+    pub backend: String,
+    /// The device's own name, e.g. `"Apple M2"` or `"NVIDIA GeForce RTX 3060"`; the CPU's model
+    /// name on the CPU (empty when ggml does not know it).
+    pub name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]

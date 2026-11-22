@@ -7,6 +7,19 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+## [0.4.0-rc.4] - 2026-11-22
+
+### Added
+
+- On-device transcription on the GPU (D10, AlUmmahNow TA-13), with the CPU as the automatic fallback. New features `whisper-metal` (macOS: Metal) and `whisper-vulkan` (Windows, Linux: Vulkan) on `aun-media` and `aun-ffi`; the desktop builds (macOS universal dylib, the XCFramework's macOS slice, Windows x64/ARM64, Linux x64/arm64) now use them. Without a usable GPU, whisper runs on the CPU as before. When the GPU cannot load the model or a transcription on it fails (e.g. too little video memory), the model is loaded on the CPU once and used from then on. Progress never goes back.
+- FFI `transcription_device()` → `TranscriptionDevice { gpu, backend, name }` (`backend` is `"Metal"`, `"Vulkan"` or `"CPU"`; `None` in builds without on-device transcription); `aun-media`: `transcribe::inference_device()`, `InferenceDevice`.
+- `AUN_VULKAN_LOADER` (environment): `none` keeps Vulkan builds on the CPU; a path picks the Vulkan loader. Unset opens the system's loader.
+
+### Changed
+
+- Vulkan builds never link the Vulkan loader (`vulkan-1.dll`, `libvulkan.so.1`): `aun_core` opens it at run time (`crates/aun-media/build.rs`, `src/transcribe/vulkan_loader.c`), so the library still loads on computers without a GPU driver. CI checks the built DLL and `.so` for it.
+- Building `whisper-vulkan` needs the Vulkan headers and `glslc` (Windows: the LunarG Vulkan SDK with `VULKAN_SDK` set; Linux: `libvulkan-dev` and `glslc`).
+
 ## [0.4.0-rc.3] - 2026-11-19
 
 ### Added
