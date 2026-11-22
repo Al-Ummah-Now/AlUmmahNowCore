@@ -12,7 +12,11 @@ default = ["harfbuzz"]
 # Pure-Rust HarfBuzz-compatible text shaping for titles and burned-in captions.
 harfbuzz = ["dep:harfrust", "dep:unicode-bidi", "dep:unicode-linebreak", "dep:unicode-script"]
 # Real transcription via whisper.cpp. Needs cmake and a C++ toolchain, so it is off by default.
-whisper = ["dep:whisper-rs"]
+whisper = ["dep:whisper-rs", "whisper-rs/raw-api", "dep:tracing"]
+# whisper.cpp on the GPU, with the CPU as the automatic fallback. Metal: macOS. Vulkan: Windows and Linux
+# (builds need the Vulkan headers and glslc; the Vulkan loader itself is opened at run time, see build.rs).
+whisper-metal = ["whisper", "whisper-rs/metal"]
+whisper-vulkan = ["whisper", "whisper-rs/vulkan", "dep:cc"]
 # A reqwest-based ModelFetcher. Off by default; native apps can supply their own fetcher.
 http-download = ["dep:reqwest"]
 
@@ -32,6 +36,10 @@ async-trait.workspace = true
 sha2.workspace = true
 reqwest = { workspace = true, optional = true }
 whisper-rs = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
+
+[build-dependencies]
+cc = { version = "1", optional = true }
 
 [dev-dependencies]
 tempfile.workspace = true

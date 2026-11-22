@@ -7,6 +7,7 @@ on:
       - "crates/aun-media/**"
       - ".github/workflows/media.yml"
       - "Cargo.lock"
+      - "Cargo.toml"
   push:
     branches: [main]
     paths:
@@ -61,4 +62,91 @@ jobs:
           AUN_WHISPER_MODEL: ${{ github.workspace }}/models/ggml-tiny.bin
           AUN_CLIP_EN: ${{ github.workspace }}/clips/en.wav
           AUN_CLIP_AR: ${{ github.workspace }}/clips/ar.wav
+          AUN_EXPECT_BACKEND: CPU
         run: cargo test --release -p aun-media --features whisper --test whisper_inference -- --ignored --test-threads=1
+
+  whisper-vulkan:
+    # The Vulkan build on a runner with no GPU: without a Vulkan loader, and with one (Mesa) but no
+    # GPU device, whisper must fall back to the CPU and still transcribe
+    name: whisper inference, Vulkan build (CPU fallback)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: vulkan
+      - name: Install build tools, Vulkan headers, glslc and espeak-ng
+        uses: ./.github/actions/apt-install
+        with:
+          packages: cmake clang libclang-dev libvulkan-dev glslc mesa-vulkan-drivers espeak-ng
+      - uses: actions/cache@v4
+        with:
+          path: models
+          key: whisper-${{ env.MODEL_FILE }}-${{ env.MODEL_SHA256 }}
+      - name: Download the model and check its SHA-256
+        run: |
+          mkdir -p models
+          if [ ! -f "models/$MODEL_FILE" ]; then
+            curl -fsSL -o "models/$MODEL_FILE" \
+              "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$MODEL_FILE"
+          fi
+          echo "$MODEL_SHA256  models/$MODEL_FILE" | sha256sum --check
+      - name: Generate speech clips
+        run: |
+          mkdir -p clips
+          espeak-ng -v en -s 130 -w clips/en.wav "Good morning everyone. Welcome to the lecture."
+          espeak-ng -v ar -s 120 -w clips/ar.wav "بسم الله الرحمن الرحيم. مرحبا بكم في هذه المحاضرة."
+      - name: Build the inference tests
+        run: cargo test --release -p aun-media --features whisper-vulkan --test whisper_inference --no-run
+      - name: No Vulkan loader (AUN_VULKAN_LOADER=none) → CPU
+        env:
+          AUN_WHISPER_MODEL: ${{ github.workspace }}/models/ggml-tiny.bin
+          AUN_CLIP_EN: ${{ github.workspace }}/clips/en.wav
+          AUN_CLIP_AR: ${{ github.workspace }}/clips/ar.wav
+          AUN_VULKAN_LOADER: none
+          AUN_EXPECT_BACKEND: CPU
+        run: cargo test --release -p aun-media --features whisper-vulkan --test whisper_inference -- --ignored --test-threads=1 --nocapture
+      - name: A loader but no GPU (Mesa's software device only) → CPU
+        env:
+          AUN_WHISPER_MODEL: ${{ github.workspace }}/models/ggml-tiny.bin
+          AUN_CLIP_EN: ${{ github.workspace }}/clips/en.wav
+          AUN_CLIP_AR: ${{ github.workspace }}/clips/ar.wav
+          AUN_EXPECT_BACKEND: CPU
+        run: cargo test --release -p aun-media --features whisper-vulkan --test whisper_inference -- --ignored --test-threads=1 --nocapture
+
+  whisper-metal:
+    # The Metal build: the GPU when the runner offers a usable one, the CPU otherwise; both must transcribe
+    name: whisper inference, Metal build
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: metal
+      - uses: actions/cache@v4
+        with:
+          path: models
+          key: whisper-${{ env.MODEL_FILE }}-${{ env.MODEL_SHA256 }}
+      - name: Download the model and check its SHA-256
+        run: |
+          mkdir -p models
+          if [ ! -f "models/$MODEL_FILE" ]; then
+            curl -fsSL -o "models/$MODEL_FILE" \
+              "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$MODEL_FILE"
+          fi
+          echo "$MODEL_SHA256  models/$MODEL_FILE" | shasum -a 256 --check
+      - name: Generate speech clips
+        run: |
+          mkdir -p clips
+          say -v Samantha -o clips/en.wav --data-format=LEI16@16000 "Good morning everyone. Welcome to the lecture."
+          say -v Majed -o clips/ar.wav --data-format=LEI16@16000 "بسم الله الرحمن الرحيم. مرحبا بكم في هذه المحاضرة."
+      - name: Run inference tests
+        env:
+          AUN_WHISPER_MODEL: ${{ github.workspace }}/models/ggml-tiny.bin
+          AUN_CLIP_EN: ${{ github.workspace }}/clips/en.wav
+          AUN_CLIP_AR: ${{ github.workspace }}/clips/ar.wav
+        run: cargo test --release -p aun-media --features whisper-metal --test whisper_inference -- --ignored --test-threads=1 --nocapture

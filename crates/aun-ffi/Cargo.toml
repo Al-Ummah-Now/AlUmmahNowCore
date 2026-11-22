@@ -21,6 +21,9 @@ default = []
 cli = ["uniffi/cli"]
 # On-device transcription (D10) via whisper.cpp: desktop builds turn it on (needs cmake + a C++ toolchain).
 whisper = ["aun-media/whisper"]
+# The same on the GPU, falling back to the CPU when there is none: Metal (macOS), Vulkan (Windows, Linux).
+whisper-metal = ["whisper", "aun-media/whisper-metal"]
+whisper-vulkan = ["whisper", "aun-media/whisper-vulkan"]
 
 [dependencies]
 aun-common.workspace = true

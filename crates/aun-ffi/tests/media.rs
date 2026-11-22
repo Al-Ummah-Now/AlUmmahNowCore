@@ -249,5 +249,13 @@ async fn models_and_on_device_transcription_without_the_feature() {
         )
         .await;
         assert!(matches!(r, Err(AunError::Unsupported { .. })));
+        assert_eq!(transcription_device(), None);
+    } else {
+        let device = transcription_device().unwrap();
+        assert_eq!(device.gpu, device.backend != "CPU", "{device:?}");
+        assert!(
+            ["Metal", "Vulkan", "CPU"].contains(&device.backend.as_str()),
+            "{device:?}"
+        );
     }
 }

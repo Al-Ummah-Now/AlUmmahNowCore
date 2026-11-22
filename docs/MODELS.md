@@ -40,6 +40,21 @@ Sizes and checksums come from the Hugging Face LFS metadata for `ggerganov/whisp
 permissive, but the allow-list would need `Unlicense` added if the licence check is ever extended to
 all features.
 
+## GPU and CPU
+
+Desktop builds run whisper on the GPU when there is one: `whisper-metal` on macOS (Metal) and
+`whisper-vulkan` on Windows and Linux (Vulkan). `transcription_device()` (FFI) says which device is
+used. The CPU is the automatic fallback:
+
+- no GPU, or (Vulkan) no Vulkan loader or driver: ggml registers no GPU device and whisper uses the CPU;
+- the GPU cannot load the model, or a transcription on it fails (for example too little video memory):
+  the model is loaded on the CPU once and used from then on.
+
+Vulkan builds open the Vulkan loader at run time instead of linking it, so `aun_core` loads on
+computers without a GPU driver (`crates/aun-media/build.rs`). `AUN_VULKAN_LOADER=none` keeps a Vulkan
+build on the CPU; a path picks a different loader. CI runs the inference tests on the Vulkan build
+without a loader and with Mesa's software device (both on the CPU), and on the Metal build.
+
 ## Test audio
 
 No recorded speech is committed. `.github/workflows/media.yml` generates short English and Arabic

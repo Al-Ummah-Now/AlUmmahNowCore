@@ -13,6 +13,8 @@ on:
 env:
   CARGO_TERM_COLOR: always
   UNIFFI_BINDGEN_CS: v0.11.1+v0.31.0
+  # Headers and glslc for whisper.cpp's Vulkan backend on Windows (the loader is opened at run time)
+  VULKAN_SDK_VERSION: 1.4.328.1
 
 jobs:
   apple:
@@ -38,10 +40,10 @@ jobs:
       - name: Swift smoke test against the XCFramework
         run: AUN_LOCAL_XCFRAMEWORK=1 swift test
       - name: macOS universal dylib (for the NuGet osx runtime)
-        # Desktop builds carry on-device transcription (D10, whisper.cpp)
+        # Desktop builds carry on-device transcription (D10, whisper.cpp) on the GPU (Metal), CPU fallback
         run: |
-          cargo build -p aun-ffi --lib --release --features whisper --target aarch64-apple-darwin
-          cargo build -p aun-ffi --lib --release --features whisper --target x86_64-apple-darwin
+          cargo build -p aun-ffi --lib --release --features whisper-metal --target aarch64-apple-darwin
+          cargo build -p aun-ffi --lib --release --features whisper-metal --target x86_64-apple-darwin
           mkdir -p dist/osx
           lipo -create target/aarch64-apple-darwin/release/libaun_core.dylib \
             target/x86_64-apple-darwin/release/libaun_core.dylib -output dist/osx/libaun_core.dylib
@@ -126,8 +128,26 @@ jobs:
             echo "CFLAGS_aarch64_pc_windows_msvc=--target=arm64-pc-windows-msvc"
             echo "CXXFLAGS_aarch64_pc_windows_msvc=--target=arm64-pc-windows-msvc /EHsc"
           } >> "$GITHUB_ENV"
+      - name: Install the Vulkan SDK (headers and glslc)
+        shell: pwsh
+        run: |
+          $root = "C:\VulkanSDK\$env:VULKAN_SDK_VERSION"
+          curl.exe -fsSL -o "$env:RUNNER_TEMP\vulkansdk.exe" "https://sdk.lunarg.com/sdk/download/$env:VULKAN_SDK_VERSION/windows/vulkansdk-windows-X64-$env:VULKAN_SDK_VERSION.exe"
+          & "$env:RUNNER_TEMP\vulkansdk.exe" --root $root --accept-licenses --default-answer --confirm-command install
+          if (-not (Test-Path "$root\Bin\glslc.exe")) { throw "glslc missing from $root" }
+          Add-Content $env:GITHUB_ENV "VULKAN_SDK=$root"
+          Add-Content $env:GITHUB_PATH "$root\Bin"
       # Desktop builds carry on-device transcription (D10, whisper.cpp; cmake and MSVC are on the image)
-      - run: cargo build -p aun-ffi --lib --release --features whisper --target ${{ matrix.target }}
+      # on the GPU (Vulkan), CPU fallback
+      - run: cargo build -p aun-ffi --lib --release --features whisper-vulkan --target ${{ matrix.target }}
+      # The DLL must load where there is no Vulkan loader (no GPU driver, a VM): it opens vulkan-1.dll at
+      # run time and never imports it (crates/aun-media/build.rs)
+      - name: Check aun_core.dll does not import the Vulkan loader
+        shell: pwsh
+        run: |
+          $imports = & "C:\Program Files\LLVM\bin\llvm-readobj.exe" --coff-imports "target\${{ matrix.target }}\release\aun_core.dll" | Select-String "Name: "
+          $imports | ForEach-Object { $_.Line.Trim() }
+          if ($imports -match "vulkan") { throw "aun_core.dll imports the Vulkan loader" }
       - uses: actions/upload-artifact@v7
         with:
           name: native-${{ matrix.rid }}
@@ -161,10 +181,16 @@ jobs:
       - name: Install build tools for whisper.cpp
         uses: ./.github/actions/apt-install
         with:
-          packages: cmake clang libclang-dev
+          packages: cmake clang libclang-dev libvulkan-dev glslc
       # Built on 22.04 so the .so links against an older glibc (2.35) and runs on more distros.
-      # Desktop builds carry on-device transcription (D10, whisper.cpp).
-      - run: cargo build -p aun-ffi --lib --release --features whisper --target ${{ matrix.target }}
+      # Desktop builds carry on-device transcription (D10, whisper.cpp) on the GPU (Vulkan), CPU fallback.
+      - run: cargo build -p aun-ffi --lib --release --features whisper-vulkan --target ${{ matrix.target }}
+      # The .so must load where there is no libvulkan: it opens libvulkan.so.1 at run time and never
+      # links it (crates/aun-media/build.rs)
+      - name: Check libaun_core.so does not need the Vulkan loader
+        run: |
+          readelf -d target/${{ matrix.target }}/release/libaun_core.so | grep NEEDED
+          ! readelf -d target/${{ matrix.target }}/release/libaun_core.so | grep NEEDED | grep -i vulkan
       - uses: actions/upload-artifact@v7
         with:
           name: native-${{ matrix.rid }}

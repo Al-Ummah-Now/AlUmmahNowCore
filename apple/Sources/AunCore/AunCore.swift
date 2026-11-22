@@ -5870,6 +5870,85 @@ public func FfiConverterTypeTimeRange_lower(_ value: TimeRange) -> RustBuffer {
 }
 
 
+/**
+ * The device on-device transcription runs on.
+ */
+public struct TranscriptionDevice: Equatable, Hashable {
+    /**
+     * `true` on a GPU; `false` on the CPU, also when a GPU build finds no usable GPU (the fallback).
+     */
+    public var gpu: Bool
+    /**
+     * `"Metal"`, `"Vulkan"` or `"CPU"`.
+     */
+    public var backend: String
+    /**
+     * The device's name, e.g. `"Apple M2"`, `"NVIDIA GeForce RTX 3060"`, or the CPU's model.
+     */
+    public var name: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * `true` on a GPU; `false` on the CPU, also when a GPU build finds no usable GPU (the fallback).
+         */gpu: Bool, 
+        /**
+         * `"Metal"`, `"Vulkan"` or `"CPU"`.
+         */backend: String, 
+        /**
+         * The device's name, e.g. `"Apple M2"`, `"NVIDIA GeForce RTX 3060"`, or the CPU's model.
+         */name: String) {
+        self.gpu = gpu
+        self.backend = backend
+        self.name = name
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension TranscriptionDevice: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTranscriptionDevice: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TranscriptionDevice {
+        return
+            try TranscriptionDevice(
+                gpu: FfiConverterBool.read(from: &buf), 
+                backend: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TranscriptionDevice, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.gpu, into: &buf)
+        FfiConverterString.write(value.backend, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTranscriptionDevice_lift(_ buf: RustBuffer) throws -> TranscriptionDevice {
+    return try FfiConverterTypeTranscriptionDevice.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTranscriptionDevice_lower(_ value: TranscriptionDevice) -> RustBuffer {
+    return FfiConverterTypeTranscriptionDevice.lower(value)
+}
+
+
 public struct UploadConfig: Equatable, Hashable {
     /**
      * Uploads at once, 1–5 (the server allows 5 concurrent sessions).
@@ -7304,6 +7383,30 @@ fileprivate struct FfiConverterOptionTypeAccountInfo: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeTranscriptionDevice: FfiConverterRustBuffer {
+    typealias SwiftType = TranscriptionDevice?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeTranscriptionDevice.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeTranscriptionDevice.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeUploadInfo: FfiConverterRustBuffer {
     typealias SwiftType = UploadInfo?
 
@@ -8336,6 +8439,18 @@ public func transcriptToWebvtt(transcriptJson: String, options: SubtitleOptions)
     )
 })
 }
+/**
+ * Where [`transcribe_on_device_json`] runs: the GPU builds (macOS: Metal; Windows, Linux: Vulkan)
+ * use the first GPU, else the CPU. `None` when this build has no on-device transcription.
+ * Setting `AUN_VULKAN_LOADER=none` in the environment before the first call keeps Vulkan builds
+ * on the CPU.
+ */
+public func transcriptionDevice() -> TranscriptionDevice?  {
+    return try!  FfiConverterOptionTypeTranscriptionDevice.lift(try! rustCall() {
+    uniffi_aun_core_fn_func_transcription_device($0
+    )
+})
+}
 public func transcriptionModelCatalog() -> [ModelDescriptor]  {
     return try!  FfiConverterSequenceTypeModelDescriptor.lift(try! rustCall() {
     uniffi_aun_core_fn_func_transcription_model_catalog($0
@@ -8590,6 +8705,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_func_transcript_to_webvtt() != 52443) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_func_transcription_device() != 16523) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_func_transcription_model_catalog() != 19893) {

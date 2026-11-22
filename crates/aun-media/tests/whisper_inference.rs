@@ -1,5 +1,6 @@
 //! Real inference. Runs in `.github/workflows/media.yml`, which supplies the model and clips:
-//! `AUN_WHISPER_MODEL`, `AUN_CLIP_EN`, `AUN_CLIP_AR`.
+//! `AUN_WHISPER_MODEL`, `AUN_CLIP_EN`, `AUN_CLIP_AR`, and `AUN_EXPECT_BACKEND` (`Metal`, `Vulkan` or
+//! `CPU`) where the job knows which device whisper must use.
 #![cfg(feature = "whisper")]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -7,7 +8,7 @@ use std::path::Path;
 
 use aun_media::CancellationToken;
 use aun_media::transcribe::{
-    SubtitleOptions, TranscribeOptions, WhisperTranscriber, to_webvtt, transcribe_file,
+    SubtitleOptions, TranscribeOptions, WhisperTranscriber, inference_device, to_webvtt, transcribe_file,
 };
 
 fn transcribe(clip_var: &str, language: &str) -> aun_media::transcribe::Transcript {
@@ -30,6 +31,17 @@ fn transcribe(clip_var: &str, language: &str) -> aun_media::transcribe::Transcri
     assert!(!transcript.segments.is_empty());
     assert!(last_progress > 0);
     transcript
+}
+
+#[test]
+#[ignore = "needs a whisper model; run by media.yml"]
+fn uses_the_expected_device() {
+    let device = inference_device();
+    println!("inference device: {device:?}");
+    assert_eq!(device.gpu, device.backend != "CPU", "{device:?}");
+    if let Ok(expected) = std::env::var("AUN_EXPECT_BACKEND") {
+        assert_eq!(device.backend, expected, "{device:?}");
+    }
 }
 
 #[test]

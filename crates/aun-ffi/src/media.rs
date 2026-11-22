@@ -528,6 +528,38 @@ pub fn transcription_on_device_available() -> bool {
     cfg!(feature = "whisper")
 }
 
+/// The device on-device transcription runs on.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct TranscriptionDevice {
+    /// `true` on a GPU; `false` on the CPU, also when a GPU build finds no usable GPU (the fallback).
+    pub gpu: bool,
+    /// `"Metal"`, `"Vulkan"` or `"CPU"`.
+    pub backend: String,
+    /// The device's name, e.g. `"Apple M2"`, `"NVIDIA GeForce RTX 3060"`, or the CPU's model.
+    pub name: String,
+}
+
+/// Where [`transcribe_on_device_json`] runs: the GPU builds (macOS: Metal; Windows, Linux: Vulkan)
+/// use the first GPU, else the CPU. `None` when this build has no on-device transcription.
+/// Setting `AUN_VULKAN_LOADER=none` in the environment before the first call keeps Vulkan builds
+/// on the CPU.
+#[uniffi::export]
+pub fn transcription_device() -> Option<TranscriptionDevice> {
+    #[cfg(feature = "whisper")]
+    {
+        let d = aun_media::transcribe::inference_device();
+        Some(TranscriptionDevice {
+            gpu: d.gpu,
+            backend: d.backend,
+            name: d.name,
+        })
+    }
+    #[cfg(not(feature = "whisper"))]
+    {
+        None
+    }
+}
+
 /// Transcribes a media file on this computer with a downloaded model and returns the transcript
 /// (`aun_media::transcribe::Transcript` JSON). `language` is ISO 639-1 or `None` to detect it.
 /// Progress is reported in percent.
