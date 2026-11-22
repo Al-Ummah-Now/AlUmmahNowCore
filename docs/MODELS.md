@@ -52,7 +52,8 @@ used. The CPU is the automatic fallback:
 
 Vulkan builds open the Vulkan loader at run time instead of linking it, so `aun_core` loads on
 computers without a GPU driver (`crates/aun-media/build.rs`). `AUN_VULKAN_LOADER=none` keeps a Vulkan
-build on the CPU; a path picks a different loader. CI runs the inference tests on the Vulkan build
+build on the CPU; an absolute path picks a different loader. On Windows the system loader is opened
+from System32 only. CI runs the inference tests on the Vulkan build
 without a loader and with Mesa's software device (both on the CPU), and on the Metal build.
 
 ## Test audio

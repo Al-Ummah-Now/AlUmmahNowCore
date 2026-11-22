@@ -13,7 +13,7 @@ FFI; such changes are listed under **Breaking**.
 
 - On-device transcription on the GPU (D10, AlUmmahNow TA-13), with the CPU as the automatic fallback. New features `whisper-metal` (macOS: Metal) and `whisper-vulkan` (Windows, Linux: Vulkan) on `aun-media` and `aun-ffi`; the desktop builds (macOS universal dylib, the XCFramework's macOS slice, Windows x64/ARM64, Linux x64/arm64) now use them. Without a usable GPU, whisper runs on the CPU as before. When the GPU cannot load the model or a transcription on it fails (e.g. too little video memory), the model is loaded on the CPU once and used from then on. Progress never goes back.
 - FFI `transcription_device()` → `TranscriptionDevice { gpu, backend, name }` (`backend` is `"Metal"`, `"Vulkan"` or `"CPU"`; `None` in builds without on-device transcription); `aun-media`: `transcribe::inference_device()`, `InferenceDevice`.
-- `AUN_VULKAN_LOADER` (environment): `none` keeps Vulkan builds on the CPU; a path picks the Vulkan loader. Unset opens the system's loader.
+- `AUN_VULKAN_LOADER` (environment): unset opens the system's loader (Windows: from System32 only); an absolute path picks another loader; any other value, e.g. `none`, keeps Vulkan builds on the CPU.
 
 ### Changed
 

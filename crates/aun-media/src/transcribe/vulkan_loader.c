@@ -5,8 +5,8 @@
  * time. Without one, the global commands answer VK_ERROR_INITIALIZATION_FAILED, ggml's Vulkan
  * start-up throws and is caught (ggml_backend_vk_reg returns no backend), and whisper uses the CPU.
  *
- * AUN_VULKAN_LOADER: unset opens the system loader; "none" means no loader (the CPU only); any other
- * value is the loader's path.
+ * AUN_VULKAN_LOADER: unset opens the system loader (Windows: from System32 only); an absolute path
+ * opens that loader; anything else, e.g. "none", means no loader (the CPU only).
  */
 #include <stddef.h>
 #include <stdint.h>
@@ -33,25 +33,40 @@ typedef void (AUN_VKAPI *aun_vk_copy_buffer_fn)(void *command_buffer, void *src,
 static volatile int aun_vk_tried;
 static void *volatile aun_vk_library;
 
+static int aun_vk_absolute(const char *path) {
+#if defined(_WIN32)
+    /* C:\\… or C:/…, or a UNC path \\\\server\\… */
+    return (((path[0] >= 'A' && path[0] <= 'Z') || (path[0] >= 'a' && path[0] <= 'z')) && path[1] == ':' &&
+            (path[2] == '\\' || path[2] == '/')) ||
+           (path[0] == '\\' && path[1] == '\\');
+#else
+    return path[0] == '/';
+#endif
+}
+
 static void *aun_vk_open(void) {
     if (aun_vk_tried) {
         return aun_vk_library;
     }
     const char *path = getenv("AUN_VULKAN_LOADER");
     void *library = NULL;
-    if (path == NULL || strcmp(path, "none") != 0) {
+    if (path != NULL && path[0] != '\0') {
+        /* An override must be an absolute path: a bare or relative name would be searched for */
+        if (aun_vk_absolute(path)) {
 #if defined(_WIN32)
-        library = (void *)LoadLibraryA(path != NULL && path[0] != '\0' ? path : "vulkan-1.dll");
+            library = (void *)LoadLibraryExA(path, NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
 #else
-        if (path != NULL && path[0] != '\0') {
             library = dlopen(path, RTLD_NOW | RTLD_LOCAL);
-        } else {
-#if defined(__APPLE__)
-            library = dlopen("libvulkan.1.dylib", RTLD_NOW | RTLD_LOCAL);
-#else
-            library = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
 #endif
         }
+    } else {
+#if defined(_WIN32)
+        /* The loader the GPU drivers install; System32 only, never the app's or the current folder */
+        library = (void *)LoadLibraryExA("vulkan-1.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+#elif defined(__APPLE__)
+        library = dlopen("libvulkan.1.dylib", RTLD_NOW | RTLD_LOCAL);
+#else
+        library = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
 #endif
     }
     aun_vk_library = library;
