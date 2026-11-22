@@ -8,11 +8,13 @@ on:
       - ".github/workflows/media.yml"
       - "Cargo.lock"
       - "Cargo.toml"
+      - ".cargo/config.toml"
   push:
     branches: [main]
     paths:
       - "crates/aun-media/**"
       - ".github/workflows/media.yml"
+      - ".cargo/config.toml"
   workflow_dispatch:
 
 concurrency:

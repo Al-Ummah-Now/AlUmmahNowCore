@@ -124,6 +124,10 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: amd64
+      # ...and Ninja: under the Visual Studio generator that nested CMake run cannot identify cl
+      - if: matrix.target == 'x86_64-pc-windows-msvc'
+        shell: bash
+        run: echo "CMAKE_GENERATOR=Ninja" >> "$GITHUB_ENV"
       # VS 18's STL asks for Clang 22 (STL1000) and the image's clang-cl is older: Microsoft's override.
       # The shader generator runs on the x64 build machine: built with the x64 compiler
       # (.github/cmake/windows-x64-host.cmake), not the ARM64 cross compiler.
@@ -193,11 +197,12 @@ jobs:
         with:
           packages: cmake clang libclang-dev
       # Ubuntu 22.04 has no glslc and old Vulkan headers, and LunarG ships no Linux arm64 SDK:
-      # conda-forge builds both (against an old glibc) for x86_64 and arm64
+      # conda-forge builds both (against an old glibc) for x86_64 and arm64. Its headers package is
+      # libvulkan-headers; the older vulkan-headers stopped at 1.3.231 (no VK_KHR_cooperative_matrix)
       - uses: mamba-org/setup-micromamba@v2
         with:
           environment-name: vulkan
-          create-args: -c conda-forge shaderc vulkan-headers libvulkan-loader
+          create-args: -c conda-forge shaderc libvulkan-headers>=1.4 libvulkan-loader
           cache-environment: true
       - name: Point the build at the Vulkan headers and glslc
         run: |

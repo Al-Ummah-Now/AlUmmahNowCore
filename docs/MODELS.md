@@ -56,6 +56,10 @@ build on the CPU; an absolute path picks a different loader. On Windows the syst
 from System32 only. CI runs the inference tests on the Vulkan build
 without a loader and with Mesa's software device (both on the CPU), and on the Metal build.
 
+The CPU code is built for a fixed baseline, never for the build machine (`.cargo/config.toml`
+turns off ggml's `-march=native`): on x86-64 it needs AVX2, FMA and F16C (Intel Haswell / AMD
+Excavator, 2013–15, or newer); on ARM it uses the compiler's default target.
+
 ## Test audio
 
 No recorded speech is committed. `.github/workflows/media.yml` generates short English and Arabic
