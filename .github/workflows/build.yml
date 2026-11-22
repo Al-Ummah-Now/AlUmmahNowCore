@@ -91,6 +91,10 @@ jobs:
   windows:
     name: windows (${{ matrix.target }})
     runs-on: windows-2025
+    # A short target dir: under target\ the paths of ggml's shader-generator compiler checks pass
+    # Windows' 260-character limit and cl cannot open its .pdb (C1041)
+    env:
+      CARGO_TARGET_DIR: D:\t
     strategy:
       fail-fast: false
       matrix:
@@ -112,6 +116,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}-${{ steps.image.outputs.version }}
+          workspaces: ". -> ../../../t"
       # whisper.cpp's ggml refuses MSVC on ARM64: build that target with clang-cl (LLVM is on the
       # image) through Ninja inside the x64-to-ARM64 MSVC environment
       - if: matrix.target == 'aarch64-pc-windows-msvc'
@@ -159,13 +164,13 @@ jobs:
       - name: Check aun_core.dll does not import the Vulkan loader
         shell: pwsh
         run: |
-          $imports = & "C:\Program Files\LLVM\bin\llvm-readobj.exe" --coff-imports "target\${{ matrix.target }}\release\aun_core.dll" | Select-String "Name: "
+          $imports = & "C:\Program Files\LLVM\bin\llvm-readobj.exe" --coff-imports "$env:CARGO_TARGET_DIR\${{ matrix.target }}\release\aun_core.dll" | Select-String "Name: "
           $imports | ForEach-Object { $_.Line.Trim() }
           if ($imports -match "vulkan") { throw "aun_core.dll imports the Vulkan loader" }
       - uses: actions/upload-artifact@v7
         with:
           name: native-${{ matrix.rid }}
-          path: target/${{ matrix.target }}/release/aun_core.dll
+          path: D:/t/${{ matrix.target }}/release/aun_core.dll
           if-no-files-found: error
 
   linux:
