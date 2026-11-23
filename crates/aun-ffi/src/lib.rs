@@ -12,9 +12,11 @@ mod diagnostics;
 mod error;
 mod media;
 mod names;
+mod notifications;
 mod platform;
 mod runtime;
 mod search;
+mod short_links;
 mod upload;
 
 pub use api::*;
@@ -23,8 +25,10 @@ pub use diagnostics::*;
 pub use error::AunError;
 pub use media::*;
 pub use names::*;
+pub use notifications::*;
 pub use platform::*;
 pub use search::*;
+pub use short_links::*;
 pub use upload::*;
 
 /// The `aun-core` version, e.g. `"0.1.0"`. Apps log it and send it with telemetry.

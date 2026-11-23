@@ -7,6 +7,13 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+### Added
+
+- Epic 22 (`E22-S7`, `Core#40`):
+  - `aun-common::short_links` & UniFFI `short_link_origin_for`, `short_link_for`, `share_short_link`, and `parse_short_link_path` matching `packages/shared-types/src/short-links.ts` (`/v/`, `/s/`, `/@`, `/c/`, `/p/`, `/l/`, `/e/`, `?list=`, `?index=`, `?t=`, and `?lang=ar`).
+  - `aun-api::notifications` & UniFFI `ApiClient` methods for the notification bell (`unseenCount` with `9+` / `٩+` formatting, `POST /api/notifications/seen`, `menuOpen` mode, realtime `notifications_state` reducer per `Core#40`), daily quiet hours & prayer-time quiet windows (`GET` / `PUT /api/notifications/settings`), and native push device registration (`PUT` / `DELETE /api/devices/:installId`).
+  - `aun-api::events` & UniFFI `ApiClient` methods for `GET /api/me/features` (`eventCalendar`), `GET /api/events`, and live-stream reminder toggles (`POST` / `DELETE /api/live-streams/:id/reminders`).
+
 ## [0.4.0-rc.4] - 2026-11-22
 
 ### Added

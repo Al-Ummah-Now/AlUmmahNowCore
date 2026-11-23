@@ -6,6 +6,7 @@ mod error;
 pub mod lock;
 pub mod platform;
 pub mod security;
+pub mod short_links;
 
 pub use error::{Error, Result};
 
