@@ -1,0 +1,10 @@
+{
+  "about": "Signed with throwaway keys made once for this file; the private keys were never saved. Both the server (shared-types) and aun-updates must accept these and refuse any change (wiki AUN-APP-UPDATES §13).",
+  "rootPublicKey": "II0f8F0IRUh/JWFbUNLfwy+9KAzvAGQ/EMT77jsVna4=",
+  "releasePublicKey": "iMeW5CAdlvZ+Xno98GLWD2l7RsOdwXpNztpWA9MrTUo=",
+  "keyList": "{\n  \"schema\": 1,\n  \"repo\": \"AlUmmahNowTools\",\n  \"serial\": 2,\n  \"keys\": [\n    {\n      \"keyId\": \"1af8464a\",\n      \"publicKey\": \"iMeW5CAdlvZ+Xno98GLWD2l7RsOdwXpNztpWA9MrTUo=\"\n    }\n  ],\n  \"revoked\": [\n    \"0badc0de\"\n  ],\n  \"yanked\": [\n    \"2026.11.21\"\n  ]\n}\n",
+  "keyListSig": "{\"signatures\":[{\"keyId\":\"aacbc16d\",\"sig\":\"vzo95NyZgzoLRYgx2oj6i8pFH2mfHBC8dHRLAf8UndlPpNDt1qvMtBafkc/UfcgHkcsVxz8YnRH7g2JBB4pwCg==\"}]}",
+  "manifest": "{\n  \"schema\": 1,\n  \"repo\": \"AlUmmahNowTools\",\n  \"tag\": \"v2026.11.23\",\n  \"version\": \"2026.11.23\",\n  \"channel\": \"stable\",\n  \"publishedAt\": \"2026-11-23T18:04:11Z\",\n  \"notes\": {\n    \"en\": \"Faster folder scans.\",\n    \"ar\": \"فحص أسرع للمجلدات.\"\n  },\n  \"artifacts\": [\n    {\n      \"app\": \"tools\",\n      \"platform\": \"windows\",\n      \"arch\": \"x64\",\n      \"kind\": \"velopack-full\",\n      \"url\": \"https://github.com/Al-Ummah-Now/AlUmmahNowTools/releases/download/v2026.11.23/pkg.nupkg\",\n      \"sha256\": \"946299d947f452730a38a0a2210f32bce66aa7dee6efe55e1c0842c20da09e39\",\n      \"size\": 34\n    }\n  ],\n  \"stores\": [],\n  \"yanked\": [\n    \"2026.11.20\"\n  ]\n}\n",
+  "manifestSig": "{\"signatures\":[{\"keyId\":\"1af8464a\",\"sig\":\"gZjReRg98LIjA7l7iB9EYyWjtTHjw4D+7WcjJ9ME0yvLjAlVzFhcsQOun8gcjapgxB0HS5TyrxKgQYRPiZyEAw==\"}]}",
+  "manifestSigByRoot": "{\"signatures\":[{\"keyId\":\"aacbc16d\",\"sig\":\"nI3utpXPx0x8Qp+q6DSgw0jvKEcyFBmutIVJDafDrYVFKW97plCAks7ZExRvm/3PCUPAYjydVoLs8Ql17BpJDA==\"}]}"
+}
