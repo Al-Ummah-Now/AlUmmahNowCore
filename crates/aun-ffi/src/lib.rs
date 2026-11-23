@@ -17,6 +17,7 @@ mod platform;
 mod runtime;
 mod search;
 mod short_links;
+mod updates;
 mod upload;
 
 pub use api::*;
@@ -29,6 +30,7 @@ pub use notifications::*;
 pub use platform::*;
 pub use search::*;
 pub use short_links::*;
+pub use updates::*;
 pub use upload::*;
 
 /// The `aun-core` version, e.g. `"0.1.0"`. Apps log it and send it with telemetry.
