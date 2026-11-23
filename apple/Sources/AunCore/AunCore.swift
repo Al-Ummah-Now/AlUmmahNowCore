@@ -637,6 +637,71 @@ public protocol ApiClientProtocol: AnyObject, Sendable {
     func requestPath(call: PathCall) async throws  -> ApiResponse
     
     /**
+     * Registers or refreshes this install's push token (`PUT /api/devices/:installId`).
+     */
+    func deviceRegister(installId: String, registration: PushDeviceRegistration) async throws  -> Bool
+    
+    /**
+     * Unregisters this install on sign-out (`DELETE /api/devices/:installId`).
+     */
+    func deviceUnregister(installId: String) async throws 
+    
+    /**
+     * Toggles a viewer reminder on an upcoming online event (`POST` / `DELETE /api/live-streams/:id/reminders`).
+     */
+    func eventSetReminder(streamId: String, remind: Bool) async throws 
+    
+    /**
+     * Lists upcoming online events (`GET /api/events`).
+     */
+    func eventsList(query: EventsQuery) async throws  -> CalendarEventsPage
+    
+    /**
+     * Lists in-app notifications newest first.
+     */
+    func notificationsList(limit: UInt32, cursor: String?, unreadOnly: Bool) async throws  -> NotificationPage
+    
+    /**
+     * Marks all notifications read (`POST /api/notifications/read-all`).
+     */
+    func notificationsMarkAllRead() async throws  -> NotificationBadge
+    
+    /**
+     * Marks notifications read (`POST /api/notifications/read`).
+     */
+    func notificationsMarkRead(ids: [String]) async throws  -> NotificationBadge
+    
+    /**
+     * Marks the notification menu opened (`POST /api/notifications/seen`).
+     */
+    func notificationsMarkSeen(ids: [String]) async throws  -> NotificationSeenResult
+    
+    /**
+     * Marks notifications unread (`POST /api/notifications/unread`).
+     */
+    func notificationsMarkUnread(ids: [String]) async throws  -> NotificationBadge
+    
+    /**
+     * Reads notification settings including quiet hours and prayer-time quiet windows.
+     */
+    func notificationsSettings() async throws  -> NotificationSettings
+    
+    /**
+     * Reads the notification bell badge (`unseenCount`, `unreadCount`, `menuOpen`).
+     */
+    func notificationsUnreadCount() async throws  -> NotificationBadge
+    
+    /**
+     * Updates quiet hours and prayer-time quiet windows (`PUT /api/notifications/settings`).
+     */
+    func notificationsUpdateQuietHours(quietHours: NotificationQuietHours) async throws  -> NotificationSettings
+    
+    /**
+     * Reads user-visible feature flags (`GET /api/me/features`), including `eventCalendar`.
+     */
+    func userFeatures(channelId: String?) async throws  -> [String: Bool]
+    
+    /**
      * `GET /api/search/suggestions`, made once (no retries). Throws `RateLimited` on 429.
      */
     func searchSuggestions(query: SuggestionQuery) async throws  -> [SearchSuggestion]
@@ -744,6 +809,266 @@ open func requestPath(call: PathCall)async throws  -> ApiResponse  {
             completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeApiResponse_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+    /**
+     * Registers or refreshes this install's push token (`PUT /api/devices/:installId`).
+     */
+open func deviceRegister(installId: String, registration: PushDeviceRegistration)async throws  -> Bool  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_device_register(
+                    self.uniffiCloneHandle(),
+                    FfiConverterString.lower(installId),FfiConverterTypePushDeviceRegistration_lower(registration)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_i8,
+            completeFunc: ffi_aun_core_rust_future_complete_i8,
+            freeFunc: ffi_aun_core_rust_future_free_i8,
+            liftFunc: FfiConverterBool.lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+    /**
+     * Unregisters this install on sign-out (`DELETE /api/devices/:installId`).
+     */
+open func deviceUnregister(installId: String)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_device_unregister(
+                    self.uniffiCloneHandle(),
+                    FfiConverterString.lower(installId)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_void,
+            completeFunc: ffi_aun_core_rust_future_complete_void,
+            freeFunc: ffi_aun_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+    /**
+     * Toggles a viewer reminder on an upcoming online event (`POST` / `DELETE /api/live-streams/:id/reminders`).
+     */
+open func eventSetReminder(streamId: String, remind: Bool)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_event_set_reminder(
+                    self.uniffiCloneHandle(),
+                    FfiConverterString.lower(streamId),FfiConverterBool.lower(remind)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_void,
+            completeFunc: ffi_aun_core_rust_future_complete_void,
+            freeFunc: ffi_aun_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+    /**
+     * Lists upcoming online events (`GET /api/events`).
+     */
+open func eventsList(query: EventsQuery)async throws  -> CalendarEventsPage  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_events_list(
+                    self.uniffiCloneHandle(),
+                    FfiConverterTypeEventsQuery_lower(query)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeCalendarEventsPage_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+    /**
+     * Lists in-app notifications newest first.
+     */
+open func notificationsList(limit: UInt32, cursor: String?, unreadOnly: Bool)async throws  -> NotificationPage  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_notifications_list(
+                    self.uniffiCloneHandle(),
+                    FfiConverterUInt32.lower(limit),FfiConverterOptionString.lower(cursor),FfiConverterBool.lower(unreadOnly)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeNotificationPage_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+    /**
+     * Marks all notifications read (`POST /api/notifications/read-all`).
+     */
+open func notificationsMarkAllRead()async throws  -> NotificationBadge  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_notifications_mark_all_read(
+                    self.uniffiCloneHandle()
+                    
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeNotificationBadge_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+    /**
+     * Marks notifications read (`POST /api/notifications/read`).
+     */
+open func notificationsMarkRead(ids: [String])async throws  -> NotificationBadge  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_notifications_mark_read(
+                    self.uniffiCloneHandle(),
+                    FfiConverterSequenceString.lower(ids)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeNotificationBadge_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+    /**
+     * Marks the notification menu opened (`POST /api/notifications/seen`).
+     */
+open func notificationsMarkSeen(ids: [String])async throws  -> NotificationSeenResult  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_notifications_mark_seen(
+                    self.uniffiCloneHandle(),
+                    FfiConverterSequenceString.lower(ids)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeNotificationSeenResult_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+    /**
+     * Marks notifications unread (`POST /api/notifications/unread`).
+     */
+open func notificationsMarkUnread(ids: [String])async throws  -> NotificationBadge  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_notifications_mark_unread(
+                    self.uniffiCloneHandle(),
+                    FfiConverterSequenceString.lower(ids)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeNotificationBadge_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+    /**
+     * Reads notification settings including quiet hours and prayer-time quiet windows.
+     */
+open func notificationsSettings()async throws  -> NotificationSettings  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_notifications_settings(
+                    self.uniffiCloneHandle()
+                    
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeNotificationSettings_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+    /**
+     * Reads the notification bell badge (`unseenCount`, `unreadCount`, `menuOpen`).
+     */
+open func notificationsUnreadCount()async throws  -> NotificationBadge  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_notifications_unread_count(
+                    self.uniffiCloneHandle()
+                    
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeNotificationBadge_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+    /**
+     * Updates quiet hours and prayer-time quiet windows (`PUT /api/notifications/settings`).
+     */
+open func notificationsUpdateQuietHours(quietHours: NotificationQuietHours)async throws  -> NotificationSettings  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_notifications_update_quiet_hours(
+                    self.uniffiCloneHandle(),
+                    FfiConverterTypeNotificationQuietHours_lower(quietHours)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeNotificationSettings_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+    /**
+     * Reads user-visible feature flags (`GET /api/me/features`), including `eventCalendar`.
+     */
+open func userFeatures(channelId: String?)async throws  -> [String: Bool]  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_user_features(
+                    self.uniffiCloneHandle(),
+                    FfiConverterOptionString.lower(channelId)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterDictionaryStringBool.lift,
             errorHandler: FfiConverterTypeAunError_lift
         )
 }
@@ -4385,6 +4710,188 @@ public func FfiConverterTypeAuthConfig_lower(_ value: AuthConfig) -> RustBuffer 
 }
 
 
+/**
+ * One upcoming online event from `GET /api/events`.
+ */
+public struct CalendarEvent: Equatable, Hashable {
+    public var streamId: String
+    public var channelId: String
+    public var channelName: String
+    public var channelNameAr: String?
+    public var channelHandle: String?
+    public var channelAvatarUrl: String?
+    public var title: String
+    public var description: String?
+    public var thumbnailUrl: String?
+    public var kind: String
+    public var eventType: String?
+    public var status: String
+    public var scheduledStartAt: String?
+    public var startedAt: String?
+    public var endedAt: String?
+    public var premiereVideoId: String?
+    public var reminderCount: UInt32
+    public var viewerReminded: Bool
+    public var watchPath: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(streamId: String, channelId: String, channelName: String, channelNameAr: String?, channelHandle: String?, channelAvatarUrl: String?, title: String, description: String?, thumbnailUrl: String?, kind: String, eventType: String?, status: String, scheduledStartAt: String?, startedAt: String?, endedAt: String?, premiereVideoId: String?, reminderCount: UInt32, viewerReminded: Bool, watchPath: String) {
+        self.streamId = streamId
+        self.channelId = channelId
+        self.channelName = channelName
+        self.channelNameAr = channelNameAr
+        self.channelHandle = channelHandle
+        self.channelAvatarUrl = channelAvatarUrl
+        self.title = title
+        self.description = description
+        self.thumbnailUrl = thumbnailUrl
+        self.kind = kind
+        self.eventType = eventType
+        self.status = status
+        self.scheduledStartAt = scheduledStartAt
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.premiereVideoId = premiereVideoId
+        self.reminderCount = reminderCount
+        self.viewerReminded = viewerReminded
+        self.watchPath = watchPath
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CalendarEvent: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCalendarEvent: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CalendarEvent {
+        return
+            try CalendarEvent(
+                streamId: FfiConverterString.read(from: &buf), 
+                channelId: FfiConverterString.read(from: &buf), 
+                channelName: FfiConverterString.read(from: &buf), 
+                channelNameAr: FfiConverterOptionString.read(from: &buf), 
+                channelHandle: FfiConverterOptionString.read(from: &buf), 
+                channelAvatarUrl: FfiConverterOptionString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                description: FfiConverterOptionString.read(from: &buf), 
+                thumbnailUrl: FfiConverterOptionString.read(from: &buf), 
+                kind: FfiConverterString.read(from: &buf), 
+                eventType: FfiConverterOptionString.read(from: &buf), 
+                status: FfiConverterString.read(from: &buf), 
+                scheduledStartAt: FfiConverterOptionString.read(from: &buf), 
+                startedAt: FfiConverterOptionString.read(from: &buf), 
+                endedAt: FfiConverterOptionString.read(from: &buf), 
+                premiereVideoId: FfiConverterOptionString.read(from: &buf), 
+                reminderCount: FfiConverterUInt32.read(from: &buf), 
+                viewerReminded: FfiConverterBool.read(from: &buf), 
+                watchPath: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CalendarEvent, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.streamId, into: &buf)
+        FfiConverterString.write(value.channelId, into: &buf)
+        FfiConverterString.write(value.channelName, into: &buf)
+        FfiConverterOptionString.write(value.channelNameAr, into: &buf)
+        FfiConverterOptionString.write(value.channelHandle, into: &buf)
+        FfiConverterOptionString.write(value.channelAvatarUrl, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.description, into: &buf)
+        FfiConverterOptionString.write(value.thumbnailUrl, into: &buf)
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterOptionString.write(value.eventType, into: &buf)
+        FfiConverterString.write(value.status, into: &buf)
+        FfiConverterOptionString.write(value.scheduledStartAt, into: &buf)
+        FfiConverterOptionString.write(value.startedAt, into: &buf)
+        FfiConverterOptionString.write(value.endedAt, into: &buf)
+        FfiConverterOptionString.write(value.premiereVideoId, into: &buf)
+        FfiConverterUInt32.write(value.reminderCount, into: &buf)
+        FfiConverterBool.write(value.viewerReminded, into: &buf)
+        FfiConverterString.write(value.watchPath, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCalendarEvent_lift(_ buf: RustBuffer) throws -> CalendarEvent {
+    return try FfiConverterTypeCalendarEvent.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCalendarEvent_lower(_ value: CalendarEvent) -> RustBuffer {
+    return FfiConverterTypeCalendarEvent.lower(value)
+}
+
+
+/**
+ * Cursor-paginated online Event Calendar page.
+ */
+public struct CalendarEventsPage: Equatable, Hashable {
+    public var items: [CalendarEvent]
+    public var nextCursor: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(items: [CalendarEvent], nextCursor: String?) {
+        self.items = items
+        self.nextCursor = nextCursor
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CalendarEventsPage: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCalendarEventsPage: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CalendarEventsPage {
+        return
+            try CalendarEventsPage(
+                items: FfiConverterSequenceTypeCalendarEvent.read(from: &buf), 
+                nextCursor: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CalendarEventsPage, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeCalendarEvent.write(value.items, into: &buf)
+        FfiConverterOptionString.write(value.nextCursor, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCalendarEventsPage_lift(_ buf: RustBuffer) throws -> CalendarEventsPage {
+    return try FfiConverterTypeCalendarEventsPage.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCalendarEventsPage_lower(_ value: CalendarEventsPage) -> RustBuffer {
+    return FfiConverterTypeCalendarEventsPage.lower(value)
+}
+
+
 public struct EdlIssue: Equatable, Hashable {
     public var code: String
     public var item: String
@@ -4440,6 +4947,87 @@ public func FfiConverterTypeEdlIssue_lift(_ buf: RustBuffer) throws -> EdlIssue 
 #endif
 public func FfiConverterTypeEdlIssue_lower(_ value: EdlIssue) -> RustBuffer {
     return FfiConverterTypeEdlIssue.lower(value)
+}
+
+
+/**
+ * Query filters for `ApiClient::events_list`.
+ */
+public struct EventsQuery: Equatable, Hashable {
+    public var channelId: String?
+    public var eventType: String?
+    public var kind: String?
+    public var subscribedOnly: Bool
+    public var from: String?
+    public var to: String?
+    public var cursor: String?
+    public var limit: UInt32?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(channelId: String? = nil, eventType: String? = nil, kind: String? = nil, subscribedOnly: Bool = false, from: String? = nil, to: String? = nil, cursor: String? = nil, limit: UInt32? = nil) {
+        self.channelId = channelId
+        self.eventType = eventType
+        self.kind = kind
+        self.subscribedOnly = subscribedOnly
+        self.from = from
+        self.to = to
+        self.cursor = cursor
+        self.limit = limit
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension EventsQuery: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeEventsQuery: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EventsQuery {
+        return
+            try EventsQuery(
+                channelId: FfiConverterOptionString.read(from: &buf), 
+                eventType: FfiConverterOptionString.read(from: &buf), 
+                kind: FfiConverterOptionString.read(from: &buf), 
+                subscribedOnly: FfiConverterBool.read(from: &buf), 
+                from: FfiConverterOptionString.read(from: &buf), 
+                to: FfiConverterOptionString.read(from: &buf), 
+                cursor: FfiConverterOptionString.read(from: &buf), 
+                limit: FfiConverterOptionUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: EventsQuery, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.channelId, into: &buf)
+        FfiConverterOptionString.write(value.eventType, into: &buf)
+        FfiConverterOptionString.write(value.kind, into: &buf)
+        FfiConverterBool.write(value.subscribedOnly, into: &buf)
+        FfiConverterOptionString.write(value.from, into: &buf)
+        FfiConverterOptionString.write(value.to, into: &buf)
+        FfiConverterOptionString.write(value.cursor, into: &buf)
+        FfiConverterOptionUInt32.write(value.limit, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeEventsQuery_lift(_ buf: RustBuffer) throws -> EventsQuery {
+    return try FfiConverterTypeEventsQuery.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeEventsQuery_lower(_ value: EventsQuery) -> RustBuffer {
+    return FfiConverterTypeEventsQuery.lower(value)
 }
 
 
@@ -4980,6 +5568,404 @@ public func FfiConverterTypeNetworkState_lower(_ value: NetworkState) -> RustBuf
 
 
 /**
+ * Bell badge counts and menu-open mode (`Core#40`).
+ */
+public struct NotificationBadge: Equatable, Hashable {
+    public var unreadCount: UInt32
+    public var unseenCount: UInt32
+    public var menuOpen: NotificationMenuOpenMode
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(unreadCount: UInt32, unseenCount: UInt32, menuOpen: NotificationMenuOpenMode) {
+        self.unreadCount = unreadCount
+        self.unseenCount = unseenCount
+        self.menuOpen = menuOpen
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension NotificationBadge: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNotificationBadge: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NotificationBadge {
+        return
+            try NotificationBadge(
+                unreadCount: FfiConverterUInt32.read(from: &buf), 
+                unseenCount: FfiConverterUInt32.read(from: &buf), 
+                menuOpen: FfiConverterTypeNotificationMenuOpenMode.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: NotificationBadge, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.unreadCount, into: &buf)
+        FfiConverterUInt32.write(value.unseenCount, into: &buf)
+        FfiConverterTypeNotificationMenuOpenMode.write(value.menuOpen, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationBadge_lift(_ buf: RustBuffer) throws -> NotificationBadge {
+    return try FfiConverterTypeNotificationBadge.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationBadge_lower(_ value: NotificationBadge) -> RustBuffer {
+    return FfiConverterTypeNotificationBadge.lower(value)
+}
+
+
+/**
+ * One in-app notification row.
+ */
+public struct NotificationItem: Equatable, Hashable {
+    public var id: String
+    public var category: String
+    public var notificationType: String
+    public var notificationKey: String
+    public var paramsJson: String
+    public var readAtMs: Int64?
+    public var createdAtMs: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, category: String, notificationType: String, notificationKey: String, paramsJson: String, readAtMs: Int64?, createdAtMs: Int64) {
+        self.id = id
+        self.category = category
+        self.notificationType = notificationType
+        self.notificationKey = notificationKey
+        self.paramsJson = paramsJson
+        self.readAtMs = readAtMs
+        self.createdAtMs = createdAtMs
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension NotificationItem: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNotificationItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NotificationItem {
+        return
+            try NotificationItem(
+                id: FfiConverterString.read(from: &buf), 
+                category: FfiConverterString.read(from: &buf), 
+                notificationType: FfiConverterString.read(from: &buf), 
+                notificationKey: FfiConverterString.read(from: &buf), 
+                paramsJson: FfiConverterString.read(from: &buf), 
+                readAtMs: FfiConverterOptionInt64.read(from: &buf), 
+                createdAtMs: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: NotificationItem, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.category, into: &buf)
+        FfiConverterString.write(value.notificationType, into: &buf)
+        FfiConverterString.write(value.notificationKey, into: &buf)
+        FfiConverterString.write(value.paramsJson, into: &buf)
+        FfiConverterOptionInt64.write(value.readAtMs, into: &buf)
+        FfiConverterInt64.write(value.createdAtMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationItem_lift(_ buf: RustBuffer) throws -> NotificationItem {
+    return try FfiConverterTypeNotificationItem.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationItem_lower(_ value: NotificationItem) -> RustBuffer {
+    return FfiConverterTypeNotificationItem.lower(value)
+}
+
+
+/**
+ * Cursor-paginated notification list with badge counts.
+ */
+public struct NotificationPage: Equatable, Hashable {
+    public var items: [NotificationItem]
+    public var nextCursor: String?
+    public var badge: NotificationBadge
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(items: [NotificationItem], nextCursor: String?, badge: NotificationBadge) {
+        self.items = items
+        self.nextCursor = nextCursor
+        self.badge = badge
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension NotificationPage: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNotificationPage: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NotificationPage {
+        return
+            try NotificationPage(
+                items: FfiConverterSequenceTypeNotificationItem.read(from: &buf), 
+                nextCursor: FfiConverterOptionString.read(from: &buf), 
+                badge: FfiConverterTypeNotificationBadge.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: NotificationPage, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeNotificationItem.write(value.items, into: &buf)
+        FfiConverterOptionString.write(value.nextCursor, into: &buf)
+        FfiConverterTypeNotificationBadge.write(value.badge, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationPage_lift(_ buf: RustBuffer) throws -> NotificationPage {
+    return try FfiConverterTypeNotificationPage.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationPage_lower(_ value: NotificationPage) -> RustBuffer {
+    return FfiConverterTypeNotificationPage.lower(value)
+}
+
+
+/**
+ * Daily quiet-hours window and optional prayer-time quiet intervals (`E22-D6`).
+ */
+public struct NotificationQuietHours: Equatable, Hashable {
+    public var enabled: Bool
+    public var timezone: String
+    public var startMinute: UInt16
+    public var endMinute: UInt16
+    public var prayerQuietEnabled: Bool
+    public var prayerWindows: [PrayerQuietWindow]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(enabled: Bool, timezone: String, startMinute: UInt16, endMinute: UInt16, prayerQuietEnabled: Bool, prayerWindows: [PrayerQuietWindow] = []) {
+        self.enabled = enabled
+        self.timezone = timezone
+        self.startMinute = startMinute
+        self.endMinute = endMinute
+        self.prayerQuietEnabled = prayerQuietEnabled
+        self.prayerWindows = prayerWindows
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension NotificationQuietHours: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNotificationQuietHours: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NotificationQuietHours {
+        return
+            try NotificationQuietHours(
+                enabled: FfiConverterBool.read(from: &buf), 
+                timezone: FfiConverterString.read(from: &buf), 
+                startMinute: FfiConverterUInt16.read(from: &buf), 
+                endMinute: FfiConverterUInt16.read(from: &buf), 
+                prayerQuietEnabled: FfiConverterBool.read(from: &buf), 
+                prayerWindows: FfiConverterSequenceTypePrayerQuietWindow.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: NotificationQuietHours, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.enabled, into: &buf)
+        FfiConverterString.write(value.timezone, into: &buf)
+        FfiConverterUInt16.write(value.startMinute, into: &buf)
+        FfiConverterUInt16.write(value.endMinute, into: &buf)
+        FfiConverterBool.write(value.prayerQuietEnabled, into: &buf)
+        FfiConverterSequenceTypePrayerQuietWindow.write(value.prayerWindows, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationQuietHours_lift(_ buf: RustBuffer) throws -> NotificationQuietHours {
+    return try FfiConverterTypeNotificationQuietHours.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationQuietHours_lower(_ value: NotificationQuietHours) -> RustBuffer {
+    return FfiConverterTypeNotificationQuietHours.lower(value)
+}
+
+
+/**
+ * Result of `POST /api/notifications/seen`.
+ */
+public struct NotificationSeenResult: Equatable, Hashable {
+    public var badge: NotificationBadge
+    public var readIds: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(badge: NotificationBadge, readIds: [String]) {
+        self.badge = badge
+        self.readIds = readIds
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension NotificationSeenResult: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNotificationSeenResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NotificationSeenResult {
+        return
+            try NotificationSeenResult(
+                badge: FfiConverterTypeNotificationBadge.read(from: &buf), 
+                readIds: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: NotificationSeenResult, into buf: inout [UInt8]) {
+        FfiConverterTypeNotificationBadge.write(value.badge, into: &buf)
+        FfiConverterSequenceString.write(value.readIds, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationSeenResult_lift(_ buf: RustBuffer) throws -> NotificationSeenResult {
+    return try FfiConverterTypeNotificationSeenResult.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationSeenResult_lower(_ value: NotificationSeenResult) -> RustBuffer {
+    return FfiConverterTypeNotificationSeenResult.lower(value)
+}
+
+
+/**
+ * Notification settings snapshot for the signed-in account.
+ */
+public struct NotificationSettings: Equatable, Hashable {
+    public var categories: [String: Bool]
+    public var alwaysOn: [String]
+    public var emailAccount: Bool
+    public var emailLocale: String?
+    public var quietHours: NotificationQuietHours
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(categories: [String: Bool], alwaysOn: [String], emailAccount: Bool, emailLocale: String?, quietHours: NotificationQuietHours) {
+        self.categories = categories
+        self.alwaysOn = alwaysOn
+        self.emailAccount = emailAccount
+        self.emailLocale = emailLocale
+        self.quietHours = quietHours
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension NotificationSettings: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNotificationSettings: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NotificationSettings {
+        return
+            try NotificationSettings(
+                categories: FfiConverterDictionaryStringBool.read(from: &buf), 
+                alwaysOn: FfiConverterSequenceString.read(from: &buf), 
+                emailAccount: FfiConverterBool.read(from: &buf), 
+                emailLocale: FfiConverterOptionString.read(from: &buf), 
+                quietHours: FfiConverterTypeNotificationQuietHours.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: NotificationSettings, into buf: inout [UInt8]) {
+        FfiConverterDictionaryStringBool.write(value.categories, into: &buf)
+        FfiConverterSequenceString.write(value.alwaysOn, into: &buf)
+        FfiConverterBool.write(value.emailAccount, into: &buf)
+        FfiConverterOptionString.write(value.emailLocale, into: &buf)
+        FfiConverterTypeNotificationQuietHours.write(value.quietHours, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationSettings_lift(_ buf: RustBuffer) throws -> NotificationSettings {
+    return try FfiConverterTypeNotificationSettings.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationSettings_lower(_ value: NotificationSettings) -> RustBuffer {
+    return FfiConverterTypeNotificationSettings.lower(value)
+}
+
+
+/**
  * A call to an api-videos path that is not (yet) in the pinned OpenAPI document, e.g. a Studio
  * endpoint that shipped after the last spec sync. Prefer [`ApiCall`] when the operation exists.
  */
@@ -5094,6 +6080,136 @@ public func FfiConverterTypePathCall_lift(_ buf: RustBuffer) throws -> PathCall 
 #endif
 public func FfiConverterTypePathCall_lower(_ value: PathCall) -> RustBuffer {
     return FfiConverterTypePathCall.lower(value)
+}
+
+
+/**
+ * Local-day prayer quiet interval (`0..=1439` minutes from midnight).
+ */
+public struct PrayerQuietWindow: Equatable, Hashable {
+    public var startMinute: UInt16
+    public var endMinute: UInt16
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(startMinute: UInt16, endMinute: UInt16) {
+        self.startMinute = startMinute
+        self.endMinute = endMinute
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PrayerQuietWindow: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePrayerQuietWindow: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PrayerQuietWindow {
+        return
+            try PrayerQuietWindow(
+                startMinute: FfiConverterUInt16.read(from: &buf), 
+                endMinute: FfiConverterUInt16.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PrayerQuietWindow, into buf: inout [UInt8]) {
+        FfiConverterUInt16.write(value.startMinute, into: &buf)
+        FfiConverterUInt16.write(value.endMinute, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePrayerQuietWindow_lift(_ buf: RustBuffer) throws -> PrayerQuietWindow {
+    return try FfiConverterTypePrayerQuietWindow.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePrayerQuietWindow_lower(_ value: PrayerQuietWindow) -> RustBuffer {
+    return FfiConverterTypePrayerQuietWindow.lower(value)
+}
+
+
+/**
+ * Native push device registration payload (`PUT /api/devices/:installId`).
+ */
+public struct PushDeviceRegistration: Equatable, Hashable {
+    public var platform: String
+    public var provider: String
+    public var app: String
+    public var token: String
+    public var locale: String?
+    public var appVersion: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(platform: String, provider: String, app: String, token: String, locale: String? = nil, appVersion: String? = nil) {
+        self.platform = platform
+        self.provider = provider
+        self.app = app
+        self.token = token
+        self.locale = locale
+        self.appVersion = appVersion
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PushDeviceRegistration: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePushDeviceRegistration: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PushDeviceRegistration {
+        return
+            try PushDeviceRegistration(
+                platform: FfiConverterString.read(from: &buf), 
+                provider: FfiConverterString.read(from: &buf), 
+                app: FfiConverterString.read(from: &buf), 
+                token: FfiConverterString.read(from: &buf), 
+                locale: FfiConverterOptionString.read(from: &buf), 
+                appVersion: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PushDeviceRegistration, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.platform, into: &buf)
+        FfiConverterString.write(value.provider, into: &buf)
+        FfiConverterString.write(value.app, into: &buf)
+        FfiConverterString.write(value.token, into: &buf)
+        FfiConverterOptionString.write(value.locale, into: &buf)
+        FfiConverterOptionString.write(value.appVersion, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePushDeviceRegistration_lift(_ buf: RustBuffer) throws -> PushDeviceRegistration {
+    return try FfiConverterTypePushDeviceRegistration.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePushDeviceRegistration_lower(_ value: PushDeviceRegistration) -> RustBuffer {
+    return FfiConverterTypePushDeviceRegistration.lower(value)
 }
 
 
@@ -5386,6 +6502,71 @@ public func FfiConverterTypeSearchSuggestion_lift(_ buf: RustBuffer) throws -> S
 #endif
 public func FfiConverterTypeSearchSuggestion_lower(_ value: SearchSuggestion) -> RustBuffer {
     return FfiConverterTypeSearchSuggestion.lower(value)
+}
+
+
+/**
+ * Optional query parameters for [`short_link_for`] and [`share_short_link`].
+ */
+public struct ShortLinkOptions: Equatable, Hashable {
+    public var tSeconds: UInt64?
+    public var playlistId: String?
+    public var playlistIndex: UInt32?
+    public var lang: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(tSeconds: UInt64? = nil, playlistId: String? = nil, playlistIndex: UInt32? = nil, lang: String? = nil) {
+        self.tSeconds = tSeconds
+        self.playlistId = playlistId
+        self.playlistIndex = playlistIndex
+        self.lang = lang
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ShortLinkOptions: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeShortLinkOptions: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ShortLinkOptions {
+        return
+            try ShortLinkOptions(
+                tSeconds: FfiConverterOptionUInt64.read(from: &buf), 
+                playlistId: FfiConverterOptionString.read(from: &buf), 
+                playlistIndex: FfiConverterOptionUInt32.read(from: &buf), 
+                lang: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ShortLinkOptions, into buf: inout [UInt8]) {
+        FfiConverterOptionUInt64.write(value.tSeconds, into: &buf)
+        FfiConverterOptionString.write(value.playlistId, into: &buf)
+        FfiConverterOptionUInt32.write(value.playlistIndex, into: &buf)
+        FfiConverterOptionString.write(value.lang, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShortLinkOptions_lift(_ buf: RustBuffer) throws -> ShortLinkOptions {
+    return try FfiConverterTypeShortLinkOptions.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShortLinkOptions_lower(_ value: ShortLinkOptions) -> RustBuffer {
+    return FfiConverterTypeShortLinkOptions.lower(value)
 }
 
 
@@ -6923,6 +8104,209 @@ public func FfiConverterTypeModelTier_lower(_ value: ModelTier) -> RustBuffer {
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
+ * Platform bell-open mode (`Seen` clears only the badge; `Read` also marks shown items read).
+ */
+
+public enum NotificationMenuOpenMode: Equatable, Hashable {
+    
+    case seen
+    case read
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension NotificationMenuOpenMode: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNotificationMenuOpenMode: FfiConverterRustBuffer {
+    typealias SwiftType = NotificationMenuOpenMode
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NotificationMenuOpenMode {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .seen
+        
+        case 2: return .read
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: NotificationMenuOpenMode, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .seen:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .read:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationMenuOpenMode_lift(_ buf: RustBuffer) throws -> NotificationMenuOpenMode {
+    return try FfiConverterTypeNotificationMenuOpenMode.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationMenuOpenMode_lower(_ value: NotificationMenuOpenMode) -> RustBuffer {
+    return FfiConverterTypeNotificationMenuOpenMode.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Kind of entity addressed by a short link on `alummahnow.link`.
+ */
+
+public enum ShortLinkTarget: Equatable, Hashable {
+    
+    case video(id: String
+    )
+    case short(id: String
+    )
+    case channel(id: String
+    )
+    case handle(handle: String
+    )
+    case post(id: String
+    )
+    case playlist(id: String
+    )
+    case live(id: String
+    )
+    case home
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension ShortLinkTarget: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeShortLinkTarget: FfiConverterRustBuffer {
+    typealias SwiftType = ShortLinkTarget
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ShortLinkTarget {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .video(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 2: return .short(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 3: return .channel(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 4: return .handle(handle: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 5: return .post(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 6: return .playlist(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 7: return .live(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 8: return .home
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ShortLinkTarget, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .video(id):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .short(id):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .channel(id):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .handle(handle):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(handle, into: &buf)
+            
+        
+        case let .post(id):
+            writeInt(&buf, Int32(5))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .playlist(id):
+            writeInt(&buf, Int32(6))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .live(id):
+            writeInt(&buf, Int32(7))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case .home:
+            writeInt(&buf, Int32(8))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShortLinkTarget_lift(_ buf: RustBuffer) throws -> ShortLinkTarget {
+    return try FfiConverterTypeShortLinkTarget.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeShortLinkTarget_lower(_ value: ShortLinkTarget) -> RustBuffer {
+    return FfiConverterTypeShortLinkTarget.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
  * What a suggestion points at.
  */
 
@@ -7183,6 +8567,30 @@ fileprivate struct FfiConverterOptionUInt64: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterUInt64.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionInt64: FfiConverterRustBuffer {
+    typealias SwiftType = Int64?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterInt64.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterInt64.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -7455,6 +8863,30 @@ fileprivate struct FfiConverterOptionTypeAunError: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeShortLinkTarget: FfiConverterRustBuffer {
+    typealias SwiftType = ShortLinkTarget?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeShortLinkTarget.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeShortLinkTarget.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceUInt64: FfiConverterRustBuffer {
     typealias SwiftType = [UInt64]
 
@@ -7605,6 +9037,31 @@ fileprivate struct FfiConverterSequenceTypeApiOperation: FfiConverterRustBuffer 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeCalendarEvent: FfiConverterRustBuffer {
+    typealias SwiftType = [CalendarEvent]
+
+    public static func write(_ value: [CalendarEvent], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeCalendarEvent.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [CalendarEvent] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [CalendarEvent]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeCalendarEvent.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeEdlIssue: FfiConverterRustBuffer {
     typealias SwiftType = [EdlIssue]
 
@@ -7697,6 +9154,56 @@ fileprivate struct FfiConverterSequenceTypeModelStatus: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeModelStatus.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeNotificationItem: FfiConverterRustBuffer {
+    typealias SwiftType = [NotificationItem]
+
+    public static func write(_ value: [NotificationItem], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeNotificationItem.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [NotificationItem] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [NotificationItem]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeNotificationItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypePrayerQuietWindow: FfiConverterRustBuffer {
+    typealias SwiftType = [PrayerQuietWindow]
+
+    public static func write(_ value: [PrayerQuietWindow], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypePrayerQuietWindow.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [PrayerQuietWindow] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [PrayerQuietWindow]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypePrayerQuietWindow.read(from: &buf))
         }
         return seq
     }
@@ -7974,6 +9481,32 @@ fileprivate struct FfiConverterSequenceTypeSuggestionKind: FfiConverterRustBuffe
             seq.append(try FfiConverterTypeSuggestionKind.read(from: &buf))
         }
         return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterDictionaryStringBool: FfiConverterRustBuffer {
+    public static func write(_ value: [String: Bool], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for (key, value) in value {
+            FfiConverterString.write(key, into: &buf)
+            FfiConverterBool.write(value, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [String: Bool] {
+        let len: Int32 = try readInt(&buf)
+        var dict = [String: Bool]()
+        dict.reserveCapacity(Int(len))
+        for _ in 0..<len {
+            let key = try FfiConverterString.read(from: &buf)
+            let value = try FfiConverterBool.read(from: &buf)
+            dict[key] = value
+        }
+        return dict
     }
 }
 
@@ -8501,6 +10034,17 @@ public func resolveDisplayNameJson(profileJson: String, locale: String?) -> Stri
 })
 }
 /**
+ * Formats an unseen notification count for the header bell (`None` for 0, `"9+"` / `"٩+"` past 9).
+ */
+public func notificationBadgeLabel(unseenCount: UInt32, locale: String) -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+    uniffi_aun_core_fn_func_notification_badge_label(
+        FfiConverterUInt32.lower(unseenCount),
+        FfiConverterString.lower(locale),$0
+    )
+})
+}
+/**
  * Groups suggestions for display: completions, videos, channels, playlists, categories.
  */
 public func groupSearchSuggestions(suggestions: [SearchSuggestion]) -> [SuggestionGroup]  {
@@ -8583,6 +10127,52 @@ public func searchMatches(text: String, query: String) -> Bool  {
     uniffi_aun_core_fn_func_search_matches(
         FfiConverterString.lower(text),
         FfiConverterString.lower(query),$0
+    )
+})
+}
+/**
+ * Parses the path of an `alummahnow.link` URL (`/v/…`, `/s/…`, `/e/…`, `/@…`, `/c/…`, `/p/…`, `/l/…`).
+ */
+public func parseShortLinkPath(pathname: String) -> ShortLinkTarget?  {
+    return try!  FfiConverterOptionTypeShortLinkTarget.lift(try! rustCall() {
+    uniffi_aun_core_fn_func_parse_short_link_path(
+        FfiConverterString.lower(pathname),$0
+    )
+})
+}
+/**
+ * Builds a short link for a share sheet, falling back to `fallback_url` when unavailable.
+ */
+public func shareShortLink(siteOrApiUrl: String, fallbackUrl: String, target: ShortLinkTarget, options: ShortLinkOptions) -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_aun_core_fn_func_share_short_link(
+        FfiConverterString.lower(siteOrApiUrl),
+        FfiConverterString.lower(fallbackUrl),
+        FfiConverterTypeShortLinkTarget_lower(target),
+        FfiConverterTypeShortLinkOptions_lower(options),$0
+    )
+})
+}
+/**
+ * Builds a short link (`https://[qa.|stage.]alummahnow.link/...`) for `target`, or `None` when
+ * `site_or_api_url` has no short-link domain or `target` carries an invalid ID/handle.
+ */
+public func shortLinkFor(siteOrApiUrl: String, target: ShortLinkTarget, options: ShortLinkOptions) -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+    uniffi_aun_core_fn_func_short_link_for(
+        FfiConverterString.lower(siteOrApiUrl),
+        FfiConverterTypeShortLinkTarget_lower(target),
+        FfiConverterTypeShortLinkOptions_lower(options),$0
+    )
+})
+}
+/**
+ * Resolves `https://[qa.|stage.]alummahnow.link` for an environment's site or API URL, or `None`.
+ */
+public func shortLinkOriginFor(siteOrApiUrl: String) -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+    uniffi_aun_core_fn_func_short_link_origin_for(
+        FfiConverterString.lower(siteOrApiUrl),$0
     )
 })
 }
@@ -8725,6 +10315,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_func_resolve_display_name_json() != 23552) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_func_notification_badge_label() != 12753) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aun_core_checksum_func_group_search_suggestions() != 56162) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -8749,6 +10342,18 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_func_search_matches() != 4190) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_func_parse_short_link_path() != 61256) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_func_share_short_link() != 17053) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_func_short_link_for() != 29915) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_func_short_link_origin_for() != 63329) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aun_core_checksum_func_upload_config_default() != 36473) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -8756,6 +10361,45 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_apiclient_request_path() != 9248) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_device_register() != 28490) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_device_unregister() != 14948) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_event_set_reminder() != 29769) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_events_list() != 51426) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_notifications_list() != 33901) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_notifications_mark_all_read() != 3985) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_notifications_mark_read() != 39765) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_notifications_mark_seen() != 54441) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_notifications_mark_unread() != 43553) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_notifications_settings() != 41082) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_notifications_unread_count() != 54518) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_notifications_update_quiet_hours() != 37733) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_user_features() != 24924) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_apiclient_search_suggestions() != 32608) {

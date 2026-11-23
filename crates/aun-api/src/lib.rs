@@ -3,7 +3,9 @@
 //! the auth refresh hook ([`AuthProvider`]) and the persistent offline write queue ([`queue`]).
 
 pub mod client;
+pub mod events;
 pub mod generated;
+pub mod notifications;
 pub mod queue;
 mod tls;
 
