@@ -395,3 +395,93 @@ fn state_round_trips_and_survives_garbage() {
     assert_eq!(back, st);
     assert_eq!(UpdateState::from_json("not json"), UpdateState::default());
 }
+
+#[test]
+fn release_tags_match_the_shared_table() {
+    let t = spec("tags.json");
+    for case in t["valid"].as_array().unwrap() {
+        let tag = case[0].as_str().unwrap();
+        let parsed = aun_updates::parse_release_tag(tag).unwrap_or_else(|| panic!("{tag}"));
+        assert_eq!(parsed.prefix, case[1].as_str().unwrap(), "{tag}");
+        assert_eq!(parsed.version, case[2].as_str().unwrap(), "{tag}");
+        assert_eq!(parsed.admin_only, case[3].as_bool().unwrap(), "{tag}");
+    }
+    for bad in t["invalid"].as_array().unwrap() {
+        assert!(
+            aun_updates::parse_release_tag(bad.as_str().unwrap()).is_none(),
+            "{bad}"
+        );
+    }
+}
+
+#[test]
+fn admin_tags_release_only_the_admin_app_and_the_version_is_the_tags() {
+    let (root, k) = (TestKey::new(6), TestKey::new(7));
+    let mut state = UpdateState::default();
+    let l = list_json("AlUmmahNowTools", 1, &[&k], &[], &[]);
+    state
+        .accept_key_list(
+            l.as_bytes(),
+            &root.sign(l.as_bytes()),
+            &[root.public()],
+            "AlUmmahNowTools",
+        )
+        .unwrap();
+    let expect = Expect {
+        repo: "AlUmmahNowTools",
+        ..Default::default()
+    };
+    let tag = "admin-windows-v1.4.0";
+    let admin = |app: &str, version: &str| {
+        serde_json::json!({
+            "schema": 1, "repo": "AlUmmahNowTools", "tag": tag, "version": version, "channel": "stable",
+            "publishedAt": "2026-11-23T18:04:11Z", "notes": { "en": "New.", "ar": "جديد." },
+            "artifacts": [{ "app": app, "platform": "windows", "kind": "msix",
+                "url": format!("https://github.com/Al-Ummah-Now/AlUmmahNowTools/releases/download/{tag}/x.msix"), "sha256": "a".repeat(64), "size": 1 }]
+        })
+        .to_string()
+    };
+    let ok = admin("admin", "1.4.0");
+    assert!(verify_manifest(ok.as_bytes(), &k.sign(ok.as_bytes()), &state.trust(), &expect).is_ok());
+    let mixed = admin("tools", "1.4.0");
+    assert!(matches!(
+        verify_manifest(
+            mixed.as_bytes(),
+            &k.sign(mixed.as_bytes()),
+            &state.trust(),
+            &expect
+        )
+        .unwrap_err(),
+        VerifyError::BadContents(_)
+    ));
+    let wrong = admin("admin", "1.4.1");
+    assert!(matches!(
+        verify_manifest(
+            wrong.as_bytes(),
+            &k.sign(wrong.as_bytes()),
+            &state.trust(),
+            &expect
+        )
+        .unwrap_err(),
+        VerifyError::BadContents(_)
+    ));
+}
+
+#[test]
+fn store_actions_open_the_store_page() {
+    let mut st = UpdateState::default();
+    let a = answer(
+        r#"{"enabled":true,"status":"recommended","minimumVersion":"0.0.0","latestVersion":"1.3.0","action":"store","available":true,"storeUrl":"https://apps.apple.com/app/id1","url":null}"#,
+    );
+    assert_eq!(
+        decide(&a, "1.2.0", &mut st, None).url.as_deref(),
+        Some("https://apps.apple.com/app/id1")
+    );
+    let d = answer(
+        r#"{"enabled":true,"status":"recommended","minimumVersion":"0.0.0","latestVersion":"1.3.0","action":"download","available":true,"storeUrl":null,"url":"https://github.com/Al-Ummah-Now/AlUmmahNowTools/releases/tag/v1.3.0"}"#,
+    );
+    assert_eq!(
+        decide(&d, "1.2.0", &mut st, None).url.as_deref(),
+        Some("https://github.com/Al-Ummah-Now/AlUmmahNowTools/releases/tag/v1.3.0")
+    );
+}

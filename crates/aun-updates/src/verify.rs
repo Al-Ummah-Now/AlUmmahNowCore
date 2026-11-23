@@ -288,14 +288,21 @@ fn check_manifest(m: &Manifest) -> Result<(), String> {
     if !REPOS.contains(&m.repo.as_str()) {
         return Err("repo".into());
     }
-    let tag_ok = m.tag.len() >= 2
-        && m.tag.len() <= 65
-        && m.tag.starts_with('v')
-        && m.tag[1..]
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || ".+-".contains(c));
-    if !tag_ok || !version::is_valid(&m.version) || !(m.channel == "stable" || m.channel == "beta") {
-        return Err("tag, version or channel".into());
+    let Some(tag) = crate::tags::parse_release_tag(&m.tag) else {
+        return Err("tag".into());
+    };
+    if !version::is_valid(&m.version)
+        || version::compare(&tag.version, &m.version) != Some(std::cmp::Ordering::Equal)
+    {
+        return Err("version must be the tag's".into());
+    }
+    if !(m.channel == "stable" || m.channel == "beta") {
+        return Err("channel".into());
+    }
+    if tag.admin_only
+        && (m.artifacts.iter().any(|a| a.app != "admin") || m.stores.iter().any(|s| s.app != "admin"))
+    {
+        return Err("an admin- tag releases only the Admin app".into());
     }
     for n in [&m.notes.en, &m.notes.ar] {
         let len = n.trim().chars().count();

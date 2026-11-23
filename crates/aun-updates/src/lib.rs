@@ -16,11 +16,13 @@
 pub mod decide;
 pub mod hosts;
 pub mod state;
+pub mod tags;
 pub mod verify;
 pub mod version;
 
 pub use decide::{Prompt, PromptKind, UpdateAnswer, decide, offline_kind};
 pub use hosts::allowed_download_url;
 pub use state::UpdateState;
+pub use tags::{ReleaseTag, parse_release_tag};
 pub use verify::{Expect, KeyList, Manifest, VerifyError, accept_key_list, verify_manifest};
 pub use version::{compare, compare_cores, is_valid};

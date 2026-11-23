@@ -28,6 +28,9 @@ pub struct UpdateAnswer {
     pub action: String,
     #[serde(default)]
     pub url: Option<String>,
+    /// The store page (App Store link from Apple's lookup, or the admin's store URL)
+    #[serde(default)]
+    pub store_url: Option<String>,
     #[serde(default)]
     pub manifest_url: Option<String>,
     #[serde(default)]
@@ -104,7 +107,12 @@ pub fn decide(
         notes: answer.notes.clone(),
         message: answer.message.clone(),
         action: answer.action.clone(),
-        url: answer.url.clone(),
+        // A store action opens the store page; install and download use the release page
+        url: if answer.action == "store" {
+            answer.store_url.clone().or_else(|| answer.url.clone())
+        } else {
+            answer.url.clone()
+        },
         manifest_url: answer.manifest_url.clone(),
         tag: answer.tag.clone(),
     };
