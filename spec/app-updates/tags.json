@@ -1,0 +1,70 @@
+{
+  "about": "Release tags shared by the server (@al-ummah/shared-types parseAppReleaseTag), aun-core (parse_release_tag) and the release tool (wiki AUN-APP-UPDATES §2.1). valid: [tag, prefix, version, adminOnly].",
+  "valid": [
+    [
+      "v2026.11.22",
+      "v",
+      "2026.11.22",
+      false
+    ],
+    [
+      "v2026.11.22.2",
+      "v",
+      "2026.11.22.2",
+      false
+    ],
+    [
+      "v1.2.3",
+      "v",
+      "1.2.3",
+      false
+    ],
+    [
+      "v1.2.3-2",
+      "v",
+      "1.2.3.2",
+      false
+    ],
+    [
+      "v1.5.0-preview.3",
+      "v",
+      "1.5.0-preview.3",
+      false
+    ],
+    [
+      "admin-v1.2.3",
+      "admin-v",
+      "1.2.3",
+      true
+    ],
+    [
+      "admin-v1.2.3-4",
+      "admin-v",
+      "1.2.3.4",
+      true
+    ],
+    [
+      "admin-windows-v1.0.0",
+      "admin-windows-v",
+      "1.0.0",
+      true
+    ],
+    [
+      "v1.2.3-123",
+      "v",
+      "1.2.3-123",
+      false
+    ]
+  ],
+  "invalid": [
+    "1.2.3",
+    "x1.2.3",
+    "admin-1.2.3",
+    "admin-windows-1.0.0",
+    "v1.2",
+    "update-keys",
+    "vabc",
+    "admin-mac-v1.0.0",
+    "v1.2.3 "
+  ]
+}
