@@ -132,6 +132,30 @@ impl From<core::ReserveResult> for OfflineReserveResult {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum OfflineDownloadOrigin {
+    Manual,
+    Auto,
+}
+
+impl From<OfflineDownloadOrigin> for core::DownloadOrigin {
+    fn from(o: OfflineDownloadOrigin) -> Self {
+        match o {
+            OfflineDownloadOrigin::Manual => Self::Manual,
+            OfflineDownloadOrigin::Auto => Self::Auto,
+        }
+    }
+}
+
+impl From<core::DownloadOrigin> for OfflineDownloadOrigin {
+    fn from(o: core::DownloadOrigin) -> Self {
+        match o {
+            core::DownloadOrigin::Manual => Self::Manual,
+            core::DownloadOrigin::Auto => Self::Auto,
+        }
+    }
+}
+
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct OfflineDownloadItem {
     pub video_id: String,
@@ -150,6 +174,8 @@ pub struct OfflineDownloadItem {
     pub created_at_ms: i64,
     pub last_accessed_at_ms: i64,
     pub reservation_id: u64,
+    pub origin: OfflineDownloadOrigin,
+    pub published_at_ms: Option<i64>,
 }
 
 impl From<OfflineDownloadItem> for core::DownloadRecord {
@@ -171,6 +197,8 @@ impl From<OfflineDownloadItem> for core::DownloadRecord {
             created_at_ms: r.created_at_ms,
             last_accessed_at_ms: r.last_accessed_at_ms,
             reservation_id: r.reservation_id,
+            origin: r.origin.into(),
+            published_at_ms: r.published_at_ms,
             extra: BTreeMap::new(),
         }
     }
@@ -195,6 +223,8 @@ impl From<core::DownloadRecord> for OfflineDownloadItem {
             created_at_ms: r.created_at_ms,
             last_accessed_at_ms: r.last_accessed_at_ms,
             reservation_id: r.reservation_id,
+            origin: r.origin.into(),
+            published_at_ms: r.published_at_ms,
         }
     }
 }
@@ -259,6 +289,7 @@ pub struct OfflineExistingAutoDownload {
     pub video_id: String,
     pub source_id: String,
     pub published_at_ms: i64,
+    pub size_bytes: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -341,6 +372,7 @@ pub fn offline_select_auto_downloads(
             video_id: e.video_id,
             source_id: e.source_id,
             published_at_ms: e.published_at_ms,
+            size_bytes: e.size_bytes,
         })
         .collect();
     let existing: HashSet<String> = existing_video_ids.into_iter().collect();
@@ -402,7 +434,9 @@ impl OfflineDownloadStore {
         let guard = self.inner.lock().map_err(|_| AunError::Storage {
             detail: "download store lock poisoned".into(),
         })?;
-        Ok(guard.reconcile_orphaned_paths(&download_root, &disk_paths))
+        guard
+            .reconcile_orphaned_paths(&download_root, &disk_paths)
+            .map_err(map_err)
     }
 
     pub fn mark_reconciled(&self) -> Result<(), AunError> {
@@ -553,6 +587,35 @@ impl OfflineDownloadStore {
             .set_thumbnail_path(&user_id, &video_id, &thumbnail_path)
             .map(Into::into)
             .map_err(map_err)
+    }
+
+    pub fn mark_manual(&self, user_id: String, video_id: String) -> Result<OfflineUpdateOutcome, AunError> {
+        let mut guard = self.inner.lock().map_err(|_| AunError::Storage {
+            detail: "download store lock poisoned".into(),
+        })?;
+        guard
+            .mark_manual(&user_id, &video_id)
+            .map(Into::into)
+            .map_err(map_err)
+    }
+
+    pub fn existing_auto_downloads_for_user(
+        &self,
+        user_id: String,
+    ) -> Result<Vec<OfflineExistingAutoDownload>, AunError> {
+        let guard = self.inner.lock().map_err(|_| AunError::Storage {
+            detail: "download store lock poisoned".into(),
+        })?;
+        Ok(guard
+            .existing_auto_downloads_for_user(&user_id)
+            .into_iter()
+            .map(|e| OfflineExistingAutoDownload {
+                video_id: e.video_id,
+                source_id: e.source_id,
+                published_at_ms: e.published_at_ms,
+                size_bytes: e.size_bytes,
+            })
+            .collect())
     }
 
     pub fn get(&self, user_id: String, video_id: String) -> Result<Option<OfflineDownloadItem>, AunError> {

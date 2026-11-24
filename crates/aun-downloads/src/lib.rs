@@ -14,8 +14,8 @@ pub use policy::{
     effective_item_bytes, effective_item_total_bytes, select_auto_downloads,
 };
 pub use store::{
-    AvailabilitySyncResult, DownloadRecord, DownloadStatus, DownloadStore, ReserveResult, RevocationEntry,
-    UpdateOutcome,
+    AvailabilitySyncResult, DownloadOrigin, DownloadRecord, DownloadStatus, DownloadStore, ReserveResult,
+    RevocationEntry, UpdateOutcome,
 };
 
 #[derive(Debug, thiserror::Error)]
