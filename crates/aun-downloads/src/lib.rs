@@ -11,8 +11,8 @@ pub mod store;
 pub use policy::{
     AutoDownloadPlan, AutoDownloadRule, AutoDownloadSource, AutoSourceKind, DEFAULT_MIN_FREE_SPACE_BYTES,
     DEFAULT_UNKNOWN_ITEM_ESTIMATE_BYTES, DownloadSettings, EpisodeCandidate, ExistingAutoDownload,
-    TransferDecision, can_start_download, effective_item_bytes, effective_item_total_bytes,
-    select_auto_downloads,
+    PlannedAutoDownload, TransferDecision, can_start_download, effective_item_bytes,
+    effective_item_total_bytes, select_auto_downloads,
 };
 pub use store::{
     AvailabilitySyncResult, DownloadOrigin, DownloadRecord, DownloadStatus, DownloadStore, ReserveResult,

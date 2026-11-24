@@ -8,10 +8,10 @@ use aun_core::{
     OfflineAutoDownloadSource, OfflineAutoSourceKind, OfflineAvailabilityResult, OfflineDownloadItem,
     OfflineDownloadKey, OfflineDownloadOrigin, OfflineDownloadSettings, OfflineDownloadStatus,
     OfflineDownloadStore, OfflineEpisodeCandidate, OfflineExistingAutoDownload, OfflineNetworkKind,
-    OfflineRevocationEntry, OfflineSyncEngine, OfflineTransferDecision, OfflineUpdateOutcome, PlayerCommand,
-    PlayerInput, PlayerMachine, PlayerMediaItem, PlayerPlaybackState, PlayerSleepTimer, SyncChangeKind,
-    SyncChangeListener, TokenSource, offline_can_start_download, offline_default_download_settings,
-    offline_select_auto_downloads,
+    OfflinePlannedAutoDownload, OfflineRevocationEntry, OfflineSyncEngine, OfflineTransferDecision,
+    OfflineUpdateOutcome, PlayerCommand, PlayerInput, PlayerMachine, PlayerMediaItem, PlayerPlaybackState,
+    PlayerSleepTimer, SyncChangeKind, SyncChangeListener, TokenSource, offline_can_start_download,
+    offline_default_download_settings, offline_select_auto_downloads,
 };
 use tempfile::tempdir;
 use wiremock::matchers::{method, path};
@@ -170,7 +170,13 @@ fn ffi_download_store_revocations_non_revival_reconciliation_and_policy() {
             vec![],
         ),
         OfflineAutoDownloadPlan {
-            to_download: vec!["vid-2".to_string()],
+            to_download: vec![OfflinePlannedAutoDownload {
+                video_id: "vid-2".to_string(),
+                source: OfflineAutoDownloadSource {
+                    kind: OfflineAutoSourceKind::Channel,
+                    id: "ch-1".into(),
+                },
+            }],
             to_evict: vec!["vid-old".to_string()],
         }
     );
