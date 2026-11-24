@@ -156,6 +156,54 @@ impl From<core::DownloadOrigin> for OfflineDownloadOrigin {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum OfflineAutoSourceKind {
+    Channel,
+    Playlist,
+}
+
+impl From<OfflineAutoSourceKind> for core::AutoSourceKind {
+    fn from(k: OfflineAutoSourceKind) -> Self {
+        match k {
+            OfflineAutoSourceKind::Channel => Self::Channel,
+            OfflineAutoSourceKind::Playlist => Self::Playlist,
+        }
+    }
+}
+
+impl From<core::AutoSourceKind> for OfflineAutoSourceKind {
+    fn from(k: core::AutoSourceKind) -> Self {
+        match k {
+            core::AutoSourceKind::Channel => Self::Channel,
+            core::AutoSourceKind::Playlist => Self::Playlist,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct OfflineAutoDownloadSource {
+    pub kind: OfflineAutoSourceKind,
+    pub id: String,
+}
+
+impl From<OfflineAutoDownloadSource> for core::AutoDownloadSource {
+    fn from(s: OfflineAutoDownloadSource) -> Self {
+        Self {
+            kind: s.kind.into(),
+            id: s.id,
+        }
+    }
+}
+
+impl From<core::AutoDownloadSource> for OfflineAutoDownloadSource {
+    fn from(s: core::AutoDownloadSource) -> Self {
+        Self {
+            kind: s.kind.into(),
+            id: s.id,
+        }
+    }
+}
+
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct OfflineDownloadItem {
     pub video_id: String,
@@ -175,6 +223,7 @@ pub struct OfflineDownloadItem {
     pub last_accessed_at_ms: i64,
     pub reservation_id: u64,
     pub origin: OfflineDownloadOrigin,
+    pub auto_source: Option<OfflineAutoDownloadSource>,
     pub published_at_ms: Option<i64>,
 }
 
@@ -198,6 +247,7 @@ impl From<OfflineDownloadItem> for core::DownloadRecord {
             last_accessed_at_ms: r.last_accessed_at_ms,
             reservation_id: r.reservation_id,
             origin: r.origin.into(),
+            auto_source: r.auto_source.map(Into::into),
             published_at_ms: r.published_at_ms,
             extra: BTreeMap::new(),
         }
@@ -224,6 +274,7 @@ impl From<core::DownloadRecord> for OfflineDownloadItem {
             last_accessed_at_ms: r.last_accessed_at_ms,
             reservation_id: r.reservation_id,
             origin: r.origin.into(),
+            auto_source: r.auto_source.map(Into::into),
             published_at_ms: r.published_at_ms,
         }
     }
@@ -271,14 +322,14 @@ impl From<OfflineDownloadSettings> for core::DownloadSettings {
 
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct OfflineAutoDownloadRule {
-    pub source_id: String,
+    pub source: OfflineAutoDownloadSource,
     pub max_episodes: u32,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct OfflineEpisodeCandidate {
     pub video_id: String,
-    pub source_id: String,
+    pub source: OfflineAutoDownloadSource,
     pub published_at_ms: i64,
     pub allow_downloads: bool,
     pub estimated_bytes: Option<u64>,
@@ -287,7 +338,7 @@ pub struct OfflineEpisodeCandidate {
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct OfflineExistingAutoDownload {
     pub video_id: String,
-    pub source_id: String,
+    pub source: OfflineAutoDownloadSource,
     pub published_at_ms: i64,
     pub size_bytes: u64,
 }
@@ -352,7 +403,7 @@ pub fn offline_select_auto_downloads(
     let core_rules: Vec<core::AutoDownloadRule> = rules
         .into_iter()
         .map(|r| core::AutoDownloadRule {
-            source_id: r.source_id,
+            source: r.source.into(),
             max_episodes: r.max_episodes as usize,
         })
         .collect();
@@ -360,7 +411,7 @@ pub fn offline_select_auto_downloads(
         .into_iter()
         .map(|c| core::EpisodeCandidate {
             video_id: c.video_id,
-            source_id: c.source_id,
+            source: c.source.into(),
             published_at_ms: c.published_at_ms,
             allow_downloads: c.allow_downloads,
             estimated_bytes: c.estimated_bytes,
@@ -370,7 +421,7 @@ pub fn offline_select_auto_downloads(
         .into_iter()
         .map(|e| core::ExistingAutoDownload {
             video_id: e.video_id,
-            source_id: e.source_id,
+            source: e.source.into(),
             published_at_ms: e.published_at_ms,
             size_bytes: e.size_bytes,
         })
@@ -611,7 +662,7 @@ impl OfflineDownloadStore {
             .into_iter()
             .map(|e| OfflineExistingAutoDownload {
                 video_id: e.video_id,
-                source_id: e.source_id,
+                source: e.source.into(),
                 published_at_ms: e.published_at_ms,
                 size_bytes: e.size_bytes,
             })

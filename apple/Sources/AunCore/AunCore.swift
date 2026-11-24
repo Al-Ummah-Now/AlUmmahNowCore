@@ -7715,13 +7715,13 @@ public func FfiConverterTypeOfflineAutoDownloadPlan_lower(_ value: OfflineAutoDo
 
 
 public struct OfflineAutoDownloadRule: Equatable, Hashable {
-    public var sourceId: String
+    public var source: OfflineAutoDownloadSource
     public var maxEpisodes: UInt32
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(sourceId: String, maxEpisodes: UInt32) {
-        self.sourceId = sourceId
+    public init(source: OfflineAutoDownloadSource, maxEpisodes: UInt32) {
+        self.source = source
         self.maxEpisodes = maxEpisodes
     }
 
@@ -7741,13 +7741,13 @@ public struct FfiConverterTypeOfflineAutoDownloadRule: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OfflineAutoDownloadRule {
         return
             try OfflineAutoDownloadRule(
-                sourceId: FfiConverterString.read(from: &buf), 
+                source: FfiConverterTypeOfflineAutoDownloadSource.read(from: &buf), 
                 maxEpisodes: FfiConverterUInt32.read(from: &buf)
         )
     }
 
     public static func write(_ value: OfflineAutoDownloadRule, into buf: inout [UInt8]) {
-        FfiConverterString.write(value.sourceId, into: &buf)
+        FfiConverterTypeOfflineAutoDownloadSource.write(value.source, into: &buf)
         FfiConverterUInt32.write(value.maxEpisodes, into: &buf)
     }
 }
@@ -7765,6 +7765,60 @@ public func FfiConverterTypeOfflineAutoDownloadRule_lift(_ buf: RustBuffer) thro
 #endif
 public func FfiConverterTypeOfflineAutoDownloadRule_lower(_ value: OfflineAutoDownloadRule) -> RustBuffer {
     return FfiConverterTypeOfflineAutoDownloadRule.lower(value)
+}
+
+
+public struct OfflineAutoDownloadSource: Equatable, Hashable {
+    public var kind: OfflineAutoSourceKind
+    public var id: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(kind: OfflineAutoSourceKind, id: String) {
+        self.kind = kind
+        self.id = id
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension OfflineAutoDownloadSource: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOfflineAutoDownloadSource: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OfflineAutoDownloadSource {
+        return
+            try OfflineAutoDownloadSource(
+                kind: FfiConverterTypeOfflineAutoSourceKind.read(from: &buf), 
+                id: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: OfflineAutoDownloadSource, into buf: inout [UInt8]) {
+        FfiConverterTypeOfflineAutoSourceKind.write(value.kind, into: &buf)
+        FfiConverterString.write(value.id, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineAutoDownloadSource_lift(_ buf: RustBuffer) throws -> OfflineAutoDownloadSource {
+    return try FfiConverterTypeOfflineAutoDownloadSource.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineAutoDownloadSource_lower(_ value: OfflineAutoDownloadSource) -> RustBuffer {
+    return FfiConverterTypeOfflineAutoDownloadSource.lower(value)
 }
 
 
@@ -7844,11 +7898,12 @@ public struct OfflineDownloadItem: Equatable, Hashable {
     public var lastAccessedAtMs: Int64
     public var reservationId: UInt64
     public var origin: OfflineDownloadOrigin
+    public var autoSource: OfflineAutoDownloadSource?
     public var publishedAtMs: Int64?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(videoId: String, userId: String, rung: String?, title: String, channelId: String?, channelName: String?, thumbnailPath: String?, durationSeconds: UInt64, localPath: String, bytesDownloaded: UInt64, totalBytes: UInt64, status: OfflineDownloadStatus, removedReason: String?, createdAtMs: Int64, lastAccessedAtMs: Int64, reservationId: UInt64, origin: OfflineDownloadOrigin, publishedAtMs: Int64?) {
+    public init(videoId: String, userId: String, rung: String?, title: String, channelId: String?, channelName: String?, thumbnailPath: String?, durationSeconds: UInt64, localPath: String, bytesDownloaded: UInt64, totalBytes: UInt64, status: OfflineDownloadStatus, removedReason: String?, createdAtMs: Int64, lastAccessedAtMs: Int64, reservationId: UInt64, origin: OfflineDownloadOrigin, autoSource: OfflineAutoDownloadSource?, publishedAtMs: Int64?) {
         self.videoId = videoId
         self.userId = userId
         self.rung = rung
@@ -7866,6 +7921,7 @@ public struct OfflineDownloadItem: Equatable, Hashable {
         self.lastAccessedAtMs = lastAccessedAtMs
         self.reservationId = reservationId
         self.origin = origin
+        self.autoSource = autoSource
         self.publishedAtMs = publishedAtMs
     }
 
@@ -7902,6 +7958,7 @@ public struct FfiConverterTypeOfflineDownloadItem: FfiConverterRustBuffer {
                 lastAccessedAtMs: FfiConverterInt64.read(from: &buf), 
                 reservationId: FfiConverterUInt64.read(from: &buf), 
                 origin: FfiConverterTypeOfflineDownloadOrigin.read(from: &buf), 
+                autoSource: FfiConverterOptionTypeOfflineAutoDownloadSource.read(from: &buf), 
                 publishedAtMs: FfiConverterOptionInt64.read(from: &buf)
         )
     }
@@ -7924,6 +7981,7 @@ public struct FfiConverterTypeOfflineDownloadItem: FfiConverterRustBuffer {
         FfiConverterInt64.write(value.lastAccessedAtMs, into: &buf)
         FfiConverterUInt64.write(value.reservationId, into: &buf)
         FfiConverterTypeOfflineDownloadOrigin.write(value.origin, into: &buf)
+        FfiConverterOptionTypeOfflineAutoDownloadSource.write(value.autoSource, into: &buf)
         FfiConverterOptionInt64.write(value.publishedAtMs, into: &buf)
     }
 }
@@ -8066,16 +8124,16 @@ public func FfiConverterTypeOfflineDownloadSettings_lower(_ value: OfflineDownlo
 
 public struct OfflineEpisodeCandidate: Equatable, Hashable {
     public var videoId: String
-    public var sourceId: String
+    public var source: OfflineAutoDownloadSource
     public var publishedAtMs: Int64
     public var allowDownloads: Bool
     public var estimatedBytes: UInt64?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(videoId: String, sourceId: String, publishedAtMs: Int64, allowDownloads: Bool, estimatedBytes: UInt64?) {
+    public init(videoId: String, source: OfflineAutoDownloadSource, publishedAtMs: Int64, allowDownloads: Bool, estimatedBytes: UInt64?) {
         self.videoId = videoId
-        self.sourceId = sourceId
+        self.source = source
         self.publishedAtMs = publishedAtMs
         self.allowDownloads = allowDownloads
         self.estimatedBytes = estimatedBytes
@@ -8098,7 +8156,7 @@ public struct FfiConverterTypeOfflineEpisodeCandidate: FfiConverterRustBuffer {
         return
             try OfflineEpisodeCandidate(
                 videoId: FfiConverterString.read(from: &buf), 
-                sourceId: FfiConverterString.read(from: &buf), 
+                source: FfiConverterTypeOfflineAutoDownloadSource.read(from: &buf), 
                 publishedAtMs: FfiConverterInt64.read(from: &buf), 
                 allowDownloads: FfiConverterBool.read(from: &buf), 
                 estimatedBytes: FfiConverterOptionUInt64.read(from: &buf)
@@ -8107,7 +8165,7 @@ public struct FfiConverterTypeOfflineEpisodeCandidate: FfiConverterRustBuffer {
 
     public static func write(_ value: OfflineEpisodeCandidate, into buf: inout [UInt8]) {
         FfiConverterString.write(value.videoId, into: &buf)
-        FfiConverterString.write(value.sourceId, into: &buf)
+        FfiConverterTypeOfflineAutoDownloadSource.write(value.source, into: &buf)
         FfiConverterInt64.write(value.publishedAtMs, into: &buf)
         FfiConverterBool.write(value.allowDownloads, into: &buf)
         FfiConverterOptionUInt64.write(value.estimatedBytes, into: &buf)
@@ -8132,15 +8190,15 @@ public func FfiConverterTypeOfflineEpisodeCandidate_lower(_ value: OfflineEpisod
 
 public struct OfflineExistingAutoDownload: Equatable, Hashable {
     public var videoId: String
-    public var sourceId: String
+    public var source: OfflineAutoDownloadSource
     public var publishedAtMs: Int64
     public var sizeBytes: UInt64
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(videoId: String, sourceId: String, publishedAtMs: Int64, sizeBytes: UInt64) {
+    public init(videoId: String, source: OfflineAutoDownloadSource, publishedAtMs: Int64, sizeBytes: UInt64) {
         self.videoId = videoId
-        self.sourceId = sourceId
+        self.source = source
         self.publishedAtMs = publishedAtMs
         self.sizeBytes = sizeBytes
     }
@@ -8162,7 +8220,7 @@ public struct FfiConverterTypeOfflineExistingAutoDownload: FfiConverterRustBuffe
         return
             try OfflineExistingAutoDownload(
                 videoId: FfiConverterString.read(from: &buf), 
-                sourceId: FfiConverterString.read(from: &buf), 
+                source: FfiConverterTypeOfflineAutoDownloadSource.read(from: &buf), 
                 publishedAtMs: FfiConverterInt64.read(from: &buf), 
                 sizeBytes: FfiConverterUInt64.read(from: &buf)
         )
@@ -8170,7 +8228,7 @@ public struct FfiConverterTypeOfflineExistingAutoDownload: FfiConverterRustBuffe
 
     public static func write(_ value: OfflineExistingAutoDownload, into buf: inout [UInt8]) {
         FfiConverterString.write(value.videoId, into: &buf)
-        FfiConverterString.write(value.sourceId, into: &buf)
+        FfiConverterTypeOfflineAutoDownloadSource.write(value.source, into: &buf)
         FfiConverterInt64.write(value.publishedAtMs, into: &buf)
         FfiConverterUInt64.write(value.sizeBytes, into: &buf)
     }
@@ -11645,6 +11703,73 @@ public func FfiConverterTypeNotificationMenuOpenMode_lower(_ value: Notification
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
+public enum OfflineAutoSourceKind: Equatable, Hashable {
+    
+    case channel
+    case playlist
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension OfflineAutoSourceKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOfflineAutoSourceKind: FfiConverterRustBuffer {
+    typealias SwiftType = OfflineAutoSourceKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OfflineAutoSourceKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .channel
+        
+        case 2: return .playlist
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: OfflineAutoSourceKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .channel:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .playlist:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineAutoSourceKind_lift(_ buf: RustBuffer) throws -> OfflineAutoSourceKind {
+    return try FfiConverterTypeOfflineAutoSourceKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineAutoSourceKind_lower(_ value: OfflineAutoSourceKind) -> RustBuffer {
+    return FfiConverterTypeOfflineAutoSourceKind.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 public enum OfflineDownloadOrigin: Equatable, Hashable {
     
     case manual
@@ -13669,6 +13794,30 @@ fileprivate struct FfiConverterOptionTypeAccountInfo: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeAccountInfo.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeOfflineAutoDownloadSource: FfiConverterRustBuffer {
+    typealias SwiftType = OfflineAutoDownloadSource?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeOfflineAutoDownloadSource.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeOfflineAutoDownloadSource.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }

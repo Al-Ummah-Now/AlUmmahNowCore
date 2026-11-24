@@ -33,7 +33,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::policy::{
-    DownloadSettings, ExistingAutoDownload, TransferDecision, can_start_download, effective_item_total_bytes,
+    AutoDownloadSource, DownloadSettings, ExistingAutoDownload, TransferDecision, can_start_download,
+    effective_item_total_bytes,
 };
 use crate::{DownloadError, Result};
 
@@ -115,6 +116,11 @@ pub struct DownloadRecord {
     /// Whether the user manually requested this download or auto-download queued it.
     #[serde(default)]
     pub origin: DownloadOrigin,
+    /// Optional auto-download rule source (`channel` or `playlist` + `id`) that queued an `Auto`
+    /// download. Used to count kept auto-downloads per rule without conflating playlists and
+    /// channels.
+    #[serde(default)]
+    pub auto_source: Option<AutoDownloadSource>,
     /// Optional episode publish timestamp (ms since epoch) used for auto-download `max_episodes` ranking.
     #[serde(default)]
     pub published_at_ms: Option<i64>,
@@ -207,13 +213,7 @@ fn validate_and_normalize_relative_path(path: &str, field: &str) -> Result<Strin
         )));
     }
     let lower = trimmed.to_ascii_lowercase();
-    if lower.starts_with("//")
-        || lower.starts_with("http://")
-        || lower.starts_with("https://")
-        || lower.starts_with("ftp://")
-        || lower.starts_with("data:")
-        || lower.starts_with("file://")
-    {
+    if lower.starts_with("//") || has_uri_scheme(trimmed) {
         return Err(DownloadError::InvalidInput(format!(
             "{field} must be a relative local file path, never a remote or signed URL"
         )));
@@ -275,9 +275,23 @@ fn record_reservation_floor(token: u64) {
     RESERVATION_FLOOR.fetch_max(token, Ordering::SeqCst);
 }
 
+/// Returns true if `raw` begins with an RFC 3986 URI scheme of length >= 2 (e.g. `file:/...`,
+/// `file:///...`, `https://...`, `content://...`, `data:...`) or contains `://`.
+/// Single-letter Windows drive prefixes (`C:/...`) have only 1 character before `:` and return false.
 fn has_uri_scheme(raw: &str) -> bool {
-    let lower = raw.to_ascii_lowercase();
-    lower.contains("://") || lower.starts_with("data:")
+    if raw.contains("://") {
+        return true;
+    }
+    let bytes = raw.as_bytes();
+    let Some(colon_idx) = bytes.iter().position(|&b| b == b':') else {
+        return false;
+    };
+    if colon_idx < 2 || !bytes[0].is_ascii_alphabetic() {
+        return false;
+    }
+    bytes[1..colon_idx]
+        .iter()
+        .all(|&b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'-' | b'.'))
 }
 
 fn is_absolute_local_path(raw: &str) -> bool {
@@ -434,10 +448,18 @@ fn quarantine_move(path: &Path) -> Result<PathBuf> {
 /// Preserves a forensic copy of partially-salvaged manifest bytes at a unique
 /// `<path>.corrupt.<ts>[.n]` sibling WITHOUT overwriting `path` first.
 ///
-/// Prefers `std::fs::hard_link` (0 extra disk blocks, works even on a full disk) and falls back to
-/// writing + fsyncing a copy only when hard-linking is unsupported; propagates any error so the
-/// caller never replaces the original manifest without a forensic copy on disk.
+/// Prefers `hard_link` (0 extra disk blocks, works even on a full disk) and falls back to writing
+/// and fsyncing a copy on any hard-link error except `AlreadyExists` (for example Android SELinux
+/// `EACCES` / `PermissionDenied`, `Unsupported`, or `CrossesDevices`). Fails only if the copy
+/// fails too, so the caller never replaces the original manifest without a forensic copy on disk.
 fn preserve_quarantine_copy(path: &Path, raw_bytes: &[u8]) -> Result<PathBuf> {
+    preserve_quarantine_copy_with(path, raw_bytes, |src, dst| std::fs::hard_link(src, dst))
+}
+
+fn preserve_quarantine_copy_with<F>(path: &Path, raw_bytes: &[u8], link_fn: F) -> Result<PathBuf>
+where
+    F: Fn(&Path, &Path) -> std::io::Result<()>,
+{
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis())
@@ -449,7 +471,7 @@ fn preserve_quarantine_copy(path: &Path, raw_bytes: &[u8]) -> Result<PathBuf> {
             PathBuf::from(format!("{}.corrupt.{ts}.{attempt}", path.display()))
         };
         if !candidate.exists() {
-            match std::fs::hard_link(path, &candidate) {
+            match link_fn(path, &candidate) {
                 Ok(()) => {
                     #[cfg(unix)]
                     if let Some(parent) = candidate.parent()
@@ -460,13 +482,12 @@ fn preserve_quarantine_copy(path: &Path, raw_bytes: &[u8]) -> Result<PathBuf> {
                     return Ok(candidate);
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(e)
-                    if matches!(
-                        e.kind(),
-                        std::io::ErrorKind::Unsupported | std::io::ErrorKind::CrossesDevices
-                    ) =>
-                {
-                    let mut file = OpenOptions::new().write(true).create_new(true).open(&candidate)?;
+                Err(_) => {
+                    let mut file = match OpenOptions::new().write(true).create_new(true).open(&candidate) {
+                        Ok(f) => f,
+                        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                        Err(e) => return Err(DownloadError::Io(e)),
+                    };
                     let write_res = file.write_all(raw_bytes).and_then(|()| file.sync_all());
                     drop(file);
                     if let Err(we) = write_res {
@@ -481,7 +502,6 @@ fn preserve_quarantine_copy(path: &Path, raw_bytes: &[u8]) -> Result<PathBuf> {
                     }
                     return Ok(candidate);
                 }
-                Err(e) => return Err(DownloadError::Io(e)),
             }
         }
     }
@@ -949,6 +969,9 @@ impl DownloadStore {
                     }
                     if record.origin == DownloadOrigin::Manual {
                         resumed.origin = DownloadOrigin::Manual;
+                        resumed.auto_source = None;
+                    } else if record.auto_source.is_some() {
+                        resumed.auto_source = record.auto_source;
                     }
                     if record.published_at_ms.is_some() {
                         resumed.published_at_ms = record.published_at_ms;
@@ -967,6 +990,32 @@ impl DownloadStore {
             record.bytes_downloaded = 0;
             record
         };
+
+        let mut merged = merged;
+        if let Some(ref mut src) = merged.auto_source {
+            let trimmed = src.id.trim();
+            if trimmed.is_empty() {
+                return Err(DownloadError::InvalidInput(
+                    "auto_source.id must be non-empty".into(),
+                ));
+            }
+            src.id = trimmed.to_string();
+        }
+        if merged.origin == DownloadOrigin::Auto {
+            let has_valid_source = merged.auto_source.is_some()
+                || merged
+                    .channel_id
+                    .as_deref()
+                    .map(str::trim)
+                    .is_some_and(|s| !s.is_empty());
+            if !has_valid_source {
+                return Err(DownloadError::InvalidInput(
+                    "Auto download requires a non-empty auto_source (or channel_id)".into(),
+                ));
+            }
+        } else {
+            merged.auto_source = None;
+        }
 
         // Refuse local_path / thumbnail_path collisions with any OTHER record (including another
         // account's download or a record pending deletion) so removing one never deletes another's file.
@@ -1219,6 +1268,7 @@ impl DownloadStore {
         let mut draft = self.to_manifest();
         if let Some(rec) = draft.records.get_mut(&key) {
             rec.origin = DownloadOrigin::Manual;
+            rec.auto_source = None;
         }
         persist_manifest(&self.path, &draft)?;
         self.records = draft.records;
@@ -1227,20 +1277,32 @@ impl DownloadStore {
 
     /// Returns the store's active `Auto`-origin downloads for `user_id` formatted for
     /// [`crate::select_auto_downloads`] (so apps do not have to maintain a separate auto-download list).
+    ///
+    /// Counts each kept auto-download under its explicit `auto_source` (rule kind + id) when set,
+    /// falling back to `AutoDownloadSource::channel(channel_id)` for older records that omitted
+    /// `auto_source`.
     pub fn existing_auto_downloads_for_user(&self, user_id: &str) -> Vec<ExistingAutoDownload> {
         self.records
             .values()
-            .filter(|r| {
-                r.user_id == user_id
-                    && r.origin == DownloadOrigin::Auto
-                    && r.is_active()
-                    && r.channel_id.is_some()
-            })
-            .map(|r| ExistingAutoDownload {
-                video_id: r.video_id.clone(),
-                source_id: r.channel_id.clone().unwrap_or_default(),
-                published_at_ms: r.published_at_ms.unwrap_or(r.created_at_ms),
-                size_bytes: r.reserved_bytes(),
+            .filter(|r| r.user_id == user_id && r.origin == DownloadOrigin::Auto && r.is_active())
+            .filter_map(|r| {
+                let source = r
+                    .auto_source
+                    .clone()
+                    .filter(|s| !s.id.trim().is_empty())
+                    .or_else(|| {
+                        r.channel_id
+                            .as_deref()
+                            .map(str::trim)
+                            .filter(|id| !id.is_empty())
+                            .map(AutoDownloadSource::channel)
+                    })?;
+                Some(ExistingAutoDownload {
+                    video_id: r.video_id.clone(),
+                    source,
+                    published_at_ms: r.published_at_ms.unwrap_or(r.created_at_ms),
+                    size_bytes: r.reserved_bytes(),
+                })
             })
             .collect()
     }
@@ -1584,5 +1646,50 @@ impl DownloadStore {
             self.records = draft.records;
         }
         Ok(to_delete)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preserve_quarantine_copy_falls_back_to_copy_on_eacces_hard_link() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let manifest = dir.path().join("manifest.json");
+        let original = br#"{"version":4,"records":{"bad":{"status":"invalid"}}}"#;
+        std::fs::write(&manifest, original).expect("write manifest");
+
+        // Android SELinux denies link(2)/linkat(2) with EACCES (PermissionDenied).
+        // Forensic preservation must fall back to writing an fsynced copy and succeed.
+        let copy_path = preserve_quarantine_copy_with(&manifest, original, |_src, _dst| {
+            #[cfg(unix)]
+            {
+                Err(std::io::Error::from_raw_os_error(13)) // EACCES
+            }
+            #[cfg(not(unix))]
+            {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "EACCES",
+                ))
+            }
+        })
+        .expect("copy fallback must succeed when hard_link fails with EACCES");
+
+        assert!(copy_path.exists());
+        assert_eq!(std::fs::read(&copy_path).expect("read copy"), original);
+        assert_eq!(std::fs::read(&manifest).expect("read manifest"), original);
+    }
+
+    #[test]
+    fn has_uri_scheme_detects_single_slash_file_uri_and_allows_windows_drives() {
+        assert!(has_uri_scheme("file:/var/mobile/downloads/u1/v1.mp4"));
+        assert!(has_uri_scheme("file:///var/mobile/downloads/u1/v1.mp4"));
+        assert!(has_uri_scheme("content://media/external/video/1"));
+        assert!(has_uri_scheme("data:video/mp4;base64,AAAA"));
+        assert!(!has_uri_scheme("C:/Users/me/downloads/u1/v1.mp4"));
+        assert!(!has_uri_scheme("/var/mobile/downloads/u1/v1.mp4"));
+        assert!(!has_uri_scheme("downloads/u1/v1.mp4"));
     }
 }

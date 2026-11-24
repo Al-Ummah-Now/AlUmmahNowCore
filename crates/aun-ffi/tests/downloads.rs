@@ -5,12 +5,13 @@ use std::thread;
 
 use aun_core::{
     ApiClient, ApiClientConfig, AunError, OfflineAutoDownloadPlan, OfflineAutoDownloadRule,
-    OfflineAvailabilityResult, OfflineDownloadItem, OfflineDownloadKey, OfflineDownloadOrigin,
-    OfflineDownloadSettings, OfflineDownloadStatus, OfflineDownloadStore, OfflineEpisodeCandidate,
-    OfflineExistingAutoDownload, OfflineNetworkKind, OfflineRevocationEntry, OfflineSyncEngine,
-    OfflineTransferDecision, OfflineUpdateOutcome, PlayerCommand, PlayerInput, PlayerMachine,
-    PlayerMediaItem, PlayerPlaybackState, PlayerSleepTimer, SyncChangeKind, SyncChangeListener, TokenSource,
-    offline_can_start_download, offline_default_download_settings, offline_select_auto_downloads,
+    OfflineAutoDownloadSource, OfflineAutoSourceKind, OfflineAvailabilityResult, OfflineDownloadItem,
+    OfflineDownloadKey, OfflineDownloadOrigin, OfflineDownloadSettings, OfflineDownloadStatus,
+    OfflineDownloadStore, OfflineEpisodeCandidate, OfflineExistingAutoDownload, OfflineNetworkKind,
+    OfflineRevocationEntry, OfflineSyncEngine, OfflineTransferDecision, OfflineUpdateOutcome, PlayerCommand,
+    PlayerInput, PlayerMachine, PlayerMediaItem, PlayerPlaybackState, PlayerSleepTimer, SyncChangeKind,
+    SyncChangeListener, TokenSource, offline_can_start_download, offline_default_download_settings,
+    offline_select_auto_downloads,
 };
 use tempfile::tempdir;
 use wiremock::matchers::{method, path};
@@ -40,6 +41,7 @@ fn sample_item(
         last_accessed_at_ms: 1_000,
         reservation_id: 0,
         origin: OfflineDownloadOrigin::Manual,
+        auto_source: None,
         published_at_ms: None,
     }
 }
@@ -115,20 +117,24 @@ fn ffi_download_store_revocations_non_revival_reconciliation_and_policy() {
     assert_eq!(decision, OfflineTransferDecision::StorageBudgetExceeded);
 
     // Auto-download enforces Wi-Fi + charging + dismissed + budget guards and returns evictions.
+    let ch1 = OfflineAutoDownloadSource {
+        kind: OfflineAutoSourceKind::Channel,
+        id: "ch-1".into(),
+    };
     let rules = vec![OfflineAutoDownloadRule {
-        source_id: "ch-1".into(),
+        source: ch1.clone(),
         max_episodes: 1,
     }];
     let candidates = vec![OfflineEpisodeCandidate {
         video_id: "vid-2".into(),
-        source_id: "ch-1".into(),
+        source: ch1.clone(),
         published_at_ms: 2_000,
         allow_downloads: true,
         estimated_bytes: Some(150),
     }];
     let existing_auto = vec![OfflineExistingAutoDownload {
         video_id: "vid-old".into(),
-        source_id: "ch-1".into(),
+        source: ch1,
         published_at_ms: 1_000,
         size_bytes: 150,
     }];
