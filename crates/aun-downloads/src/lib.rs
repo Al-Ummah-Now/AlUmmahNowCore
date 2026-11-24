@@ -9,11 +9,13 @@ pub mod policy;
 pub mod store;
 
 pub use policy::{
-    AutoDownloadRule, DEFAULT_MIN_FREE_SPACE_BYTES, DEFAULT_UNKNOWN_ITEM_ESTIMATE_BYTES, DownloadSettings,
-    EpisodeCandidate, TransferDecision, can_start_download, effective_item_bytes, select_auto_downloads,
+    AutoDownloadPlan, AutoDownloadRule, DEFAULT_MIN_FREE_SPACE_BYTES, DEFAULT_UNKNOWN_ITEM_ESTIMATE_BYTES,
+    DownloadSettings, EpisodeCandidate, ExistingAutoDownload, TransferDecision, can_start_download,
+    effective_item_bytes, effective_item_total_bytes, select_auto_downloads,
 };
 pub use store::{
-    AvailabilitySyncResult, DownloadRecord, DownloadStatus, DownloadStore, RevocationEntry, UpdateOutcome,
+    AvailabilitySyncResult, DownloadRecord, DownloadStatus, DownloadStore, ReserveResult, RevocationEntry,
+    UpdateOutcome,
 };
 
 #[derive(Debug, thiserror::Error)]

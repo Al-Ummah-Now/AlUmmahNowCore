@@ -52,6 +52,7 @@ aun-upload = { workspace = true, features = ["watch"] }
 [dev-dependencies]
 tokio = { workspace = true }
 tempfile = "3"
+wiremock = { workspace = true }
 
 [lints.rust]
 missing_debug_implementations = "warn"

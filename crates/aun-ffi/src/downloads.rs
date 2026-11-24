@@ -1,7 +1,8 @@
 //! UniFFI facade for `aun-downloads` (Epic 14, E14-D1/D2/D5/D8: plain-file `(user_id, video_id)`
-//! manifest store with exclusive lock, non-revivable two-phase deletion, revocations feed cursor &
-//! purge, quarantine reconciliation, atomic budget reservation, Wi-Fi/charging policy, availability
-//! sync cleanup, and per-channel auto-download selection).
+//! manifest store with exclusive lock, non-revivable two-phase deletion, monotonic reservation
+//! tokens, revocations feed cursor & purge, quarantine salvage & container-safe relative-path
+//! reconciliation, atomic budget + free-space reserve accounting, Wi-Fi/charging policy,
+//! availability sync cleanup, and per-channel auto-download selection & eviction).
 
 use std::collections::{BTreeMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -61,6 +62,8 @@ impl From<core::DownloadStatus> for OfflineDownloadStatus {
 pub enum OfflineUpdateOutcome {
     Updated,
     RemovedOrMissing,
+    StaleReservation,
+    AlreadyTerminal,
 }
 
 impl From<core::UpdateOutcome> for OfflineUpdateOutcome {
@@ -68,6 +71,8 @@ impl From<core::UpdateOutcome> for OfflineUpdateOutcome {
         match o {
             core::UpdateOutcome::Updated => Self::Updated,
             core::UpdateOutcome::RemovedOrMissing => Self::RemovedOrMissing,
+            core::UpdateOutcome::StaleReservation => Self::StaleReservation,
+            core::UpdateOutcome::AlreadyTerminal => Self::AlreadyTerminal,
         }
     }
 }
@@ -112,6 +117,21 @@ impl From<core::TransferDecision> for OfflineTransferDecision {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct OfflineReserveResult {
+    pub decision: OfflineTransferDecision,
+    pub reservation_id: Option<u64>,
+}
+
+impl From<core::ReserveResult> for OfflineReserveResult {
+    fn from(r: core::ReserveResult) -> Self {
+        Self {
+            decision: r.decision.into(),
+            reservation_id: r.reservation_id,
+        }
+    }
+}
+
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct OfflineDownloadItem {
     pub video_id: String,
@@ -129,6 +149,7 @@ pub struct OfflineDownloadItem {
     pub removed_reason: Option<String>,
     pub created_at_ms: i64,
     pub last_accessed_at_ms: i64,
+    pub reservation_id: u64,
 }
 
 impl From<OfflineDownloadItem> for core::DownloadRecord {
@@ -149,6 +170,7 @@ impl From<OfflineDownloadItem> for core::DownloadRecord {
             removed_reason: r.removed_reason,
             created_at_ms: r.created_at_ms,
             last_accessed_at_ms: r.last_accessed_at_ms,
+            reservation_id: r.reservation_id,
             extra: BTreeMap::new(),
         }
     }
@@ -172,6 +194,7 @@ impl From<core::DownloadRecord> for OfflineDownloadItem {
             removed_reason: r.removed_reason,
             created_at_ms: r.created_at_ms,
             last_accessed_at_ms: r.last_accessed_at_ms,
+            reservation_id: r.reservation_id,
         }
     }
 }
@@ -231,6 +254,19 @@ pub struct OfflineEpisodeCandidate {
     pub estimated_bytes: Option<u64>,
 }
 
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct OfflineExistingAutoDownload {
+    pub video_id: String,
+    pub source_id: String,
+    pub published_at_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct OfflineAutoDownloadPlan {
+    pub to_download: Vec<String>,
+    pub to_evict: Vec<String>,
+}
+
 #[uniffi::export]
 pub fn offline_default_download_settings() -> OfflineDownloadSettings {
     let d = core::DownloadSettings::default();
@@ -244,18 +280,23 @@ pub fn offline_default_download_settings() -> OfflineDownloadSettings {
 }
 
 #[uniffi::export]
+#[allow(clippy::too_many_arguments)]
 pub fn offline_can_start_download(
     settings: OfflineDownloadSettings,
     network: OfflineNetworkKind,
     used_bytes: u64,
-    item_bytes: u64,
+    pending_remaining_bytes: u64,
+    item_total_bytes: u64,
+    item_downloaded_bytes: u64,
     available_disk_bytes: Option<u64>,
 ) -> OfflineTransferDecision {
     core::can_start_download(
         &settings.into(),
         network.into(),
         used_bytes,
-        item_bytes,
+        pending_remaining_bytes,
+        item_total_bytes,
+        item_downloaded_bytes,
         available_disk_bytes,
     )
     .into()
@@ -268,12 +309,14 @@ pub fn offline_select_auto_downloads(
     network: OfflineNetworkKind,
     is_charging: bool,
     used_bytes: u64,
+    pending_remaining_bytes: u64,
     available_disk_bytes: Option<u64>,
     rules: Vec<OfflineAutoDownloadRule>,
     candidates: Vec<OfflineEpisodeCandidate>,
     existing_video_ids: Vec<String>,
+    existing_auto_downloads: Vec<OfflineExistingAutoDownload>,
     dismissed_video_ids: Vec<String>,
-) -> Vec<String> {
+) -> OfflineAutoDownloadPlan {
     let core_settings: core::DownloadSettings = settings.into();
     let core_rules: Vec<core::AutoDownloadRule> = rules
         .into_iter()
@@ -292,19 +335,33 @@ pub fn offline_select_auto_downloads(
             estimated_bytes: c.estimated_bytes,
         })
         .collect();
+    let core_existing_auto: Vec<core::ExistingAutoDownload> = existing_auto_downloads
+        .into_iter()
+        .map(|e| core::ExistingAutoDownload {
+            video_id: e.video_id,
+            source_id: e.source_id,
+            published_at_ms: e.published_at_ms,
+        })
+        .collect();
     let existing: HashSet<String> = existing_video_ids.into_iter().collect();
     let dismissed: HashSet<String> = dismissed_video_ids.into_iter().collect();
-    core::select_auto_downloads(
+    let plan = core::select_auto_downloads(
         &core_settings,
         network.into(),
         is_charging,
         used_bytes,
+        pending_remaining_bytes,
         available_disk_bytes,
         &core_rules,
         &core_candidates,
         &existing,
+        &core_existing_auto,
         &dismissed,
-    )
+    );
+    OfflineAutoDownloadPlan {
+        to_download: plan.to_download,
+        to_evict: plan.to_evict,
+    }
 }
 
 /// Thread-safe handle to the persistent plain-file offline download manifest keyed by `(user_id, video_id)`.
@@ -337,11 +394,15 @@ impl OfflineDownloadStore {
         Ok(guard.needs_disk_reconciliation())
     }
 
-    pub fn reconcile_orphaned_paths(&self, disk_paths: Vec<String>) -> Result<Vec<String>, AunError> {
+    pub fn reconcile_orphaned_paths(
+        &self,
+        download_root: String,
+        disk_paths: Vec<String>,
+    ) -> Result<Vec<String>, AunError> {
         let guard = self.inner.lock().map_err(|_| AunError::Storage {
             detail: "download store lock poisoned".into(),
         })?;
-        Ok(guard.reconcile_orphaned_paths(&disk_paths))
+        Ok(guard.reconcile_orphaned_paths(&download_root, &disk_paths))
     }
 
     pub fn mark_reconciled(&self) -> Result<(), AunError> {
@@ -365,15 +426,16 @@ impl OfflineDownloadStore {
         Ok(guard.is_playable_offline(&user_id, &video_id))
     }
 
-    /// Atomically checks network + storage cap / free-space reserve (excluding this item's own
-    /// reservation) and persists the record on `Allow`. Refuses to create over a `Removed` record.
+    /// Atomically checks network + storage cap + free-space reserve (accounting for other
+    /// unfinished downloads and excluding this item's own reservation / already-downloaded bytes on
+    /// resume) and persists the record with a fresh monotonic `reservation_id`.
     pub fn try_reserve(
         &self,
         item: OfflineDownloadItem,
         settings: OfflineDownloadSettings,
         network: OfflineNetworkKind,
         available_disk_bytes: Option<u64>,
-    ) -> Result<OfflineTransferDecision, AunError> {
+    ) -> Result<OfflineReserveResult, AunError> {
         let mut guard = self.inner.lock().map_err(|_| AunError::Storage {
             detail: "download store lock poisoned".into(),
         })?;
@@ -392,6 +454,7 @@ impl OfflineDownloadStore {
         &self,
         user_id: String,
         video_id: String,
+        reservation_id: u64,
         bytes_downloaded: u64,
         total_bytes: u64,
         now_ms: i64,
@@ -400,7 +463,14 @@ impl OfflineDownloadStore {
             detail: "download store lock poisoned".into(),
         })?;
         guard
-            .update_progress(&user_id, &video_id, bytes_downloaded, total_bytes, now_ms)
+            .update_progress(
+                &user_id,
+                &video_id,
+                reservation_id,
+                bytes_downloaded,
+                total_bytes,
+                now_ms,
+            )
             .map(Into::into)
             .map_err(map_err)
     }
@@ -409,6 +479,7 @@ impl OfflineDownloadStore {
         &self,
         user_id: String,
         video_id: String,
+        reservation_id: u64,
         final_bytes: u64,
         now_ms: i64,
     ) -> Result<OfflineUpdateOutcome, AunError> {
@@ -416,7 +487,7 @@ impl OfflineDownloadStore {
             detail: "download store lock poisoned".into(),
         })?;
         guard
-            .mark_completed(&user_id, &video_id, final_bytes, now_ms)
+            .mark_completed(&user_id, &video_id, reservation_id, final_bytes, now_ms)
             .map(Into::into)
             .map_err(map_err)
     }
@@ -425,13 +496,14 @@ impl OfflineDownloadStore {
         &self,
         user_id: String,
         video_id: String,
+        reservation_id: u64,
         now_ms: i64,
     ) -> Result<OfflineUpdateOutcome, AunError> {
         let mut guard = self.inner.lock().map_err(|_| AunError::Storage {
             detail: "download store lock poisoned".into(),
         })?;
         guard
-            .mark_downloading(&user_id, &video_id, now_ms)
+            .mark_downloading(&user_id, &video_id, reservation_id, now_ms)
             .map(Into::into)
             .map_err(map_err)
     }
@@ -440,13 +512,14 @@ impl OfflineDownloadStore {
         &self,
         user_id: String,
         video_id: String,
+        reservation_id: u64,
         now_ms: i64,
     ) -> Result<OfflineUpdateOutcome, AunError> {
         let mut guard = self.inner.lock().map_err(|_| AunError::Storage {
             detail: "download store lock poisoned".into(),
         })?;
         guard
-            .mark_paused(&user_id, &video_id, now_ms)
+            .mark_paused(&user_id, &video_id, reservation_id, now_ms)
             .map(Into::into)
             .map_err(map_err)
     }
@@ -455,13 +528,29 @@ impl OfflineDownloadStore {
         &self,
         user_id: String,
         video_id: String,
+        reservation_id: u64,
         now_ms: i64,
     ) -> Result<OfflineUpdateOutcome, AunError> {
         let mut guard = self.inner.lock().map_err(|_| AunError::Storage {
             detail: "download store lock poisoned".into(),
         })?;
         guard
-            .mark_failed(&user_id, &video_id, now_ms)
+            .mark_failed(&user_id, &video_id, reservation_id, now_ms)
+            .map(Into::into)
+            .map_err(map_err)
+    }
+
+    pub fn set_thumbnail_path(
+        &self,
+        user_id: String,
+        video_id: String,
+        thumbnail_path: String,
+    ) -> Result<OfflineUpdateOutcome, AunError> {
+        let mut guard = self.inner.lock().map_err(|_| AunError::Storage {
+            detail: "download store lock poisoned".into(),
+        })?;
+        guard
+            .set_thumbnail_path(&user_id, &video_id, &thumbnail_path)
             .map(Into::into)
             .map_err(map_err)
     }
@@ -599,6 +688,13 @@ impl OfflineDownloadStore {
             detail: "download store lock poisoned".into(),
         })?;
         Ok(guard.total_bytes())
+    }
+
+    pub fn pending_remaining_bytes(&self) -> Result<u64, AunError> {
+        let guard = self.inner.lock().map_err(|_| AunError::Storage {
+            detail: "download store lock poisoned".into(),
+        })?;
+        Ok(guard.pending_remaining_bytes())
     }
 
     pub fn purge_inactive(&self) -> Result<Vec<OfflineDownloadItem>, AunError> {

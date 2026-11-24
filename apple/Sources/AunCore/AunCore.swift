@@ -2665,13 +2665,13 @@ public protocol OfflineDownloadStoreProtocol: AnyObject, Sendable {
     
     func listForUser(userId: String) throws  -> [OfflineDownloadItem]
     
-    func markCompleted(userId: String, videoId: String, finalBytes: UInt64, nowMs: Int64) throws  -> OfflineUpdateOutcome
+    func markCompleted(userId: String, videoId: String, reservationId: UInt64, finalBytes: UInt64, nowMs: Int64) throws  -> OfflineUpdateOutcome
     
-    func markDownloading(userId: String, videoId: String, nowMs: Int64) throws  -> OfflineUpdateOutcome
+    func markDownloading(userId: String, videoId: String, reservationId: UInt64, nowMs: Int64) throws  -> OfflineUpdateOutcome
     
-    func markFailed(userId: String, videoId: String, nowMs: Int64) throws  -> OfflineUpdateOutcome
+    func markFailed(userId: String, videoId: String, reservationId: UInt64, nowMs: Int64) throws  -> OfflineUpdateOutcome
     
-    func markPaused(userId: String, videoId: String, nowMs: Int64) throws  -> OfflineUpdateOutcome
+    func markPaused(userId: String, videoId: String, reservationId: UInt64, nowMs: Int64) throws  -> OfflineUpdateOutcome
     
     func markReconciled() throws 
     
@@ -2679,23 +2679,28 @@ public protocol OfflineDownloadStoreProtocol: AnyObject, Sendable {
     
     func pendingDeletions() throws  -> [OfflineDownloadItem]
     
+    func pendingRemainingBytes() throws  -> UInt64
+    
     func purgeInactive() throws  -> [OfflineDownloadItem]
     
-    func reconcileOrphanedPaths(diskPaths: [String]) throws  -> [String]
+    func reconcileOrphanedPaths(downloadRoot: String, diskPaths: [String]) throws  -> [String]
     
     func remove(userId: String, videoId: String) throws  -> OfflineDownloadItem?
     
     func revocationsCursor() throws  -> UInt64
     
+    func setThumbnailPath(userId: String, videoId: String, thumbnailPath: String) throws  -> OfflineUpdateOutcome
+    
     func totalBytes() throws  -> UInt64
     
     /**
-     * Atomically checks network + storage cap / free-space reserve (excluding this item's own
-     * reservation) and persists the record on `Allow`. Refuses to create over a `Removed` record.
+     * Atomically checks network + storage cap + free-space reserve (accounting for other
+     * unfinished downloads and excluding this item's own reservation / already-downloaded bytes on
+     * resume) and persists the record with a fresh monotonic `reservation_id`.
      */
-    func tryReserve(item: OfflineDownloadItem, settings: OfflineDownloadSettings, network: OfflineNetworkKind, availableDiskBytes: UInt64?) throws  -> OfflineTransferDecision
+    func tryReserve(item: OfflineDownloadItem, settings: OfflineDownloadSettings, network: OfflineNetworkKind, availableDiskBytes: UInt64?) throws  -> OfflineReserveResult
     
-    func updateProgress(userId: String, videoId: String, bytesDownloaded: UInt64, totalBytes: UInt64, nowMs: Int64) throws  -> OfflineUpdateOutcome
+    func updateProgress(userId: String, videoId: String, reservationId: UInt64, bytesDownloaded: UInt64, totalBytes: UInt64, nowMs: Int64) throws  -> OfflineUpdateOutcome
     
 }
 /**
@@ -2879,46 +2884,50 @@ open func listForUser(userId: String)throws  -> [OfflineDownloadItem]  {
 })
 }
     
-open func markCompleted(userId: String, videoId: String, finalBytes: UInt64, nowMs: Int64)throws  -> OfflineUpdateOutcome  {
+open func markCompleted(userId: String, videoId: String, reservationId: UInt64, finalBytes: UInt64, nowMs: Int64)throws  -> OfflineUpdateOutcome  {
     return try  FfiConverterTypeOfflineUpdateOutcome_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
     uniffi_aun_core_fn_method_offlinedownloadstore_mark_completed(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(userId),
         FfiConverterString.lower(videoId),
+        FfiConverterUInt64.lower(reservationId),
         FfiConverterUInt64.lower(finalBytes),
         FfiConverterInt64.lower(nowMs),$0
     )
 })
 }
     
-open func markDownloading(userId: String, videoId: String, nowMs: Int64)throws  -> OfflineUpdateOutcome  {
+open func markDownloading(userId: String, videoId: String, reservationId: UInt64, nowMs: Int64)throws  -> OfflineUpdateOutcome  {
     return try  FfiConverterTypeOfflineUpdateOutcome_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
     uniffi_aun_core_fn_method_offlinedownloadstore_mark_downloading(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(userId),
         FfiConverterString.lower(videoId),
+        FfiConverterUInt64.lower(reservationId),
         FfiConverterInt64.lower(nowMs),$0
     )
 })
 }
     
-open func markFailed(userId: String, videoId: String, nowMs: Int64)throws  -> OfflineUpdateOutcome  {
+open func markFailed(userId: String, videoId: String, reservationId: UInt64, nowMs: Int64)throws  -> OfflineUpdateOutcome  {
     return try  FfiConverterTypeOfflineUpdateOutcome_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
     uniffi_aun_core_fn_method_offlinedownloadstore_mark_failed(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(userId),
         FfiConverterString.lower(videoId),
+        FfiConverterUInt64.lower(reservationId),
         FfiConverterInt64.lower(nowMs),$0
     )
 })
 }
     
-open func markPaused(userId: String, videoId: String, nowMs: Int64)throws  -> OfflineUpdateOutcome  {
+open func markPaused(userId: String, videoId: String, reservationId: UInt64, nowMs: Int64)throws  -> OfflineUpdateOutcome  {
     return try  FfiConverterTypeOfflineUpdateOutcome_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
     uniffi_aun_core_fn_method_offlinedownloadstore_mark_paused(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(userId),
         FfiConverterString.lower(videoId),
+        FfiConverterUInt64.lower(reservationId),
         FfiConverterInt64.lower(nowMs),$0
     )
 })
@@ -2947,6 +2956,14 @@ open func pendingDeletions()throws  -> [OfflineDownloadItem]  {
 })
 }
     
+open func pendingRemainingBytes()throws  -> UInt64  {
+    return try  FfiConverterUInt64.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_pending_remaining_bytes(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
 open func purgeInactive()throws  -> [OfflineDownloadItem]  {
     return try  FfiConverterSequenceTypeOfflineDownloadItem.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
     uniffi_aun_core_fn_method_offlinedownloadstore_purge_inactive(
@@ -2955,10 +2972,11 @@ open func purgeInactive()throws  -> [OfflineDownloadItem]  {
 })
 }
     
-open func reconcileOrphanedPaths(diskPaths: [String])throws  -> [String]  {
+open func reconcileOrphanedPaths(downloadRoot: String, diskPaths: [String])throws  -> [String]  {
     return try  FfiConverterSequenceString.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
     uniffi_aun_core_fn_method_offlinedownloadstore_reconcile_orphaned_paths(
             self.uniffiCloneHandle(),
+        FfiConverterString.lower(downloadRoot),
         FfiConverterSequenceString.lower(diskPaths),$0
     )
 })
@@ -2982,6 +3000,17 @@ open func revocationsCursor()throws  -> UInt64  {
 })
 }
     
+open func setThumbnailPath(userId: String, videoId: String, thumbnailPath: String)throws  -> OfflineUpdateOutcome  {
+    return try  FfiConverterTypeOfflineUpdateOutcome_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_set_thumbnail_path(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(userId),
+        FfiConverterString.lower(videoId),
+        FfiConverterString.lower(thumbnailPath),$0
+    )
+})
+}
+    
 open func totalBytes()throws  -> UInt64  {
     return try  FfiConverterUInt64.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
     uniffi_aun_core_fn_method_offlinedownloadstore_total_bytes(
@@ -2991,11 +3020,12 @@ open func totalBytes()throws  -> UInt64  {
 }
     
     /**
-     * Atomically checks network + storage cap / free-space reserve (excluding this item's own
-     * reservation) and persists the record on `Allow`. Refuses to create over a `Removed` record.
+     * Atomically checks network + storage cap + free-space reserve (accounting for other
+     * unfinished downloads and excluding this item's own reservation / already-downloaded bytes on
+     * resume) and persists the record with a fresh monotonic `reservation_id`.
      */
-open func tryReserve(item: OfflineDownloadItem, settings: OfflineDownloadSettings, network: OfflineNetworkKind, availableDiskBytes: UInt64?)throws  -> OfflineTransferDecision  {
-    return try  FfiConverterTypeOfflineTransferDecision_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+open func tryReserve(item: OfflineDownloadItem, settings: OfflineDownloadSettings, network: OfflineNetworkKind, availableDiskBytes: UInt64?)throws  -> OfflineReserveResult  {
+    return try  FfiConverterTypeOfflineReserveResult_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
     uniffi_aun_core_fn_method_offlinedownloadstore_try_reserve(
             self.uniffiCloneHandle(),
         FfiConverterTypeOfflineDownloadItem_lower(item),
@@ -3006,12 +3036,13 @@ open func tryReserve(item: OfflineDownloadItem, settings: OfflineDownloadSetting
 })
 }
     
-open func updateProgress(userId: String, videoId: String, bytesDownloaded: UInt64, totalBytes: UInt64, nowMs: Int64)throws  -> OfflineUpdateOutcome  {
+open func updateProgress(userId: String, videoId: String, reservationId: UInt64, bytesDownloaded: UInt64, totalBytes: UInt64, nowMs: Int64)throws  -> OfflineUpdateOutcome  {
     return try  FfiConverterTypeOfflineUpdateOutcome_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
     uniffi_aun_core_fn_method_offlinedownloadstore_update_progress(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(userId),
         FfiConverterString.lower(videoId),
+        FfiConverterUInt64.lower(reservationId),
         FfiConverterUInt64.lower(bytesDownloaded),
         FfiConverterUInt64.lower(totalBytes),
         FfiConverterInt64.lower(nowMs),$0
@@ -7606,6 +7637,60 @@ public func FfiConverterTypeNotificationSettings_lower(_ value: NotificationSett
 }
 
 
+public struct OfflineAutoDownloadPlan: Equatable, Hashable {
+    public var toDownload: [String]
+    public var toEvict: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(toDownload: [String], toEvict: [String]) {
+        self.toDownload = toDownload
+        self.toEvict = toEvict
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension OfflineAutoDownloadPlan: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOfflineAutoDownloadPlan: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OfflineAutoDownloadPlan {
+        return
+            try OfflineAutoDownloadPlan(
+                toDownload: FfiConverterSequenceString.read(from: &buf), 
+                toEvict: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: OfflineAutoDownloadPlan, into buf: inout [UInt8]) {
+        FfiConverterSequenceString.write(value.toDownload, into: &buf)
+        FfiConverterSequenceString.write(value.toEvict, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineAutoDownloadPlan_lift(_ buf: RustBuffer) throws -> OfflineAutoDownloadPlan {
+    return try FfiConverterTypeOfflineAutoDownloadPlan.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineAutoDownloadPlan_lower(_ value: OfflineAutoDownloadPlan) -> RustBuffer {
+    return FfiConverterTypeOfflineAutoDownloadPlan.lower(value)
+}
+
+
 public struct OfflineAutoDownloadRule: Equatable, Hashable {
     public var sourceId: String
     public var maxEpisodes: UInt32
@@ -7734,10 +7819,11 @@ public struct OfflineDownloadItem: Equatable, Hashable {
     public var removedReason: String?
     public var createdAtMs: Int64
     public var lastAccessedAtMs: Int64
+    public var reservationId: UInt64
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(videoId: String, userId: String, rung: String?, title: String, channelId: String?, channelName: String?, thumbnailPath: String?, durationSeconds: UInt64, localPath: String, bytesDownloaded: UInt64, totalBytes: UInt64, status: OfflineDownloadStatus, removedReason: String?, createdAtMs: Int64, lastAccessedAtMs: Int64) {
+    public init(videoId: String, userId: String, rung: String?, title: String, channelId: String?, channelName: String?, thumbnailPath: String?, durationSeconds: UInt64, localPath: String, bytesDownloaded: UInt64, totalBytes: UInt64, status: OfflineDownloadStatus, removedReason: String?, createdAtMs: Int64, lastAccessedAtMs: Int64, reservationId: UInt64) {
         self.videoId = videoId
         self.userId = userId
         self.rung = rung
@@ -7753,6 +7839,7 @@ public struct OfflineDownloadItem: Equatable, Hashable {
         self.removedReason = removedReason
         self.createdAtMs = createdAtMs
         self.lastAccessedAtMs = lastAccessedAtMs
+        self.reservationId = reservationId
     }
 
     
@@ -7785,7 +7872,8 @@ public struct FfiConverterTypeOfflineDownloadItem: FfiConverterRustBuffer {
                 status: FfiConverterTypeOfflineDownloadStatus.read(from: &buf), 
                 removedReason: FfiConverterOptionString.read(from: &buf), 
                 createdAtMs: FfiConverterInt64.read(from: &buf), 
-                lastAccessedAtMs: FfiConverterInt64.read(from: &buf)
+                lastAccessedAtMs: FfiConverterInt64.read(from: &buf), 
+                reservationId: FfiConverterUInt64.read(from: &buf)
         )
     }
 
@@ -7805,6 +7893,7 @@ public struct FfiConverterTypeOfflineDownloadItem: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.removedReason, into: &buf)
         FfiConverterInt64.write(value.createdAtMs, into: &buf)
         FfiConverterInt64.write(value.lastAccessedAtMs, into: &buf)
+        FfiConverterUInt64.write(value.reservationId, into: &buf)
     }
 }
 
@@ -8007,6 +8096,118 @@ public func FfiConverterTypeOfflineEpisodeCandidate_lift(_ buf: RustBuffer) thro
 #endif
 public func FfiConverterTypeOfflineEpisodeCandidate_lower(_ value: OfflineEpisodeCandidate) -> RustBuffer {
     return FfiConverterTypeOfflineEpisodeCandidate.lower(value)
+}
+
+
+public struct OfflineExistingAutoDownload: Equatable, Hashable {
+    public var videoId: String
+    public var sourceId: String
+    public var publishedAtMs: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(videoId: String, sourceId: String, publishedAtMs: Int64) {
+        self.videoId = videoId
+        self.sourceId = sourceId
+        self.publishedAtMs = publishedAtMs
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension OfflineExistingAutoDownload: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOfflineExistingAutoDownload: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OfflineExistingAutoDownload {
+        return
+            try OfflineExistingAutoDownload(
+                videoId: FfiConverterString.read(from: &buf), 
+                sourceId: FfiConverterString.read(from: &buf), 
+                publishedAtMs: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: OfflineExistingAutoDownload, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.videoId, into: &buf)
+        FfiConverterString.write(value.sourceId, into: &buf)
+        FfiConverterInt64.write(value.publishedAtMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineExistingAutoDownload_lift(_ buf: RustBuffer) throws -> OfflineExistingAutoDownload {
+    return try FfiConverterTypeOfflineExistingAutoDownload.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineExistingAutoDownload_lower(_ value: OfflineExistingAutoDownload) -> RustBuffer {
+    return FfiConverterTypeOfflineExistingAutoDownload.lower(value)
+}
+
+
+public struct OfflineReserveResult: Equatable, Hashable {
+    public var decision: OfflineTransferDecision
+    public var reservationId: UInt64?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(decision: OfflineTransferDecision, reservationId: UInt64?) {
+        self.decision = decision
+        self.reservationId = reservationId
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension OfflineReserveResult: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOfflineReserveResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OfflineReserveResult {
+        return
+            try OfflineReserveResult(
+                decision: FfiConverterTypeOfflineTransferDecision.read(from: &buf), 
+                reservationId: FfiConverterOptionUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: OfflineReserveResult, into buf: inout [UInt8]) {
+        FfiConverterTypeOfflineTransferDecision.write(value.decision, into: &buf)
+        FfiConverterOptionUInt64.write(value.reservationId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineReserveResult_lift(_ buf: RustBuffer) throws -> OfflineReserveResult {
+    return try FfiConverterTypeOfflineReserveResult.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineReserveResult_lower(_ value: OfflineReserveResult) -> RustBuffer {
+    return FfiConverterTypeOfflineReserveResult.lower(value)
 }
 
 
@@ -11677,6 +11878,8 @@ public enum OfflineUpdateOutcome: Equatable, Hashable {
     
     case updated
     case removedOrMissing
+    case staleReservation
+    case alreadyTerminal
 
 
 
@@ -11702,6 +11905,10 @@ public struct FfiConverterTypeOfflineUpdateOutcome: FfiConverterRustBuffer {
         
         case 2: return .removedOrMissing
         
+        case 3: return .staleReservation
+        
+        case 4: return .alreadyTerminal
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
@@ -11716,6 +11923,14 @@ public struct FfiConverterTypeOfflineUpdateOutcome: FfiConverterRustBuffer {
         
         case .removedOrMissing:
             writeInt(&buf, Int32(2))
+        
+        
+        case .staleReservation:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .alreadyTerminal:
+            writeInt(&buf, Int32(4))
         
         }
     }
@@ -14002,6 +14217,31 @@ fileprivate struct FfiConverterSequenceTypeOfflineEpisodeCandidate: FfiConverter
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeOfflineExistingAutoDownload: FfiConverterRustBuffer {
+    typealias SwiftType = [OfflineExistingAutoDownload]
+
+    public static func write(_ value: [OfflineExistingAutoDownload], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeOfflineExistingAutoDownload.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [OfflineExistingAutoDownload] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [OfflineExistingAutoDownload]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeOfflineExistingAutoDownload.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeOfflineRevocationEntry: FfiConverterRustBuffer {
     typealias SwiftType = [OfflineRevocationEntry]
 
@@ -14750,13 +14990,15 @@ public func selftestThrow(kind: String)throws   {try rustCallWithError(FfiConver
     )
 }
 }
-public func offlineCanStartDownload(settings: OfflineDownloadSettings, network: OfflineNetworkKind, usedBytes: UInt64, itemBytes: UInt64, availableDiskBytes: UInt64?) -> OfflineTransferDecision  {
+public func offlineCanStartDownload(settings: OfflineDownloadSettings, network: OfflineNetworkKind, usedBytes: UInt64, pendingRemainingBytes: UInt64, itemTotalBytes: UInt64, itemDownloadedBytes: UInt64, availableDiskBytes: UInt64?) -> OfflineTransferDecision  {
     return try!  FfiConverterTypeOfflineTransferDecision_lift(try! rustCall() {
     uniffi_aun_core_fn_func_offline_can_start_download(
         FfiConverterTypeOfflineDownloadSettings_lower(settings),
         FfiConverterTypeOfflineNetworkKind_lower(network),
         FfiConverterUInt64.lower(usedBytes),
-        FfiConverterUInt64.lower(itemBytes),
+        FfiConverterUInt64.lower(pendingRemainingBytes),
+        FfiConverterUInt64.lower(itemTotalBytes),
+        FfiConverterUInt64.lower(itemDownloadedBytes),
         FfiConverterOptionUInt64.lower(availableDiskBytes),$0
     )
 })
@@ -14767,17 +15009,19 @@ public func offlineDefaultDownloadSettings() -> OfflineDownloadSettings  {
     )
 })
 }
-public func offlineSelectAutoDownloads(settings: OfflineDownloadSettings, network: OfflineNetworkKind, isCharging: Bool, usedBytes: UInt64, availableDiskBytes: UInt64?, rules: [OfflineAutoDownloadRule], candidates: [OfflineEpisodeCandidate], existingVideoIds: [String], dismissedVideoIds: [String]) -> [String]  {
-    return try!  FfiConverterSequenceString.lift(try! rustCall() {
+public func offlineSelectAutoDownloads(settings: OfflineDownloadSettings, network: OfflineNetworkKind, isCharging: Bool, usedBytes: UInt64, pendingRemainingBytes: UInt64, availableDiskBytes: UInt64?, rules: [OfflineAutoDownloadRule], candidates: [OfflineEpisodeCandidate], existingVideoIds: [String], existingAutoDownloads: [OfflineExistingAutoDownload], dismissedVideoIds: [String]) -> OfflineAutoDownloadPlan  {
+    return try!  FfiConverterTypeOfflineAutoDownloadPlan_lift(try! rustCall() {
     uniffi_aun_core_fn_func_offline_select_auto_downloads(
         FfiConverterTypeOfflineDownloadSettings_lower(settings),
         FfiConverterTypeOfflineNetworkKind_lower(network),
         FfiConverterBool.lower(isCharging),
         FfiConverterUInt64.lower(usedBytes),
+        FfiConverterUInt64.lower(pendingRemainingBytes),
         FfiConverterOptionUInt64.lower(availableDiskBytes),
         FfiConverterSequenceTypeOfflineAutoDownloadRule.lower(rules),
         FfiConverterSequenceTypeOfflineEpisodeCandidate.lower(candidates),
         FfiConverterSequenceString.lower(existingVideoIds),
+        FfiConverterSequenceTypeOfflineExistingAutoDownload.lower(existingAutoDownloads),
         FfiConverterSequenceString.lower(dismissedVideoIds),$0
     )
 })
@@ -15334,13 +15578,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_func_selftest_throw() != 9695) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_aun_core_checksum_func_offline_can_start_download() != 37661) {
+    if (uniffi_aun_core_checksum_func_offline_can_start_download() != 56973) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_func_offline_default_download_settings() != 50332) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_aun_core_checksum_func_offline_select_auto_downloads() != 40617) {
+    if (uniffi_aun_core_checksum_func_offline_select_auto_downloads() != 47427) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_func_edl_apply_json() != 18840) {
@@ -15652,16 +15896,16 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_method_offlinedownloadstore_list_for_user() != 38539) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_aun_core_checksum_method_offlinedownloadstore_mark_completed() != 26548) {
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_mark_completed() != 9751) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_aun_core_checksum_method_offlinedownloadstore_mark_downloading() != 53791) {
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_mark_downloading() != 4598) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_aun_core_checksum_method_offlinedownloadstore_mark_failed() != 23129) {
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_mark_failed() != 32640) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_aun_core_checksum_method_offlinedownloadstore_mark_paused() != 21517) {
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_mark_paused() != 52991) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_offlinedownloadstore_mark_reconciled() != 58139) {
@@ -15673,10 +15917,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_method_offlinedownloadstore_pending_deletions() != 8536) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_pending_remaining_bytes() != 5220) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aun_core_checksum_method_offlinedownloadstore_purge_inactive() != 28281) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_aun_core_checksum_method_offlinedownloadstore_reconcile_orphaned_paths() != 1949) {
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_reconcile_orphaned_paths() != 7865) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_offlinedownloadstore_remove() != 19802) {
@@ -15685,13 +15932,16 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_method_offlinedownloadstore_revocations_cursor() != 65335) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_set_thumbnail_path() != 19581) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aun_core_checksum_method_offlinedownloadstore_total_bytes() != 10169) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_aun_core_checksum_method_offlinedownloadstore_try_reserve() != 34376) {
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_try_reserve() != 60302) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_aun_core_checksum_method_offlinedownloadstore_update_progress() != 289) {
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_update_progress() != 51413) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_mediacancel_cancel() != 35329) {

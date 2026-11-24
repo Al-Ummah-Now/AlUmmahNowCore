@@ -4,20 +4,21 @@
 //!   each other's revocations or downloads.
 //! - Records are keyed by `(user_id, video_id)` so multiple accounts on one device never clobber
 //!   or orphan each other's local media files.
-//! - Never persists signed URLs (neither media URLs nor signed thumbnail URLs); artwork is stored
-//!   as a local file path in `thumbnail_path`.
+//! - Every `local_path` and `thumbnail_path` is stored strictly as a clean relative path under the
+//!   app's download root (never absolute paths, `..`, or remote/signed URLs) so iOS container UUID
+//!   relocations and `/private/var/...` symlinks never break playback or orphan reconciliation.
 //! - No encryption, DRM, quality ladder, audio-only downloads, or license expiry (E14-D1, E14-D5).
-//! - Crash-safe two-phase deletion + non-revivable `Removed` records:
-//!   - `remove`, `clear_for_user`, `apply_availability_sync`, `apply_revocations`, `purge_inactive`,
-//!     and `evict_to_budget` mark records `Removed` and persist first (fsync + atomic rename, with
-//!     full rollback on failed save).
-//!   - Progress/completion updates (`update_progress`, `mark_downloading`, `mark_paused`,
-//!     `mark_completed`, `mark_failed`) ONLY mutate an existing non-`Removed` record and return
-//!     [`UpdateOutcome::RemovedOrMissing`] otherwise so a late in-flight transfer can NEVER revive a
-//!     revoked or deleted download (even after `confirm_removed` and `commit_revocations_cursor`).
-//!   - `try_reserve` refuses to create over an unconfirmed `Removed` record and atomically checks
-//!     network + storage budget (excluding the item's own reservation so queued/paused resumes never
-//!     double-count).
+//! - Crash-safe two-phase deletion + non-revivable `Removed` records + generation tokens:
+//!   - `try_reserve` refuses `Completed` and `Removed` inputs, refuses overwriting `Completed` or
+//!     unconfirmed `Removed` records (`Conflict`), preserves stored fields & `extra` on resume,
+//!     atomically checks both user storage cap and OS free-space reserve (accounting for space
+//!     promised to all other unfinished downloads), and returns a monotonic `reservation_id`.
+//!   - Progress/lifecycle mutators (`update_progress`, `mark_downloading`, `mark_paused`,
+//!     `mark_completed`, `mark_failed`) require the active `reservation_id` so an older transfer
+//!     can never mutate or complete a newer reservation.
+//!   - `Completed` is terminal except for explicit removal/revocation/availability-sync; late
+//!     `mark_paused`, `mark_failed`, or `update_progress` cannot downgrade a finished download, and
+//!     late `update_progress` cannot un-pause a `Paused` or `Failed` download.
 
 use std::collections::{BTreeMap, HashSet};
 use std::fs::{File, OpenOptions};
@@ -30,7 +31,7 @@ use aun_player::NetworkKind;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::policy::{DownloadSettings, TransferDecision, can_start_download, effective_item_bytes};
+use crate::policy::{DownloadSettings, TransferDecision, can_start_download, effective_item_total_bytes};
 use crate::{DownloadError, Result};
 
 const MANIFEST_VERSION: u32 = 4;
@@ -55,11 +56,24 @@ pub enum UpdateOutcome {
     /// The record was marked `Removed` (revoked/deleted/signed-out) or already confirmed removed.
     /// The caller MUST cancel the transfer immediately and delete any local temp/media file.
     RemovedOrMissing,
+    /// The record belongs to a newer `reservation_id`; this older transfer MUST abort without
+    /// touching the newer reservation's files.
+    StaleReservation,
+    /// The record is already `Completed` (or `Paused`/`Failed` for a late progress/completion tick)
+    /// so the late event was ignored without mutating state.
+    AlreadyTerminal,
+}
+
+/// Result of [`DownloadStore::try_reserve`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReserveResult {
+    pub decision: TransferDecision,
+    /// Monotonic generation token for this reservation (`Some(id)` iff `decision == Allow`).
+    pub reservation_id: Option<u64>,
 }
 
 /// One downloaded (or downloading) plain progressive R2 `video.mp4` file on this device.
-/// Never stores signed URLs (neither media URLs nor signed thumbnail URLs); artwork is stored as
-/// a local file path in `thumbnail_path`.
+/// Never stores signed URLs or absolute paths; paths are relative to the app's download root.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DownloadRecord {
     pub video_id: String,
@@ -70,9 +84,10 @@ pub struct DownloadRecord {
     pub title: String,
     pub channel_id: Option<String>,
     pub channel_name: Option<String>,
+    /// Optional relative path under the download root for locally saved artwork.
     pub thumbnail_path: Option<String>,
     pub duration_seconds: u64,
-    /// Relative or absolute local path to the plain `video.mp4` file (never empty or a URL).
+    /// Relative path under the download root to the plain `video.mp4` file (never absolute or a URL).
     pub local_path: String,
     pub bytes_downloaded: u64,
     pub total_bytes: u64,
@@ -80,6 +95,9 @@ pub struct DownloadRecord {
     pub removed_reason: Option<String>,
     pub created_at_ms: i64,
     pub last_accessed_at_ms: i64,
+    /// Monotonic reservation generation assigned by `try_reserve`.
+    #[serde(default)]
+    pub reservation_id: u64,
     /// Forward-compatible passthrough for unknown fields written by compatible builds.
     #[serde(flatten, default, skip_serializing_if = "BTreeMap::is_empty")]
     pub extra: BTreeMap<String, Value>,
@@ -101,19 +119,33 @@ impl DownloadRecord {
         )
     }
 
-    /// Bytes counted against the local storage budget: active/queued downloads reserve
-    /// `max(bytes_downloaded, effective_item_bytes(total_bytes))` so concurrent starts and
-    /// unknown-size items cannot overshoot the cap.
+    fn is_unfinished(&self) -> bool {
+        matches!(
+            self.status,
+            DownloadStatus::Queued | DownloadStatus::Downloading | DownloadStatus::Paused
+        )
+    }
+
+    /// Bytes counted against the local storage cap.
+    /// For unfinished unknown-size items (`total_bytes == 0`), preserves at least the 100 MiB
+    /// estimate until the real total is known or the download completes.
     pub fn reserved_bytes(&self) -> u64 {
-        if self.is_active() {
-            let known = self.bytes_downloaded.max(self.total_bytes);
-            if known == 0 {
-                effective_item_bytes(0)
-            } else {
-                known
-            }
+        if self.status == DownloadStatus::Completed {
+            self.bytes_downloaded.max(self.total_bytes)
+        } else if self.is_unfinished() {
+            effective_item_total_bytes(self.total_bytes, self.bytes_downloaded)
         } else {
             self.bytes_downloaded
+        }
+    }
+
+    /// Additional bytes still promised to be written to disk for this download (`0` once finished,
+    /// failed, or removed). Used for OS free-space reserve accounting across concurrent downloads.
+    pub fn remaining_bytes(&self) -> u64 {
+        if self.is_unfinished() {
+            self.reserved_bytes().saturating_sub(self.bytes_downloaded)
+        } else {
+            0
         }
     }
 }
@@ -138,11 +170,20 @@ fn record_key(user_id: &str, video_id: &str) -> String {
     format!("{user_id}\u{001f}{video_id}")
 }
 
-fn validate_local_only_path(path: &str, field: &str) -> Result<()> {
+/// Validates and normalizes a relative local file path under the app's download root.
+///
+/// Rejects empty paths, absolute paths (leading `/` or `\`, Windows drive prefixes `C:...`),
+/// remote/signed URLs, query/fragment characters (`?`, `#`), NUL bytes, and `.` / `..` segments.
+fn validate_and_normalize_relative_path(path: &str, field: &str) -> Result<String> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
         return Err(DownloadError::InvalidInput(format!(
-            "{field} must be a non-empty local file path"
+            "{field} must be a non-empty relative local file path"
+        )));
+    }
+    if trimmed.contains('\0') {
+        return Err(DownloadError::InvalidInput(format!(
+            "{field} must not contain NUL bytes"
         )));
     }
     let lower = trimmed.to_ascii_lowercase();
@@ -154,15 +195,62 @@ fn validate_local_only_path(path: &str, field: &str) -> Result<()> {
         || lower.starts_with("file://")
     {
         return Err(DownloadError::InvalidInput(format!(
-            "{field} must be a local file path, never a remote or signed URL"
+            "{field} must be a relative local file path, never a remote or signed URL"
         )));
     }
-    if lower.contains('?') {
+    if lower.contains('?') || lower.contains('#') {
         return Err(DownloadError::InvalidInput(format!(
-            "{field} must not contain URL query parameters"
+            "{field} must not contain URL query or fragment characters"
         )));
     }
-    Ok(())
+    if trimmed.starts_with('/') || trimmed.starts_with('\\') {
+        return Err(DownloadError::InvalidInput(format!(
+            "{field} must be relative to the download root, never an absolute path"
+        )));
+    }
+    // Reject Windows drive-letter prefixes (e.g. "C:foo" or "C:\foo") or scheme prefixes.
+    let bytes = trimmed.as_bytes();
+    if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+        return Err(DownloadError::InvalidInput(format!(
+            "{field} must be relative to the download root, never a drive-qualified path"
+        )));
+    }
+    let normalized = trimmed.replace('\\', "/");
+    let mut parts = Vec::new();
+    for seg in normalized.split('/') {
+        if seg.is_empty() || seg == "." || seg == ".." {
+            return Err(DownloadError::InvalidInput(format!(
+                "{field} must not contain empty, '.' or '..' path segments"
+            )));
+        }
+        parts.push(seg);
+    }
+    Ok(parts.join("/"))
+}
+
+fn normalize_slashes(raw: &str) -> String {
+    let mut s = raw.trim().replace('\\', "/");
+    while s.len() > 1 && s.ends_with('/') {
+        s.pop();
+    }
+    s
+}
+
+fn strip_private_prefix(path: &str) -> &str {
+    path.strip_prefix("/private").unwrap_or(path)
+}
+
+fn is_temp_or_manifest_path(rel_path: &str, manifest_file_name: &str) -> bool {
+    let file_name = rel_path.rsplit('/').next().unwrap_or(rel_path);
+    let lower = file_name.to_ascii_lowercase();
+    if file_name == manifest_file_name
+        || file_name.starts_with(&format!("{manifest_file_name}.corrupt."))
+        || file_name == format!("{manifest_file_name}.lock")
+        || (file_name.starts_with('.') && lower.ends_with(".tmp"))
+    {
+        return true;
+    }
+    lower.ends_with(".tmp") || lower.ends_with(".part") || lower.ends_with(".download")
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -170,6 +258,8 @@ struct ManifestFile {
     version: u32,
     #[serde(default)]
     revocations_cursor: u64,
+    #[serde(default)]
+    next_reservation_id: u64,
     #[serde(default)]
     needs_reconciliation: bool,
     #[serde(default)]
@@ -182,7 +272,36 @@ fn lock_path(path: &Path) -> PathBuf {
     PathBuf::from(format!("{}.lock", path.display()))
 }
 
-fn quarantine_file(path: &Path) -> Result<PathBuf> {
+fn manifest_file_name(path: &Path) -> String {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("manifest.json")
+        .to_string()
+}
+
+fn has_quarantined_sibling(path: &Path) -> bool {
+    let Some(parent) = path.parent() else {
+        return false;
+    };
+    let prefix = format!("{}.corrupt.", manifest_file_name(path));
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        if entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| name.starts_with(&prefix))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Moves a completely corrupt or 0-byte manifest to a unique `<path>.corrupt.<ts>[.n]` sibling via
+/// atomic `rename` (0 extra disk blocks, so quarantine still works on a 100% full disk).
+fn quarantine_move(path: &Path) -> Result<PathBuf> {
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis())
@@ -195,6 +314,48 @@ fn quarantine_file(path: &Path) -> Result<PathBuf> {
         };
         if !candidate.exists() {
             std::fs::rename(path, &candidate)?;
+            #[cfg(unix)]
+            if let Some(parent) = candidate.parent()
+                && let Ok(dir) = File::open(parent)
+            {
+                let _ = dir.sync_all();
+            }
+            return Ok(candidate);
+        }
+    }
+    Err(DownloadError::Storage(format!(
+        "could not allocate unique quarantine filename for {}",
+        path.display()
+    )))
+}
+
+/// Copies partially-salvaged manifest bytes to a unique `<path>.corrupt.<ts>[.n]` sibling (fsynced)
+/// WITHOUT deleting `path` first, preserving any unparseable records for forensics.
+fn write_quarantine_copy(path: &Path, raw_bytes: &[u8]) -> Result<PathBuf> {
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    for attempt in 0u32..1000 {
+        let candidate = if attempt == 0 {
+            PathBuf::from(format!("{}.corrupt.{ts}", path.display()))
+        } else {
+            PathBuf::from(format!("{}.corrupt.{ts}.{attempt}", path.display()))
+        };
+        if !candidate.exists() {
+            let mut file = OpenOptions::new().write(true).create_new(true).open(&candidate)?;
+            let write_res = file.write_all(raw_bytes).and_then(|()| file.sync_all());
+            drop(file);
+            if let Err(e) = write_res {
+                let _ = std::fs::remove_file(&candidate);
+                return Err(DownloadError::Io(e));
+            }
+            #[cfg(unix)]
+            if let Some(parent) = candidate.parent()
+                && let Ok(dir) = File::open(parent)
+            {
+                let _ = dir.sync_all();
+            }
             return Ok(candidate);
         }
     }
@@ -208,10 +369,7 @@ fn persist_manifest(path: &Path, manifest: &ManifestFile) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("manifest.json");
+    let name = manifest_file_name(path);
     let parent = path
         .parent()
         .ok_or_else(|| DownloadError::Storage(format!("no parent directory for {}", path.display())))?;
@@ -224,9 +382,12 @@ fn persist_manifest(path: &Path, manifest: &ManifestFile) -> Result<()> {
         .create(true)
         .truncate(true)
         .open(&tmp)?;
-    file.write_all(&payload)?;
-    file.sync_all()?;
+    let write_res = file.write_all(&payload).and_then(|()| file.sync_all());
     drop(file);
+    if let Err(e) = write_res {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(DownloadError::Io(e));
+    }
 
     if let Err(e) = std::fs::rename(&tmp, path) {
         let _ = std::fs::remove_file(&tmp);
@@ -240,34 +401,39 @@ fn persist_manifest(path: &Path, manifest: &ManifestFile) -> Result<()> {
 }
 
 /// File-backed manifest of plain offline downloads (exclusive OS lock, fsync + atomic rename,
-/// rollback on failed save).
+/// rollback on failed save, relative-only local paths, monotonic reservation tokens).
 #[derive(Debug)]
 pub struct DownloadStore {
     path: PathBuf,
     _lock: StoreLock,
     revocations_cursor: u64,
+    next_reservation_id: u64,
     needs_reconciliation: bool,
     records: BTreeMap<String, DownloadRecord>,
     extra: BTreeMap<String, Value>,
 }
 
-type LoadedManifest = (
-    u64,
-    bool,
-    BTreeMap<String, DownloadRecord>,
-    BTreeMap<String, Value>,
-);
+struct LoadedManifest {
+    revocations_cursor: u64,
+    next_reservation_id: u64,
+    needs_reconciliation: bool,
+    records: BTreeMap<String, DownloadRecord>,
+    extra: BTreeMap<String, Value>,
+    needs_persist: bool,
+}
 
 impl DownloadStore {
     /// Opens (or creates) the manifest at `path`, acquiring an exclusive OS lock on `<path>.lock`.
     ///
     /// - Refuses a second concurrent open with [`DownloadError::Conflict`].
     /// - Refuses manifests written by a newer schema version (`version > 4`) with
-    ///   [`DownloadError::Storage`] instead of quarantining or silently overwriting them.
-    /// - Quarantines corrupt JSON or 0-byte files to a unique `<path>.corrupt.<ts>` file, sets
-    ///   `needs_disk_reconciliation() == true` so the app reconciles files on disk and keeps
-    ///   polling revocations, and salvages any individually valid records when top-level JSON is
-    ///   intact.
+    ///   [`DownloadError::Storage`] without quarantining or overwriting them.
+    /// - Copies corrupt JSON, 0-byte manifests, or manifests with unparseable records to a unique
+    ///   `<path>.corrupt.<ts>[.n]` sibling BEFORE atomically replacing `path` with a manifest
+    ///   carrying `needs_reconciliation: true`, so a disk-full failure or crash can never lose the
+    ///   reconcile flag or stop revocation polling.
+    /// - Also treats a missing manifest alongside existing `.corrupt.*` siblings as needing
+    ///   reconciliation.
     pub fn open(path: impl Into<PathBuf>) -> Result<Self> {
         let path = path.into();
         let lock = StoreLock::acquire(lock_path(&path)).map_err(|e| match e {
@@ -275,38 +441,65 @@ impl DownloadStore {
             other => DownloadError::Storage(other.to_string()),
         })?;
 
-        let (revocations_cursor, needs_reconciliation, records, extra) = match std::fs::read(&path) {
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                (0, false, BTreeMap::new(), BTreeMap::new())
-            }
+        let loaded = match std::fs::read(&path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => LoadedManifest {
+                revocations_cursor: 0,
+                next_reservation_id: 0,
+                needs_reconciliation: has_quarantined_sibling(&path),
+                records: BTreeMap::new(),
+                extra: BTreeMap::new(),
+                needs_persist: false,
+            },
             Err(e) => return Err(DownloadError::Io(e)),
             Ok(bytes) if bytes.is_empty() => {
-                quarantine_file(&path)?;
-                (0, true, BTreeMap::new(), BTreeMap::new())
+                quarantine_move(&path)?;
+                LoadedManifest {
+                    revocations_cursor: 0,
+                    next_reservation_id: 0,
+                    needs_reconciliation: true,
+                    records: BTreeMap::new(),
+                    extra: BTreeMap::new(),
+                    needs_persist: true,
+                }
             }
             Ok(bytes) => Self::parse_or_salvage(&path, &bytes)?,
         };
 
+        let max_record_res_id = loaded
+            .records
+            .values()
+            .map(|r| r.reservation_id)
+            .max()
+            .unwrap_or(0);
         let store = Self {
             path,
             _lock: lock,
-            revocations_cursor,
-            needs_reconciliation,
-            records,
-            extra,
+            revocations_cursor: loaded.revocations_cursor,
+            next_reservation_id: loaded.next_reservation_id.max(max_record_res_id),
+            needs_reconciliation: loaded.needs_reconciliation,
+            records: loaded.records,
+            extra: loaded.extra,
         };
-        if store.needs_reconciliation && !store.path.exists() {
-            // Persist the needs_reconciliation flag after quarantine so even a crash before
-            // the app sweeps disk still remembers to reconcile & keep polling.
-            persist_manifest(&store.path, &store.to_manifest())?;
+        if loaded.needs_persist {
+            // Best-effort save after quarantine/salvage: if disk is currently full, the store
+            // still opens with `needs_reconciliation: true` so the app can reconcile and delete
+            // orphaned files to free space, and `.corrupt.*` keeps the flag alive across restarts.
+            let _ = persist_manifest(&store.path, &store.to_manifest());
         }
         Ok(store)
     }
 
     fn parse_or_salvage(path: &Path, bytes: &[u8]) -> Result<LoadedManifest> {
         let Ok(Value::Object(mut root)) = serde_json::from_slice::<Value>(bytes) else {
-            quarantine_file(path)?;
-            return Ok((0, true, BTreeMap::new(), BTreeMap::new()));
+            quarantine_move(path)?;
+            return Ok(LoadedManifest {
+                revocations_cursor: 0,
+                next_reservation_id: 0,
+                needs_reconciliation: true,
+                records: BTreeMap::new(),
+                extra: BTreeMap::new(),
+                needs_persist: true,
+            });
         };
 
         let version = match root.remove("version") {
@@ -315,8 +508,15 @@ impl DownloadStore {
             Some(_) => None,
         };
         let Some(version) = version else {
-            quarantine_file(path)?;
-            return Ok((0, true, BTreeMap::new(), BTreeMap::new()));
+            quarantine_move(path)?;
+            return Ok(LoadedManifest {
+                revocations_cursor: 0,
+                next_reservation_id: 0,
+                needs_reconciliation: true,
+                records: BTreeMap::new(),
+                extra: BTreeMap::new(),
+                needs_persist: true,
+            });
         };
         if version > MANIFEST_VERSION {
             return Err(DownloadError::Storage(format!(
@@ -328,12 +528,17 @@ impl DownloadStore {
             .remove("revocations_cursor")
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
+        let next_reservation_id = root
+            .remove("next_reservation_id")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
         let mut needs_reconciliation = root
             .remove("needs_reconciliation")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
         let mut records = BTreeMap::new();
+        let mut had_corrupt_record = false;
         if let Some(raw_records) = root.remove("records") {
             match raw_records {
                 Value::Object(map) => {
@@ -343,22 +548,40 @@ impl DownloadStore {
                                 records.insert(record_key(&rec.user_id, &rec.video_id), rec);
                             }
                             Err(_) => {
-                                // Salvage all other valid records instead of discarding the whole
-                                // manifest, and mark reconciliation so the app sweeps orphaned files.
+                                had_corrupt_record = true;
                                 needs_reconciliation = true;
                             }
                         }
                     }
                 }
                 _ => {
-                    quarantine_file(path)?;
-                    return Ok((0, true, BTreeMap::new(), BTreeMap::new()));
+                    quarantine_move(path)?;
+                    return Ok(LoadedManifest {
+                        revocations_cursor: 0,
+                        next_reservation_id: 0,
+                        needs_reconciliation: true,
+                        records: BTreeMap::new(),
+                        extra: BTreeMap::new(),
+                        needs_persist: true,
+                    });
                 }
             }
         }
 
+        if had_corrupt_record {
+            // Preserve a forensic copy of the original file before persisting the salvaged records.
+            let _ = write_quarantine_copy(path, bytes);
+        }
+
         let extra: BTreeMap<String, Value> = root.into_iter().collect();
-        Ok((revocations_cursor, needs_reconciliation, records, extra))
+        Ok(LoadedManifest {
+            revocations_cursor,
+            next_reservation_id,
+            needs_reconciliation,
+            records,
+            extra,
+            needs_persist: had_corrupt_record,
+        })
     }
 
     pub fn path(&self) -> &Path {
@@ -383,30 +606,102 @@ impl DownloadStore {
         !self.records.is_empty() || self.needs_reconciliation
     }
 
-    /// Given the local file paths found in the app's download directory, returns any paths not
-    /// referenced by a visible (non-`Removed`) manifest record so the app can delete orphaned
-    /// files (including after a quarantine) and then call [`Self::mark_reconciled`].
-    pub fn reconcile_orphaned_paths(&self, disk_paths: &[String]) -> Vec<String> {
-        let mut live: HashSet<&str> = HashSet::new();
-        for rec in self.records.values() {
-            if rec.status != DownloadStatus::Removed {
-                live.insert(rec.local_path.as_str());
-                if let Some(ref thumb) = rec.thumbnail_path {
-                    live.insert(thumb.as_str());
+    /// Given the app's current `download_root` directory and the file paths discovered on disk
+    /// (relative to `download_root` OR absolute paths under `download_root`, including macOS/iOS
+    /// `/private/var/...` aliases), returns the paths NOT referenced by any live (non-`Removed`)
+    /// record so the app can delete orphaned files and then call [`Self::mark_reconciled`].
+    ///
+    /// - Never returns files belonging to live (non-`Removed`) downloads.
+    /// - Skips in-progress temp files (`*.tmp`, `*.part`, `*.download`), manifest/lock/quarantine
+    ///   files (`manifest.json*`), and absolute paths outside `download_root`.
+    pub fn reconcile_orphaned_paths(&self, download_root: &str, disk_paths: &[String]) -> Vec<String> {
+        let mut root_prefixes: Vec<String> = Vec::new();
+        let raw_root = normalize_slashes(download_root);
+        if !raw_root.is_empty() {
+            root_prefixes.push(raw_root.clone());
+            let stripped = strip_private_prefix(&raw_root);
+            if stripped != raw_root {
+                root_prefixes.push(stripped.to_string());
+            } else if raw_root.starts_with('/') {
+                root_prefixes.push(format!("/private{raw_root}"));
+            }
+            if let Ok(canon) = std::fs::canonicalize(download_root) {
+                let canon_s = normalize_slashes(&canon.to_string_lossy());
+                if !root_prefixes.contains(&canon_s) {
+                    root_prefixes.push(canon_s.clone());
+                }
+                let canon_stripped = strip_private_prefix(&canon_s);
+                if canon_stripped != canon_s && !root_prefixes.iter().any(|p| p == canon_stripped) {
+                    root_prefixes.push(canon_stripped.to_string());
                 }
             }
         }
-        disk_paths
-            .iter()
-            .filter(|p| !live.contains(p.as_str()))
-            .cloned()
-            .collect()
+
+        let to_rel_if_under_root = |raw: &str| -> String {
+            let norm = normalize_slashes(raw);
+            for prefix in &root_prefixes {
+                let prefix_with_slash = format!("{prefix}/");
+                if let Some(rest) = norm.strip_prefix(&prefix_with_slash) {
+                    return rest.to_string();
+                }
+            }
+            norm.trim_start_matches("./").to_string()
+        };
+
+        let mut live: HashSet<String> = HashSet::new();
+        for rec in self.records.values() {
+            if rec.status != DownloadStatus::Removed {
+                live.insert(to_rel_if_under_root(&rec.local_path));
+                if let Some(ref thumb) = rec.thumbnail_path {
+                    live.insert(to_rel_if_under_root(thumb));
+                }
+            }
+        }
+
+        let m_name = manifest_file_name(&self.path);
+        let mut orphans = Vec::new();
+        for original in disk_paths {
+            let norm = normalize_slashes(original);
+            if norm.is_empty() {
+                continue;
+            }
+            let is_abs = norm.starts_with('/')
+                || (norm.len() >= 2
+                    && norm.as_bytes()[0].is_ascii_alphabetic()
+                    && norm.as_bytes()[1] == b':');
+            let rel = if is_abs {
+                let mut matched = None;
+                for prefix in &root_prefixes {
+                    let prefix_with_slash = format!("{prefix}/");
+                    if let Some(rest) = norm.strip_prefix(&prefix_with_slash) {
+                        matched = Some(rest.to_string());
+                        break;
+                    }
+                }
+                let Some(rel) = matched else {
+                    // Never recommend deleting an absolute path outside `download_root`.
+                    continue;
+                };
+                rel
+            } else {
+                norm.trim_start_matches("./").to_string()
+            };
+
+            if rel.is_empty() || is_temp_or_manifest_path(&rel, &m_name) {
+                continue;
+            }
+            if !live.contains(&rel) {
+                orphans.push(original.clone());
+            }
+        }
+        orphans
     }
 
     /// Clears `needs_disk_reconciliation` after the app has swept its download folder and deleted
-    /// any orphaned files.
+    /// any orphaned files. Persists the manifest so future opens do not re-trigger reconciliation
+    /// from old `.corrupt.*` diagnostic files.
     pub fn mark_reconciled(&mut self) -> Result<()> {
-        if !self.needs_reconciliation {
+        if !self.needs_reconciliation && self.path.exists() {
             return Ok(());
         }
         let mut draft = self.to_manifest();
@@ -420,82 +715,155 @@ impl DownloadStore {
         ManifestFile {
             version: MANIFEST_VERSION,
             revocations_cursor: self.revocations_cursor,
+            next_reservation_id: self.next_reservation_id,
             needs_reconciliation: self.needs_reconciliation,
             records: self.records.clone(),
             extra: self.extra.clone(),
         }
     }
 
-    /// Atomically checks network + storage budget (excluding this item's own existing reservation
-    /// so starting or resuming a queued/paused item never double-counts itself) and persists the
-    /// reservation on `Allow`.
+    /// Atomically checks network, user storage cap, and OS free-space reserve (accounting for space
+    /// promised to all other unfinished downloads, excluding this item's own existing reservation
+    /// and already-downloaded bytes on resume), then persists the reservation with a fresh
+    /// monotonic `reservation_id`.
     ///
-    /// Refuses `DownloadStatus::Removed` input and refuses to create over an existing unconfirmed
-    /// `Removed` record (`DownloadError::Conflict`).
+    /// - Refuses `DownloadStatus::Completed` and `DownloadStatus::Removed` input (`InvalidInput`).
+    /// - Refuses to overwrite an existing `Completed` or unconfirmed `Removed` record (`Conflict`).
+    /// - On resume of an existing `Queued` / `Downloading` / `Paused` / `Failed` record, preserves
+    ///   its stored `local_path`, `bytes_downloaded`, `created_at_ms`, `thumbnail_path` (unless
+    ///   provided), and `extra` fields while issuing a new `reservation_id` that invalidates any
+    ///   older in-flight transfer.
     pub fn try_reserve(
         &mut self,
-        record: DownloadRecord,
+        mut record: DownloadRecord,
         settings: &DownloadSettings,
         network: NetworkKind,
         available_disk_bytes: Option<u64>,
-    ) -> Result<TransferDecision> {
+    ) -> Result<ReserveResult> {
         if record.user_id.trim().is_empty() || record.video_id.trim().is_empty() {
             return Err(DownloadError::InvalidInput(
                 "user_id and video_id must be non-empty".into(),
             ));
         }
-        if record.status == DownloadStatus::Removed {
+        if !matches!(
+            record.status,
+            DownloadStatus::Queued | DownloadStatus::Downloading
+        ) {
             return Err(DownloadError::InvalidInput(
-                "cannot reserve a download with status Removed".into(),
+                "try_reserve only accepts Queued or Downloading status".into(),
             ));
         }
-        validate_local_only_path(&record.local_path, "local_path")?;
+        record.local_path = validate_and_normalize_relative_path(&record.local_path, "local_path")?;
         if let Some(ref thumb) = record.thumbnail_path {
-            validate_local_only_path(thumb, "thumbnail_path")?;
+            record.thumbnail_path = Some(validate_and_normalize_relative_path(thumb, "thumbnail_path")?);
         }
 
         let key = record_key(&record.user_id, &record.video_id);
-        if self
-            .records
-            .get(&key)
-            .is_some_and(|existing| existing.status == DownloadStatus::Removed)
-        {
-            return Err(DownloadError::Conflict(
-                "download is pending removal; delete local files and call confirm_removed first".into(),
-            ));
-        }
+        let merged = if let Some(existing) = self.records.get(&key) {
+            match existing.status {
+                DownloadStatus::Removed => {
+                    return Err(DownloadError::Conflict(
+                        "download is pending removal; delete local files and call confirm_removed first"
+                            .into(),
+                    ));
+                }
+                DownloadStatus::Completed => {
+                    return Err(DownloadError::Conflict(
+                        "download is already Completed; remove it first to re-download".into(),
+                    ));
+                }
+                DownloadStatus::Queued
+                | DownloadStatus::Downloading
+                | DownloadStatus::Paused
+                | DownloadStatus::Failed => {
+                    // Resume: preserve stored local_path, progress, created_at_ms, thumbnail_path,
+                    // and forward-compatible `extra` fields.
+                    let mut resumed = existing.clone();
+                    resumed.status = record.status;
+                    if record.total_bytes > 0 {
+                        resumed.total_bytes = record.total_bytes;
+                    }
+                    if record.rung.is_some() {
+                        resumed.rung = record.rung;
+                    }
+                    if !record.title.is_empty() {
+                        resumed.title = record.title;
+                    }
+                    if record.channel_id.is_some() {
+                        resumed.channel_id = record.channel_id;
+                    }
+                    if record.channel_name.is_some() {
+                        resumed.channel_name = record.channel_name;
+                    }
+                    if record.thumbnail_path.is_some() {
+                        resumed.thumbnail_path = record.thumbnail_path;
+                    }
+                    if record.duration_seconds > 0 {
+                        resumed.duration_seconds = record.duration_seconds;
+                    }
+                    resumed.last_accessed_at_ms = record.last_accessed_at_ms;
+                    resumed.removed_reason = None;
+                    for (k, v) in record.extra {
+                        resumed.extra.insert(k, v);
+                    }
+                    resumed
+                }
+            }
+        } else {
+            record
+        };
 
         let used_excluding_self = self
             .records
             .iter()
             .filter(|(k, _)| *k != &key)
             .fold(0u64, |acc, (_, r)| acc.saturating_add(r.reserved_bytes()));
-        let item_bytes = record.reserved_bytes();
+        let pending_remaining_excluding_self = self
+            .records
+            .iter()
+            .filter(|(k, _)| *k != &key)
+            .fold(0u64, |acc, (_, r)| acc.saturating_add(r.remaining_bytes()));
+
         let decision = can_start_download(
             settings,
             network,
             used_excluding_self,
-            item_bytes,
+            pending_remaining_excluding_self,
+            merged.total_bytes,
+            merged.bytes_downloaded,
             available_disk_bytes,
         );
         if decision != TransferDecision::Allow {
-            return Ok(decision);
+            return Ok(ReserveResult {
+                decision,
+                reservation_id: None,
+            });
         }
 
+        let new_res_id = self.next_reservation_id.saturating_add(1);
+        let mut to_store = merged;
+        to_store.reservation_id = new_res_id;
+
         let mut draft = self.to_manifest();
-        draft.records.insert(key, record);
+        draft.next_reservation_id = new_res_id;
+        draft.records.insert(key, to_store);
         persist_manifest(&self.path, &draft)?;
+        self.next_reservation_id = new_res_id;
         self.records = draft.records;
-        Ok(TransferDecision::Allow)
+        Ok(ReserveResult {
+            decision: TransferDecision::Allow,
+            reservation_id: Some(new_res_id),
+        })
     }
 
-    /// Updates transfer progress on an existing active (non-`Removed`) download.
-    /// Returns [`UpdateOutcome::RemovedOrMissing`] and writes nothing if the record was revoked,
-    /// removed, or already confirmed deleted — preventing a late transfer write from reviving it.
+    /// Updates transfer progress on an active `Queued` or `Downloading` download matching
+    /// `reservation_id`. Never revives a `Removed` record, never mutates a newer reservation,
+    /// never downgrades a `Completed` download, and never un-pauses a `Paused` or `Failed` one.
     pub fn update_progress(
         &mut self,
         user_id: &str,
         video_id: &str,
+        reservation_id: u64,
         bytes_downloaded: u64,
         total_bytes: u64,
         now_ms: i64,
@@ -506,6 +874,17 @@ impl DownloadStore {
             Some(r) if r.status == DownloadStatus::Removed => {
                 return Ok(UpdateOutcome::RemovedOrMissing);
             }
+            Some(r) if r.reservation_id != reservation_id => {
+                return Ok(UpdateOutcome::StaleReservation);
+            }
+            Some(r)
+                if matches!(
+                    r.status,
+                    DownloadStatus::Completed | DownloadStatus::Paused | DownloadStatus::Failed
+                ) =>
+            {
+                return Ok(UpdateOutcome::AlreadyTerminal);
+            }
             Some(_) => {}
         }
 
@@ -515,10 +894,7 @@ impl DownloadStore {
             if total_bytes > 0 {
                 rec.total_bytes = total_bytes;
             }
-            if matches!(
-                rec.status,
-                DownloadStatus::Queued | DownloadStatus::Paused | DownloadStatus::Failed
-            ) {
+            if rec.status == DownloadStatus::Queued {
                 rec.status = DownloadStatus::Downloading;
             }
             rec.last_accessed_at_ms = now_ms;
@@ -528,13 +904,14 @@ impl DownloadStore {
         Ok(UpdateOutcome::Updated)
     }
 
-    /// Marks an existing active (non-`Removed`) download as `Completed`.
-    /// Returns [`UpdateOutcome::RemovedOrMissing`] and writes nothing if the record was revoked,
-    /// removed, or already confirmed deleted — preventing a late completion from reviving it.
+    /// Marks an active `Queued` or `Downloading` download matching `reservation_id` as `Completed`.
+    /// Never revives a `Removed` record, never completes a newer reservation from an old transfer,
+    /// and ignores late calls on already-`Completed`, `Paused`, or `Failed` records.
     pub fn mark_completed(
         &mut self,
         user_id: &str,
         video_id: &str,
+        reservation_id: u64,
         final_bytes: u64,
         now_ms: i64,
     ) -> Result<UpdateOutcome> {
@@ -543,6 +920,17 @@ impl DownloadStore {
             None => return Ok(UpdateOutcome::RemovedOrMissing),
             Some(r) if r.status == DownloadStatus::Removed => {
                 return Ok(UpdateOutcome::RemovedOrMissing);
+            }
+            Some(r) if r.reservation_id != reservation_id => {
+                return Ok(UpdateOutcome::StaleReservation);
+            }
+            Some(r)
+                if matches!(
+                    r.status,
+                    DownloadStatus::Completed | DownloadStatus::Paused | DownloadStatus::Failed
+                ) =>
+            {
+                return Ok(UpdateOutcome::AlreadyTerminal);
             }
             Some(_) => {}
         }
@@ -559,25 +947,79 @@ impl DownloadStore {
         Ok(UpdateOutcome::Updated)
     }
 
-    /// Transitions an existing active (non-`Removed`) download to `Paused`.
-    pub fn mark_paused(&mut self, user_id: &str, video_id: &str, now_ms: i64) -> Result<UpdateOutcome> {
-        self.transition_non_removed(user_id, video_id, DownloadStatus::Paused, now_ms)
-    }
-
-    /// Transitions an existing active (non-`Removed`) download to `Failed`.
-    pub fn mark_failed(&mut self, user_id: &str, video_id: &str, now_ms: i64) -> Result<UpdateOutcome> {
-        self.transition_non_removed(user_id, video_id, DownloadStatus::Failed, now_ms)
-    }
-
-    /// Transitions an existing active (non-`Removed`) download to `Downloading`.
-    pub fn mark_downloading(&mut self, user_id: &str, video_id: &str, now_ms: i64) -> Result<UpdateOutcome> {
-        self.transition_non_removed(user_id, video_id, DownloadStatus::Downloading, now_ms)
-    }
-
-    fn transition_non_removed(
+    /// Transitions an active non-`Completed` download matching `reservation_id` to `Paused`.
+    /// A late pause on a `Completed` download returns `AlreadyTerminal` and leaves it playable.
+    pub fn mark_paused(
         &mut self,
         user_id: &str,
         video_id: &str,
+        reservation_id: u64,
+        now_ms: i64,
+    ) -> Result<UpdateOutcome> {
+        self.transition_unfinished(user_id, video_id, reservation_id, DownloadStatus::Paused, now_ms)
+    }
+
+    /// Transitions an active non-`Completed` download matching `reservation_id` to `Failed`.
+    /// A late failure on a `Completed` download returns `AlreadyTerminal` so `purge_inactive` can
+    /// never delete a finished download.
+    pub fn mark_failed(
+        &mut self,
+        user_id: &str,
+        video_id: &str,
+        reservation_id: u64,
+        now_ms: i64,
+    ) -> Result<UpdateOutcome> {
+        self.transition_unfinished(user_id, video_id, reservation_id, DownloadStatus::Failed, now_ms)
+    }
+
+    /// Transitions an active non-`Completed` download matching `reservation_id` to `Downloading`.
+    pub fn mark_downloading(
+        &mut self,
+        user_id: &str,
+        video_id: &str,
+        reservation_id: u64,
+        now_ms: i64,
+    ) -> Result<UpdateOutcome> {
+        self.transition_unfinished(
+            user_id,
+            video_id,
+            reservation_id,
+            DownloadStatus::Downloading,
+            now_ms,
+        )
+    }
+
+    /// Attaches or updates the local relative `thumbnail_path` on an existing non-`Removed` record
+    /// after artwork finishes downloading, without needing another `try_reserve`.
+    pub fn set_thumbnail_path(
+        &mut self,
+        user_id: &str,
+        video_id: &str,
+        thumbnail_path: &str,
+    ) -> Result<UpdateOutcome> {
+        let normalized = validate_and_normalize_relative_path(thumbnail_path, "thumbnail_path")?;
+        let key = record_key(user_id, video_id);
+        match self.records.get(&key) {
+            None => return Ok(UpdateOutcome::RemovedOrMissing),
+            Some(r) if r.status == DownloadStatus::Removed => {
+                return Ok(UpdateOutcome::RemovedOrMissing);
+            }
+            Some(_) => {}
+        }
+        let mut draft = self.to_manifest();
+        if let Some(rec) = draft.records.get_mut(&key) {
+            rec.thumbnail_path = Some(normalized);
+        }
+        persist_manifest(&self.path, &draft)?;
+        self.records = draft.records;
+        Ok(UpdateOutcome::Updated)
+    }
+
+    fn transition_unfinished(
+        &mut self,
+        user_id: &str,
+        video_id: &str,
+        reservation_id: u64,
         new_status: DownloadStatus,
         now_ms: i64,
     ) -> Result<UpdateOutcome> {
@@ -586,6 +1028,12 @@ impl DownloadStore {
             None => return Ok(UpdateOutcome::RemovedOrMissing),
             Some(r) if r.status == DownloadStatus::Removed => {
                 return Ok(UpdateOutcome::RemovedOrMissing);
+            }
+            Some(r) if r.reservation_id != reservation_id => {
+                return Ok(UpdateOutcome::StaleReservation);
+            }
+            Some(r) if r.status == DownloadStatus::Completed => {
+                return Ok(UpdateOutcome::AlreadyTerminal);
             }
             Some(_) => {}
         }
@@ -771,10 +1219,6 @@ impl DownloadStore {
     /// Phase 1 urgent/CSAM revocations feed (`GET /api/v1/downloads/revocations?since=<seq>`, E14-D8):
     /// marks every matching local record across all accounts as `Removed` (`removed_reason = "revoked"`)
     /// and persists atomically (with rollback on failure).
-    ///
-    /// Does **not** advance `revocations_cursor`; the caller must delete the returned files from
-    /// disk, call [`Self::confirm_removed_batch`], and only then call [`Self::commit_revocations_cursor`]
-    /// with the page's `nextCursor`.
     pub fn apply_revocations(&mut self, entries: &[RevocationEntry]) -> Result<Vec<DownloadRecord>> {
         let mut draft = self.to_manifest();
         let mut to_delete = Vec::new();
@@ -818,6 +1262,13 @@ impl DownloadStore {
         self.records
             .values()
             .fold(0u64, |acc, r| acc.saturating_add(r.reserved_bytes()))
+    }
+
+    /// Additional bytes still promised to be written by all unfinished downloads (saturating sum).
+    pub fn pending_remaining_bytes(&self) -> u64 {
+        self.records
+            .values()
+            .fold(0u64, |acc, r| acc.saturating_add(r.remaining_bytes()))
     }
 
     /// Phase 1 reclaim: marks `Failed` records as `Removed` (persisting atomically with rollback)

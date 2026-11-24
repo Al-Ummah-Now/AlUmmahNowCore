@@ -4,15 +4,17 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use aun_core::{
-    ApiClient, ApiClientConfig, AunError, OfflineAutoDownloadRule, OfflineAvailabilityResult,
-    OfflineDownloadItem, OfflineDownloadKey, OfflineDownloadSettings, OfflineDownloadStatus,
-    OfflineDownloadStore, OfflineEpisodeCandidate, OfflineNetworkKind, OfflineRevocationEntry,
-    OfflineSyncEngine, OfflineTransferDecision, OfflineUpdateOutcome, PlayerCommand, PlayerInput,
-    PlayerMachine, PlayerMediaItem, PlayerPlaybackState, PlayerSleepTimer, SyncChangeKind,
-    SyncChangeListener, offline_can_start_download, offline_default_download_settings,
-    offline_select_auto_downloads,
+    ApiClient, ApiClientConfig, AunError, OfflineAutoDownloadPlan, OfflineAutoDownloadRule,
+    OfflineAvailabilityResult, OfflineDownloadItem, OfflineDownloadKey, OfflineDownloadSettings,
+    OfflineDownloadStatus, OfflineDownloadStore, OfflineEpisodeCandidate, OfflineExistingAutoDownload,
+    OfflineNetworkKind, OfflineRevocationEntry, OfflineSyncEngine, OfflineTransferDecision,
+    OfflineUpdateOutcome, PlayerCommand, PlayerInput, PlayerMachine, PlayerMediaItem, PlayerPlaybackState,
+    PlayerSleepTimer, SyncChangeKind, SyncChangeListener, TokenSource, offline_can_start_download,
+    offline_default_download_settings, offline_select_auto_downloads,
 };
 use tempfile::tempdir;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn sample_item(
     user_id: &str,
@@ -27,15 +29,16 @@ fn sample_item(
         title: format!("Surah {video_id}"),
         channel_id: Some("ch-1".into()),
         channel_name: Some("Recitations".into()),
-        thumbnail_path: Some(format!("/local/{video_id}.jpg")),
+        thumbnail_path: Some(format!("thumbs/{video_id}.jpg")),
         duration_seconds: 600,
-        local_path: format!("/local/{user_id}/{video_id}.mp4"),
-        bytes_downloaded: bytes,
+        local_path: format!("downloads/{user_id}/{video_id}.mp4"),
+        bytes_downloaded: 0,
         total_bytes: bytes,
         status,
         removed_reason: None,
         created_at_ms: 1_000,
         last_accessed_at_ms: 1_000,
+        reservation_id: 0,
     }
 }
 
@@ -44,6 +47,7 @@ fn ffi_download_store_revocations_non_revival_reconciliation_and_policy() {
     let dir = tempdir().unwrap();
     let manifest_path = dir.path().join("manifest.json");
     let manifest_str = manifest_path.to_string_lossy().to_string();
+    let download_root = "/var/mobile/Containers/Data/Application/CURRENT-UUID/Documents";
 
     // Default settings have NO fixed storage cap (E14-D2).
     let defaults = offline_default_download_settings();
@@ -69,28 +73,47 @@ fn ffi_download_store_revocations_non_revival_reconciliation_and_policy() {
         auto_download_charging_only: true,
     };
 
-    // Reserve a Downloading item, update progress, then revoke it: late progress/completion MUST NOT revive it.
+    // Reserve a Downloading item, update progress with its reservation_id, then revoke it:
+    // late progress/completion MUST NOT revive it.
     let mut in_flight = sample_item("user-1", "vid-1", OfflineDownloadStatus::Downloading, 1_024);
     in_flight.bytes_downloaded = 256;
-    assert_eq!(
-        store
-            .try_reserve(in_flight, settings.clone(), OfflineNetworkKind::Wifi, None)
-            .unwrap(),
-        OfflineTransferDecision::Allow
-    );
+    let reserve1 = store
+        .try_reserve(in_flight, settings.clone(), OfflineNetworkKind::Wifi, None)
+        .unwrap();
+    assert_eq!(reserve1.decision, OfflineTransferDecision::Allow);
+    let res_id = reserve1.reservation_id.expect("Allow returns reservation_id");
+
     assert!(store.has_local_downloads().unwrap());
     assert_eq!(store.active_count_for_user("user-1".into()).unwrap(), 1);
+    assert_eq!(store.pending_remaining_bytes().unwrap(), 768);
     assert_eq!(
         store
-            .update_progress("user-1".into(), "vid-1".into(), 512, 1_024, 1_500)
+            .update_progress("user-1".into(), "vid-1".into(), res_id, 512, 1_024, 1_500)
             .unwrap(),
         OfflineUpdateOutcome::Updated
     );
+    assert_eq!(store.pending_remaining_bytes().unwrap(), 512);
 
-    let decision = offline_can_start_download(settings.clone(), OfflineNetworkKind::Wifi, 1024, 512, None);
+    // Wrong reservation_id returns StaleReservation without mutating state.
+    assert_eq!(
+        store
+            .update_progress("user-1".into(), "vid-1".into(), res_id + 99, 900, 1_024, 1_600)
+            .unwrap(),
+        OfflineUpdateOutcome::StaleReservation
+    );
+
+    let decision = offline_can_start_download(
+        settings.clone(),
+        OfflineNetworkKind::Wifi,
+        1_024,
+        512,
+        512,
+        0,
+        None,
+    );
     assert_eq!(decision, OfflineTransferDecision::StorageBudgetExceeded);
 
-    // Auto-download enforces Wi-Fi + charging + dismissed + budget guards.
+    // Auto-download enforces Wi-Fi + charging + dismissed + budget guards and returns evictions.
     let rules = vec![OfflineAutoDownloadRule {
         source_id: "ch-1".into(),
         max_episodes: 1,
@@ -102,18 +125,26 @@ fn ffi_download_store_revocations_non_revival_reconciliation_and_policy() {
         allow_downloads: true,
         estimated_bytes: Some(150),
     }];
+    let existing_auto = vec![OfflineExistingAutoDownload {
+        video_id: "vid-old".into(),
+        source_id: "ch-1".into(),
+        published_at_ms: 1_000,
+    }];
     assert!(
         offline_select_auto_downloads(
             settings.clone(),
             OfflineNetworkKind::Wifi,
             false,
             1_024,
+            0,
             None,
             rules.clone(),
             candidates.clone(),
             vec![],
             vec![],
+            vec![],
         )
+        .to_download
         .is_empty()
     );
     assert_eq!(
@@ -122,13 +153,18 @@ fn ffi_download_store_revocations_non_revival_reconciliation_and_policy() {
             OfflineNetworkKind::Wifi,
             true,
             1_024,
+            0,
             None,
             rules.clone(),
             candidates.clone(),
-            vec![],
+            vec!["vid-old".into()],
+            existing_auto.clone(),
             vec![],
         ),
-        vec!["vid-2".to_string()]
+        OfflineAutoDownloadPlan {
+            to_download: vec!["vid-2".to_string()],
+            to_evict: vec!["vid-old".to_string()],
+        }
     );
     assert!(
         offline_select_auto_downloads(
@@ -136,12 +172,15 @@ fn ffi_download_store_revocations_non_revival_reconciliation_and_policy() {
             OfflineNetworkKind::Wifi,
             true,
             1_024,
+            0,
             None,
             rules,
             candidates,
             vec![],
+            vec![],
             vec!["vid-2".into()],
         )
+        .to_download
         .is_empty()
     );
 
@@ -159,13 +198,13 @@ fn ffi_download_store_revocations_non_revival_reconciliation_and_policy() {
     // Probe A via FFI: late update_progress / mark_completed return RemovedOrMissing.
     assert_eq!(
         store
-            .update_progress("user-1".into(), "vid-1".into(), 900, 1_024, 2_000)
+            .update_progress("user-1".into(), "vid-1".into(), res_id, 900, 1_024, 2_000)
             .unwrap(),
         OfflineUpdateOutcome::RemovedOrMissing
     );
     assert_eq!(
         store
-            .mark_completed("user-1".into(), "vid-1".into(), 1_024, 2_100)
+            .mark_completed("user-1".into(), "vid-1".into(), res_id, 1_024, 2_100)
             .unwrap(),
         OfflineUpdateOutcome::RemovedOrMissing
     );
@@ -190,32 +229,57 @@ fn ffi_download_store_revocations_non_revival_reconciliation_and_policy() {
     assert!(store.pending_deletions().unwrap().is_empty());
     assert_eq!(
         store
-            .mark_completed("user-1".into(), "vid-1".into(), 1_024, 2_200)
+            .mark_completed("user-1".into(), "vid-1".into(), res_id, 1_024, 2_200)
             .unwrap(),
         OfflineUpdateOutcome::RemovedOrMissing
     );
 
-    // Availability sync smoke on a fresh record.
-    let vid3 = sample_item("user-1", "vid-3", OfflineDownloadStatus::Completed, 500);
+    // Reserve -> complete -> update thumbnail -> container-safe reconciliation -> availability sync.
+    let vid3 = sample_item("user-1", "vid-3", OfflineDownloadStatus::Downloading, 500);
+    let reserve3 = store
+        .try_reserve(vid3, settings, OfflineNetworkKind::Wifi, None)
+        .unwrap();
+    assert_eq!(reserve3.decision, OfflineTransferDecision::Allow);
+    let res3 = reserve3.reservation_id.unwrap();
     assert_eq!(
         store
-            .try_reserve(vid3, settings, OfflineNetworkKind::Wifi, None)
+            .mark_completed("user-1".into(), "vid-3".into(), res3, 500, 2_300)
             .unwrap(),
-        OfflineTransferDecision::Allow
+        OfflineUpdateOutcome::Updated
+    );
+    assert_eq!(
+        store
+            .set_thumbnail_path("user-1".into(), "vid-3".into(), "thumbs/vid-3-v2.jpg".into())
+            .unwrap(),
+        OfflineUpdateOutcome::Updated
+    );
+    // Late pause/fail on Completed must return AlreadyTerminal and keep vid-3 playable.
+    assert_eq!(
+        store
+            .mark_paused("user-1".into(), "vid-3".into(), res3, 2_400)
+            .unwrap(),
+        OfflineUpdateOutcome::AlreadyTerminal
     );
     assert!(
         store
             .is_playable_offline("user-1".into(), "vid-3".into())
             .unwrap()
     );
+
     let orphans = store
-        .reconcile_orphaned_paths(vec![
-            "/local/user-1/vid-3.mp4".into(),
-            "/local/vid-3.jpg".into(),
-            "/local/user-1/stray.mp4".into(),
-        ])
+        .reconcile_orphaned_paths(
+            download_root.into(),
+            vec![
+                format!("/private{download_root}/downloads/user-1/vid-3.mp4"),
+                format!("{download_root}/thumbs/vid-3-v2.jpg"),
+                format!("{download_root}/downloads/user-1/stray.mp4"),
+            ],
+        )
         .unwrap();
-    assert_eq!(orphans, vec!["/local/user-1/stray.mp4".to_string()]);
+    assert_eq!(
+        orphans,
+        vec![format!("{download_root}/downloads/user-1/stray.mp4")]
+    );
 
     let removed = store
         .apply_availability_sync(vec![OfflineAvailabilityResult {
@@ -263,9 +327,16 @@ fn ffi_concurrent_try_reserve_enforces_budget_atomically() {
     let mut allowed = 0;
     let mut exceeded = 0;
     for h in handles {
-        match h.join().unwrap() {
-            OfflineTransferDecision::Allow => allowed += 1,
-            OfflineTransferDecision::StorageBudgetExceeded => exceeded += 1,
+        let res = h.join().unwrap();
+        match res.decision {
+            OfflineTransferDecision::Allow => {
+                assert!(res.reservation_id.is_some());
+                allowed += 1;
+            }
+            OfflineTransferDecision::StorageBudgetExceeded => {
+                assert_eq!(res.reservation_id, None);
+                exceeded += 1;
+            }
             other => panic!("unexpected decision: {other:?}"),
         }
     }
@@ -430,4 +501,139 @@ fn ffi_offline_sync_engine_full_surface_and_persistence() {
     assert_eq!(reopened.device_id(), "dev-test");
     assert!(reopened.is_liked("vid-1".into()));
     assert_eq!(reopened.saved_items().len(), 2);
+}
+
+struct StaticToken;
+
+impl TokenSource for StaticToken {
+    fn access_token(&self) -> Option<String> {
+        Some("test-access-token".into())
+    }
+    fn refresh(&self) -> Result<Option<String>, AunError> {
+        Ok(Some("test-access-token".into()))
+    }
+}
+
+#[tokio::test]
+async fn ffi_offline_sync_engine_flush_and_sync_over_http() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/api/watch-history/vid-local/progress"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "videoId": "vid-local",
+            "progress": 42.0,
+            "duration": 120.0,
+            "percentageWatched": 35.0,
+            "completed": false,
+            "timestamp": "2026-11-23T00:00:00Z"
+        })))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/api/videos/vid-local/likes"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "liked": true
+        })))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/api/library/watch-later"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "saved": true
+        })))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/watch-history"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "entries": [{
+                "id": "h-1",
+                "userId": "u-1",
+                "videoId": "vid-remote-hist",
+                "videoTitle": "Tafsir Remote",
+                "videoThumbnail": "https://cdn.example/t.jpg",
+                "videoDuration": 300.0,
+                "channelId": "ch-9",
+                "channelName": "Remote Scholar",
+                "firstWatchedAt": "2026-11-22T12:00:00Z",
+                "lastWatchedAt": "2026-11-23T12:00:00Z",
+                "watchCount": 1.0,
+                "progress": 90.0,
+                "completed": false,
+                "percentageWatched": 30.0
+            }],
+            "total": 1.0,
+            "hasMore": false
+        })))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/library/watch-later"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "items": [{
+                "videoId": "vid-remote-saved",
+                "addedAt": "2026-11-23T10:00:00Z",
+                "title": "Saved Lecture"
+            }],
+            "hasMore": false
+        })))
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/api/library/liked"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "items": [{
+                "videoId": "vid-remote-liked",
+                "addedAt": "2026-11-23T11:00:00Z",
+                "title": "Liked Lecture"
+            }],
+            "hasMore": false
+        })))
+        .mount(&server)
+        .await;
+
+    let dir = tempdir().unwrap();
+    let store_path = dir.path().join("sync-http.json").to_string_lossy().to_string();
+    let client = ApiClient::new(
+        ApiClientConfig {
+            base_url: server.uri(),
+            user_agent: Some("AunTest/1.0".into()),
+            locale: Some("en".into()),
+            timeout_ms: Some(5_000),
+            max_attempts: Some(1),
+            client: None,
+        },
+        Some(Arc::new(StaticToken)),
+    )
+    .unwrap();
+
+    let engine = OfflineSyncEngine::open(store_path, Some("dev-http".into()), client).unwrap();
+
+    // Queue local mutations offline, then flush them over HTTP.
+    engine
+        .record_position("vid-local".into(), 42_000, 120_000)
+        .unwrap();
+    engine.set_liked("vid-local".into(), true).unwrap();
+    engine.set_saved("vid-local".into(), true).unwrap();
+    assert_eq!(engine.pending_count(), 3);
+
+    let flushed = engine.flush().await.unwrap();
+    assert_eq!(flushed.pushed, 3);
+    assert_eq!(flushed.pending, 0);
+    assert_eq!(engine.pending_count(), 0);
+
+    // Full sync pulls remote history, Watch later, and liked items and merges them locally.
+    let synced = engine.sync().await.unwrap();
+    assert_eq!(synced.history_entries_pulled, 1);
+    assert_eq!(synced.saved_pulled, 1);
+    assert_eq!(synced.liked_pulled, 1);
+    assert_eq!(engine.resume_position_ms("vid-remote-hist".into()), Some(90_000));
+    assert!(engine.is_saved("vid-remote-saved".into()));
+    assert!(engine.is_liked("vid-remote-liked".into()));
 }
