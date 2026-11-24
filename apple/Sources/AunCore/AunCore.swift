@@ -7661,12 +7661,12 @@ public func FfiConverterTypeNotificationSettings_lower(_ value: NotificationSett
 
 
 public struct OfflineAutoDownloadPlan: Equatable, Hashable {
-    public var toDownload: [String]
+    public var toDownload: [OfflinePlannedAutoDownload]
     public var toEvict: [String]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(toDownload: [String], toEvict: [String]) {
+    public init(toDownload: [OfflinePlannedAutoDownload], toEvict: [String]) {
         self.toDownload = toDownload
         self.toEvict = toEvict
     }
@@ -7687,13 +7687,13 @@ public struct FfiConverterTypeOfflineAutoDownloadPlan: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OfflineAutoDownloadPlan {
         return
             try OfflineAutoDownloadPlan(
-                toDownload: FfiConverterSequenceString.read(from: &buf), 
+                toDownload: FfiConverterSequenceTypeOfflinePlannedAutoDownload.read(from: &buf), 
                 toEvict: FfiConverterSequenceString.read(from: &buf)
         )
     }
 
     public static func write(_ value: OfflineAutoDownloadPlan, into buf: inout [UInt8]) {
-        FfiConverterSequenceString.write(value.toDownload, into: &buf)
+        FfiConverterSequenceTypeOfflinePlannedAutoDownload.write(value.toDownload, into: &buf)
         FfiConverterSequenceString.write(value.toEvict, into: &buf)
     }
 }
@@ -8247,6 +8247,60 @@ public func FfiConverterTypeOfflineExistingAutoDownload_lift(_ buf: RustBuffer) 
 #endif
 public func FfiConverterTypeOfflineExistingAutoDownload_lower(_ value: OfflineExistingAutoDownload) -> RustBuffer {
     return FfiConverterTypeOfflineExistingAutoDownload.lower(value)
+}
+
+
+public struct OfflinePlannedAutoDownload: Equatable, Hashable {
+    public var videoId: String
+    public var source: OfflineAutoDownloadSource
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(videoId: String, source: OfflineAutoDownloadSource) {
+        self.videoId = videoId
+        self.source = source
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension OfflinePlannedAutoDownload: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOfflinePlannedAutoDownload: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OfflinePlannedAutoDownload {
+        return
+            try OfflinePlannedAutoDownload(
+                videoId: FfiConverterString.read(from: &buf), 
+                source: FfiConverterTypeOfflineAutoDownloadSource.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: OfflinePlannedAutoDownload, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.videoId, into: &buf)
+        FfiConverterTypeOfflineAutoDownloadSource.write(value.source, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflinePlannedAutoDownload_lift(_ buf: RustBuffer) throws -> OfflinePlannedAutoDownload {
+    return try FfiConverterTypeOfflinePlannedAutoDownload.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflinePlannedAutoDownload_lower(_ value: OfflinePlannedAutoDownload) -> RustBuffer {
+    return FfiConverterTypeOfflinePlannedAutoDownload.lower(value)
 }
 
 
@@ -14485,6 +14539,31 @@ fileprivate struct FfiConverterSequenceTypeOfflineExistingAutoDownload: FfiConve
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeOfflineExistingAutoDownload.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeOfflinePlannedAutoDownload: FfiConverterRustBuffer {
+    typealias SwiftType = [OfflinePlannedAutoDownload]
+
+    public static func write(_ value: [OfflinePlannedAutoDownload], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeOfflinePlannedAutoDownload.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [OfflinePlannedAutoDownload] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [OfflinePlannedAutoDownload]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeOfflinePlannedAutoDownload.read(from: &buf))
         }
         return seq
     }

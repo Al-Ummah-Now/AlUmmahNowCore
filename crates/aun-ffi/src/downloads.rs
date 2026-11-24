@@ -344,8 +344,14 @@ pub struct OfflineExistingAutoDownload {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct OfflinePlannedAutoDownload {
+    pub video_id: String,
+    pub source: OfflineAutoDownloadSource,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct OfflineAutoDownloadPlan {
-    pub to_download: Vec<String>,
+    pub to_download: Vec<OfflinePlannedAutoDownload>,
     pub to_evict: Vec<String>,
 }
 
@@ -442,7 +448,14 @@ pub fn offline_select_auto_downloads(
         &dismissed,
     );
     OfflineAutoDownloadPlan {
-        to_download: plan.to_download,
+        to_download: plan
+            .to_download
+            .into_iter()
+            .map(|item| OfflinePlannedAutoDownload {
+                video_id: item.video_id,
+                source: item.source.into(),
+            })
+            .collect(),
         to_evict: plan.to_evict,
     }
 }

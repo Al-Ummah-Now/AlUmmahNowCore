@@ -7,8 +7,8 @@ use std::os::unix::fs::PermissionsExt;
 use aun_downloads::{
     AutoDownloadRule, AutoDownloadSource, AvailabilitySyncResult, DEFAULT_MIN_FREE_SPACE_BYTES,
     DEFAULT_UNKNOWN_ITEM_ESTIMATE_BYTES, DownloadError, DownloadOrigin, DownloadRecord, DownloadSettings,
-    DownloadStatus, DownloadStore, EpisodeCandidate, ExistingAutoDownload, RevocationEntry, TransferDecision,
-    UpdateOutcome, can_start_download, select_auto_downloads,
+    DownloadStatus, DownloadStore, EpisodeCandidate, ExistingAutoDownload, PlannedAutoDownload,
+    RevocationEntry, TransferDecision, UpdateOutcome, can_start_download, select_auto_downloads,
 };
 use aun_player::NetworkKind;
 use tempfile::tempdir;
@@ -960,16 +960,16 @@ fn auto_download_caps_kept_episodes_on_growing_feed_and_never_evicts_manual_down
         );
 
         assert!(!plan.to_evict.contains(&"v-manual".to_string()));
-        for id in &plan.to_download {
+        for item in &plan.to_download {
             let pub_ms = all_candidates
                 .iter()
-                .find(|c| &c.video_id == id)
+                .find(|c| c.video_id == item.video_id)
                 .unwrap()
                 .published_at_ms;
-            existing_ids.insert(id.clone());
+            existing_ids.insert(item.video_id.clone());
             existing_auto.push(ExistingAutoDownload {
-                video_id: id.clone(),
-                source: ch1.clone(),
+                video_id: item.video_id.clone(),
+                source: item.source.clone(),
                 published_at_ms: pub_ms,
                 size_bytes: 1_000,
             });
@@ -1005,7 +1005,12 @@ fn auto_download_caps_kept_episodes_on_growing_feed_and_never_evicts_manual_down
         &existing_auto,
         &dismissed,
     );
-    assert!(!after_dismiss.to_download.contains(&"ep-8".to_string()));
+    assert!(
+        !after_dismiss
+            .to_download
+            .iter()
+            .any(|item| item.video_id == "ep-8")
+    );
 
     // Free-space check with pending_remaining_bytes prevents auto-download oversubscription:
     // available 1,600 - 500 reserve - 600 pending = 500 left < 1,000 item -> picks nothing.
@@ -1242,7 +1247,13 @@ fn auto_download_prevents_thrashing_when_kept_leave_feed_rolls_forward_at_cap_an
         &dismissed,
     );
     assert_eq!(roll_plan.to_evict, vec!["v8".to_string()]);
-    assert_eq!(roll_plan.to_download, vec!["v10".to_string()]);
+    assert_eq!(
+        roll_plan.to_download,
+        vec![PlannedAutoDownload {
+            video_id: "v10".to_string(),
+            source: ch1.clone(),
+        }]
+    );
 
     // Store tracks DownloadOrigin::Auto vs Manual and supports promoting Auto -> Manual via mark_manual.
     let dir = tempdir().unwrap();
@@ -1438,15 +1449,17 @@ fn auto_download_playlist_rule_missing_channel_id_and_combined_rules_never_thras
                 store.remove("u1", ev).unwrap();
                 store.confirm_removed("u1", ev).unwrap();
             }
-            for vid in &plan.to_download {
-                let c = candidates.iter().find(|c| &c.video_id == vid).unwrap();
-                let mut rec = sample_record("u1", vid, DownloadStatus::Downloading, 1_000);
+            for item in &plan.to_download {
+                let c = candidates.iter().find(|c| c.video_id == item.video_id).unwrap();
+                let mut rec = sample_record("u1", &item.video_id, DownloadStatus::Downloading, 1_000);
                 rec.channel_id = Some("ch-1".into());
                 rec.origin = DownloadOrigin::Auto;
-                rec.auto_source = Some(pl.clone());
+                rec.auto_source = Some(item.source.clone());
                 rec.published_at_ms = Some(c.published_at_ms);
                 let rid = reserve_ok(&mut store, rec);
-                store.mark_completed("u1", vid, rid, 1_000, 10_000).unwrap();
+                store
+                    .mark_completed("u1", &item.video_id, rid, 1_000, 10_000)
+                    .unwrap();
                 total_downloads += 1;
             }
             assert!(store.list_for_user("u1").len() <= 2);
@@ -1516,15 +1529,17 @@ fn auto_download_playlist_rule_missing_channel_id_and_combined_rules_never_thras
                 store.remove("u1", ev).unwrap();
                 store.confirm_removed("u1", ev).unwrap();
             }
-            for vid in &plan.to_download {
-                let c = candidates.iter().find(|c| &c.video_id == vid).unwrap();
-                let mut rec = sample_record("u1", vid, DownloadStatus::Downloading, 1_000);
+            for item in &plan.to_download {
+                let c = candidates.iter().find(|c| c.video_id == item.video_id).unwrap();
+                let mut rec = sample_record("u1", &item.video_id, DownloadStatus::Downloading, 1_000);
                 rec.channel_id = None;
                 rec.origin = DownloadOrigin::Auto;
-                rec.auto_source = Some(ch.clone());
+                rec.auto_source = Some(item.source.clone());
                 rec.published_at_ms = Some(c.published_at_ms);
                 let rid = reserve_ok(&mut store, rec);
-                store.mark_completed("u1", vid, rid, 1_000, 10_000).unwrap();
+                store
+                    .mark_completed("u1", &item.video_id, rid, 1_000, 10_000)
+                    .unwrap();
                 total_downloads += 1;
             }
         }
@@ -1595,21 +1610,21 @@ fn auto_download_playlist_rule_missing_channel_id_and_combined_rules_never_thras
                 store.confirm_removed("u1", ev).unwrap();
                 total_evictions += 1;
             }
-            for vid in &plan.to_download {
-                // Attribute the first 2 picked in pass 1 to channel rule, next 2 to playlist rule.
-                let owner_source = if vid == "v9" || vid == "v8" {
-                    ch.clone()
-                } else {
-                    pl.clone()
-                };
-                let c = candidates.iter().find(|c| &c.video_id == vid).unwrap();
-                let mut rec = sample_record("u1", vid, DownloadStatus::Downloading, 1_000);
+            for item in &plan.to_download {
+                // Take the owning rule source directly from the plan (never hard-coded).
+                let c = candidates
+                    .iter()
+                    .find(|c| c.video_id == item.video_id && c.source == item.source)
+                    .unwrap();
+                let mut rec = sample_record("u1", &item.video_id, DownloadStatus::Downloading, 1_000);
                 rec.channel_id = Some("shared-1".into());
                 rec.origin = DownloadOrigin::Auto;
-                rec.auto_source = Some(owner_source);
+                rec.auto_source = Some(item.source.clone());
                 rec.published_at_ms = Some(c.published_at_ms);
                 let rid = reserve_ok(&mut store, rec);
-                store.mark_completed("u1", vid, rid, 1_000, 10_000).unwrap();
+                store
+                    .mark_completed("u1", &item.video_id, rid, 1_000, 10_000)
+                    .unwrap();
                 total_downloads += 1;
             }
         }
@@ -1661,6 +1676,18 @@ fn auto_download_playlist_rule_missing_channel_id_and_combined_rules_never_thras
             &[],
             &empty,
         );
-        assert_eq!(plan.to_download, vec!["v2".to_string(), "v1".to_string()]);
+        assert_eq!(
+            plan.to_download,
+            vec![
+                PlannedAutoDownload {
+                    video_id: "v2".to_string(),
+                    source: AutoDownloadSource::channel("ch-dup"),
+                },
+                PlannedAutoDownload {
+                    video_id: "v1".to_string(),
+                    source: AutoDownloadSource::channel("ch-dup"),
+                },
+            ]
+        );
     }
 }

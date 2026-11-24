@@ -191,11 +191,20 @@ pub struct ExistingAutoDownload {
     pub size_bytes: u64,
 }
 
-/// Output of [`select_auto_downloads`]: new episodes to queue and older auto-downloaded episodes
-/// that fell out of a channel's `max_episodes` window.
+/// One episode selected by [`select_auto_downloads`], carrying both its `video_id` and the
+/// owning rule [`AutoDownloadSource`] so callers can persist `DownloadRecord.auto_source`
+/// accurately even when a video appears in both a channel rule and a playlist rule.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlannedAutoDownload {
+    pub video_id: String,
+    pub source: AutoDownloadSource,
+}
+
+/// Output of [`select_auto_downloads`]: new episodes to queue (each tagged with its owning rule
+/// source) and older auto-downloaded episodes that fell out of a rule's `max_episodes` window.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AutoDownloadPlan {
-    pub to_download: Vec<String>,
+    pub to_download: Vec<PlannedAutoDownload>,
     pub to_evict: Vec<String>,
 }
 
@@ -378,7 +387,10 @@ pub fn select_auto_downloads(
                 running_used = effective_used.saturating_add(item_bytes);
                 running_pending = running_pending.saturating_add(item_bytes);
                 picked_this_pass.insert(ep.video_id.clone());
-                plan.to_download.push(ep.video_id.clone());
+                plan.to_download.push(PlannedAutoDownload {
+                    video_id: ep.video_id.clone(),
+                    source: rule.source.clone(),
+                });
                 kept_auto.push(ExistingAutoDownload {
                     video_id: ep.video_id.clone(),
                     source: ep.source.clone(),
@@ -406,7 +418,10 @@ pub fn select_auto_downloads(
                 running_used = running_used.saturating_add(item_bytes);
                 running_pending = running_pending.saturating_add(item_bytes);
                 picked_this_pass.insert(ep.video_id.clone());
-                plan.to_download.push(ep.video_id.clone());
+                plan.to_download.push(PlannedAutoDownload {
+                    video_id: ep.video_id.clone(),
+                    source: rule.source.clone(),
+                });
                 kept_auto.push(ExistingAutoDownload {
                     video_id: ep.video_id.clone(),
                     source: ep.source.clone(),
