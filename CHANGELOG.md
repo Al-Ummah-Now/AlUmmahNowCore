@@ -7,6 +7,8 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+## [0.4.0-rc.5] - 2026-11-23
+
 ### Added
 
 - Epic 22 (`E22-S7`, `Core#40`):
