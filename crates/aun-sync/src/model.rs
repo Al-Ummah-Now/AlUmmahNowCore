@@ -83,11 +83,59 @@ impl Merge for Note {
 }
 
 /// Display metadata cached from the server (title, thumbnail, channel); last fetch wins.
+/// Never caches signed or private thumbnail URLs on disk (E14-D1 signed-URL prohibition).
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct VideoMeta {
     pub title: String,
     pub thumbnail_url: Option<String>,
     pub channel_name: Option<String>,
+}
+
+/// Strips signed or private media URLs so short-lived tokens are never persisted in the sync
+/// store or exposed from cached metadata. Public, unsigned http(s) URLs pass through unchanged.
+pub fn sanitize_thumbnail_url(url: Option<String>) -> Option<String> {
+    let raw = url?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if !(lower.starts_with("https://") || lower.starts_with("http://")) {
+        return None;
+    }
+    if lower.contains("/priv/") || lower.contains("/bcdn_token=") {
+        return None;
+    }
+    if let Some((_, query)) = lower.split_once('?') {
+        for pair in query.split('&') {
+            let key = pair.split('=').next().unwrap_or("");
+            if matches!(
+                key,
+                "sig"
+                    | "signature"
+                    | "token"
+                    | "access_token"
+                    | "jwt"
+                    | "exp"
+                    | "expires"
+                    | "auth"
+                    | "key"
+                    | "bcdn_token"
+            ) || key.starts_with("x-amz-")
+                || key.starts_with("x-goog-")
+            {
+                return None;
+            }
+        }
+    }
+    Some(trimmed.to_owned())
+}
+
+impl VideoMeta {
+    pub fn sanitized(mut self) -> Self {
+        self.thumbnail_url = sanitize_thumbnail_url(self.thumbnail_url);
+        self
+    }
 }
 
 /// The CRDT document: everything that syncs across a user's devices.
@@ -220,38 +268,51 @@ pub struct LibraryItem {
     pub channel_name: Option<String>,
 }
 
-/// Download progress on this device.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DownloadState {
-    #[default]
-    Queued,
-    Downloading,
-    Paused,
-    Completed,
-    Failed,
-}
-
-/// Offline download metadata. Device-local: it is stored with the sync state but never merged or
-/// pushed, because files exist only on the device that downloaded them.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct DownloadRecord {
-    pub video_id: String,
-    pub state: DownloadState,
-    /// Rendition height (e.g. 720).
-    pub quality: u32,
-    pub bytes_total: u64,
-    pub bytes_done: u64,
-    /// App-relative path of the downloaded file/package.
-    pub local_path: String,
-    /// When the download must be re-validated or deleted (licence/expiry), Unix ms; 0 = never.
-    pub expires_at_ms: i64,
-    pub updated_at_ms: i64,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn strips_signed_and_private_thumbnail_urls() {
+        assert_eq!(
+            sanitize_thumbnail_url(Some("https://media.alummahnow.net/pub/v1/r1/thumb.jpg".into())),
+            Some("https://media.alummahnow.net/pub/v1/r1/thumb.jpg".into())
+        );
+        assert_eq!(
+            sanitize_thumbnail_url(Some(
+                "https://media.alummahnow.net/priv/tok123/v1/r1/thumb.jpg".into()
+            )),
+            None
+        );
+        assert_eq!(
+            sanitize_thumbnail_url(Some("https://cdn.example/thumb.jpg?token=abc&expires=123".into())),
+            None
+        );
+        assert_eq!(
+            sanitize_thumbnail_url(Some(
+                "https://r2.example/thumb.jpg?X-Amz-Signature=deadbeef".into()
+            )),
+            None
+        );
+        assert_eq!(
+            sanitize_thumbnail_url(Some(
+                "https://cdn.example/bcdn_token=abc&expires=999/thumb.jpg".into()
+            )),
+            None
+        );
+        assert_eq!(
+            sanitize_thumbnail_url(Some("https://cdn.example/thumb.jpg?access_token=secret".into())),
+            None
+        );
+        assert_eq!(
+            sanitize_thumbnail_url(Some("https://cdn.example/thumb.jpg?jwt=eyJ.abc.def".into())),
+            None
+        );
+        assert_eq!(
+            sanitize_thumbnail_url(Some("//cdn.example/priv/tok/thumb.jpg".into())),
+            None
+        );
+    }
 
     fn s(ts: i64, d: &str) -> Stamp {
         Stamp::new(ts, d)

@@ -1,7 +1,8 @@
 # Sync (`aun-sync`)
 
 Cross-device state for the native apps: watch position and history, timestamped notes and
-bookmarks, Watch later, likes, and the device-local offline library (download records).
+bookmarks, Watch later, and likes. (Device-local offline downloads are managed exclusively by the
+`aun-downloads` crate.)
 
 ## Model
 
@@ -30,9 +31,9 @@ A video is in history when its latest activity (position or completed) is newer 
 
 ## Engine
 
-`SyncEngine` (one per signed-in account) holds the state, an **outbox** of server writes and the
-download records. It persists everything to one JSON file, replaced atomically (temp file, then
-rename). A corrupt file is moved to `<file>.corrupt` and the engine starts empty.
+`SyncEngine` (one per signed-in account) holds the state and an **outbox** of server writes.
+It persists everything to one JSON file, replaced atomically (temp file, then rename). A corrupt
+file is moved to `<file>.corrupt` and the engine starts empty.
 While open, the engine holds an exclusive OS lock on `<file>.lock` (`flock` / `LockFileEx`, released
 when the engine is dropped or the process exits). A second engine on the same file, in another
 process or the same one, fails with `Conflict` instead of loading the same state and overwriting
@@ -81,7 +82,7 @@ the other's writes; apps should show "already open in another window" and not re
 - **Stateful.** `SyncEngine` is an `Arc` handle; all methods take `&self`. `flush()` and `sync()`
   are async (tokio); the rest are synchronous and cheap.
 - **Records.** `WatchStateView`, `HistoryItem`, `ContinueWatchingItem`, `NoteView`, `LibraryItem`,
-  `DownloadRecord` / `DownloadState`, `SyncReport`, `SyncConfig`, `SyncChange`.
+  `SyncReport`, `SyncConfig`, `SyncChange`.
 - **Native adapters.** `SyncListener` (events) and, optionally, a custom `SyncTransport`. The
   default is `ApiSyncTransport` over `aun_api::ApiClient`.
 - **Time.** All times are i64 Unix ms and all positions/durations are u64 ms.

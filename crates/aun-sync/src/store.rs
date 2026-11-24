@@ -1,4 +1,4 @@
-//! Local persistence: one JSON document per account (`SyncState` + outbox + downloads), replaced
+//! Local persistence: one JSON document per account (`SyncState` + outbox), replaced
 //! atomically (write a temp file, then rename) so a crash never leaves a torn file.
 
 use std::collections::BTreeMap;
@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use aun_common::{Error, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::model::{DownloadRecord, SyncState};
+use crate::model::{SyncState, sanitize_thumbnail_url};
 
 /// A server write waiting to be pushed. Coalesced by [`PendingOp::key`]: the latest write for a
 /// key replaces older ones.
@@ -79,7 +79,6 @@ pub struct StoreData {
     pub device_id: String,
     pub state: SyncState,
     pub pending: BTreeMap<String, PendingEntry>,
-    pub downloads: BTreeMap<String, DownloadRecord>,
     /// Last successful progress push per video (debounce).
     pub last_push_ms: BTreeMap<String, i64>,
     pub last_sync_ms: i64,
@@ -107,7 +106,12 @@ pub fn load(path: &Path) -> Result<Option<StoreData>> {
         Err(e) => return Err(e.into()),
     };
     match serde_json::from_slice::<StoreData>(&bytes) {
-        Ok(d) if d.version <= STORE_VERSION => Ok(Some(d)),
+        Ok(mut d) if d.version <= STORE_VERSION => {
+            for meta in d.state.meta.values_mut() {
+                meta.value.thumbnail_url = sanitize_thumbnail_url(meta.value.thumbnail_url.take());
+            }
+            Ok(Some(d))
+        }
         Ok(d) => Err(Error::Storage(format!(
             "sync store version {} is newer than this build ({STORE_VERSION})",
             d.version

@@ -7,7 +7,8 @@
 //! - [`SyncEngine`] is local-first. Writes apply at once and are persisted atomically to a JSON
 //!   store per account; server writes are coalesced and debounced (positions at most every 30 s per
 //!   video); `sync()` pushes and pulls through a [`SyncTransport`]. Queries: history, "Continue
-//!   watching", notes per video, Watch later, liked, downloads.
+//!   watching", notes per video, Watch later, liked. (Offline downloads are managed exclusively by
+//!   the `aun-downloads` crate.)
 //! - [`ApiSyncTransport`] maps the transport onto today's api-videos endpoints. Server gaps (no
 //!   per-field timestamps, no notes or "continue watching" endpoint) are listed in `docs/SYNC.md`.
 
@@ -21,8 +22,8 @@ mod transport;
 pub use engine::{SERVER_DEVICE, SyncChange, SyncConfig, SyncEngine, SyncListener, SyncReport};
 pub use lww::{Lww, Merge, Stamp};
 pub use model::{
-    COMPLETED_FRACTION, ContinueWatchingItem, DownloadRecord, DownloadState, HistoryItem, LibraryItem, Note,
-    NoteView, RESUME_MIN_MS, SyncState, VideoMeta, WatchState, WatchStateView, merged,
+    COMPLETED_FRACTION, ContinueWatchingItem, HistoryItem, LibraryItem, Note, NoteView, RESUME_MIN_MS,
+    SyncState, VideoMeta, WatchState, WatchStateView, merged, sanitize_thumbnail_url,
 };
 pub use transport::{
     ApiSyncTransport, RemoteHistoryEntry, RemoteHistoryPage, RemoteLibraryItem, RemoteLibraryPage,

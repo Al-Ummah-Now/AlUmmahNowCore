@@ -16,8 +16,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::lww::{Lww, Merge, Stamp};
 use crate::model::{
-    ContinueWatchingItem, DownloadRecord, HistoryItem, LibraryItem, Note, NoteView, RESUME_MIN_MS, SyncState,
-    VideoMeta, WatchState, WatchStateView,
+    ContinueWatchingItem, HistoryItem, LibraryItem, Note, NoteView, RESUME_MIN_MS, SyncState, VideoMeta,
+    WatchState, WatchStateView, sanitize_thumbnail_url,
 };
 use crate::store::{self, PendingEntry, PendingOp, STORE_VERSION, StoreData};
 use crate::transport::{RemoteLibraryPage, SyncTransport};
@@ -69,7 +69,6 @@ pub enum SyncChange {
     History,
     Notes,
     Library,
-    Downloads,
 }
 
 /// Change notifications, implemented natively. Called after the change, never while an internal
@@ -449,7 +448,7 @@ impl SyncEngine {
         match st.meta.get(id) {
             Some(m) => (
                 Some(m.value.title.clone()).filter(|t| !t.is_empty()),
-                m.value.thumbnail_url.clone(),
+                sanitize_thumbnail_url(m.value.thumbnail_url.clone()),
                 m.value.channel_name.clone(),
             ),
             None => (None, None, None),
@@ -755,35 +754,6 @@ impl SyncEngine {
         Self::library_items(st, &st.liked, None)
     }
 
-    // ---- downloads (device-local) --------------------------------------------------------------
-
-    pub fn upsert_download(&self, mut record: DownloadRecord) -> Result<()> {
-        if record.video_id.is_empty() {
-            return Err(Error::InvalidInput("empty video id".into()));
-        }
-        self.mutate(vec![SyncChange::Downloads], |data, now, _| {
-            record.updated_at_ms = now;
-            data.downloads.insert(record.video_id.clone(), record);
-        });
-        Ok(())
-    }
-
-    pub fn remove_download(&self, video_id: &str) {
-        self.mutate(vec![SyncChange::Downloads], |data, _, _| {
-            data.downloads.remove(video_id);
-        });
-    }
-
-    pub fn downloads(&self) -> Vec<DownloadRecord> {
-        let mut v: Vec<DownloadRecord> = self.lock().data.downloads.values().cloned().collect();
-        v.sort_by(|a, b| {
-            b.updated_at_ms
-                .cmp(&a.updated_at_ms)
-                .then_with(|| a.video_id.cmp(&b.video_id))
-        });
-        v
-    }
-
     // ---- CRDT state exchange -------------------------------------------------------------------
 
     /// The replicated state (for device-to-device exchange or a future LWW-aware server).
@@ -802,6 +772,9 @@ impl SyncEngine {
             ],
             |data, _, _| {
                 data.state.join(other);
+                for meta in data.state.meta.values_mut() {
+                    meta.value.thumbnail_url = sanitize_thumbnail_url(meta.value.thumbnail_url.take());
+                }
                 data.observe();
             },
         );
@@ -1026,6 +999,7 @@ impl SyncEngine {
     }
 
     fn set_meta(state: &mut SyncState, video_id: &str, meta: VideoMeta, stamp: &Stamp) {
+        let meta = meta.sanitized();
         let entry = state.meta.entry(video_id.to_owned()).or_default();
         if entry.value != meta {
             entry.set(meta, stamp.clone());

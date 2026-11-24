@@ -10,8 +10,8 @@ use async_trait::async_trait;
 use aun_common::platform::{Clock, ManualClock};
 use aun_common::{Error, Result};
 use aun_sync::{
-    DownloadRecord, DownloadState, RemoteHistoryEntry, RemoteHistoryPage, RemoteLibraryItem,
-    RemoteLibraryPage, SyncChange, SyncConfig, SyncEngine, SyncListener, SyncTransport, VideoMeta,
+    RemoteHistoryEntry, RemoteHistoryPage, RemoteLibraryItem, RemoteLibraryPage, SyncChange, SyncConfig,
+    SyncEngine, SyncListener, SyncTransport, VideoMeta,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -427,22 +427,12 @@ async fn persistence_downloads_and_listeners() {
     let id = e.add_listener(rec.clone());
     e.record_position("v1", 45_000, 600_000).unwrap();
     e.add_note("v1", 1_000, "n").unwrap();
-    e.upsert_download(DownloadRecord {
-        video_id: "v1".into(),
-        state: DownloadState::Completed,
-        quality: 720,
-        bytes_total: 10,
-        bytes_done: 10,
-        local_path: "downloads/v1".into(),
-        ..DownloadRecord::default()
-    })
-    .unwrap();
-    assert!(rec.0.lock().unwrap().len() >= 3);
+    assert!(rec.0.lock().unwrap().len() >= 2);
     e.remove_listener(id);
     e.persist().unwrap();
     drop(e);
 
-    // Reopen: state, outbox and downloads survive; the store's device id is reused when none given.
+    // Reopen: state and outbox survive; the store's device id is reused when none given.
     let e2 = SyncEngine::open_with_clock(
         SyncConfig {
             store_path: Some(path.clone()),
@@ -456,9 +446,6 @@ async fn persistence_downloads_and_listeners() {
     assert_eq!(e2.resume_position_ms("v1"), Some(45_000));
     assert_eq!(e2.pending_count(), 1);
     assert_eq!(e2.notes_for_video("v1").len(), 1);
-    assert_eq!(e2.downloads()[0].quality, 720);
-    e2.remove_download("v1");
-    assert!(e2.downloads().is_empty());
     assert!(e2.record_position("", 1, 1).is_err());
 
     // A fresh store without a device id generates one.
