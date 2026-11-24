@@ -7,18 +7,23 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
-## [0.4.0-rc.5] - 2026-11-23
+## [0.4.0-rc.6] - 2026-11-24
 
 ### Added
 
 - Epic 14 (`E14-S7`, `Core#53`):
-  - New crate `aun-downloads` for plain progressive R2 `video.mp4` offline downloads (per E14-D1/D2/D5/D8 — no encryption, DRM, quality ladder, audio-only downloads, or license expiry): `(user_id, video_id)`-keyed JSON manifest with exclusive `StoreLock`, fsync + atomic rename with rollback on failed save, relative-only local paths, crash-safe two-phase deletion (`Removed` → `confirm_removed`), revocations feed cursor & purge, corrupt/zero-byte quarantine & per-record salvage with container-safe `reconcile_orphaned_paths`, atomic `try_reserve` with monotonic `reservation_id` tokens, free-space reserve accounting across unfinished downloads, and per-channel `max_episodes` auto-download selection & eviction (`AutoDownloadPlan`).
+  - New crate `aun-downloads` for plain progressive R2 `video.mp4` offline downloads (per E14-D1/D2/D5/D8 — no encryption, DRM, quality ladder, audio-only downloads, or license expiry): `(user_id, video_id)`-keyed JSON manifest with exclusive `StoreLock`, fsync + atomic rename with rollback on failed save, relative-only local paths, crash-safe two-phase deletion (`Removed` → `confirm_removed`), revocations feed cursor & purge, corrupt/zero-byte quarantine & per-record salvage with container-safe `reconcile_orphaned_paths`, atomic `try_reserve` with monotonic `reservation_id` tokens, free-space reserve accounting across unfinished downloads, and per-rule (`AutoDownloadSource` channel/playlist) `max_episodes` auto-download selection & eviction (`AutoDownloadPlan`).
   - UniFFI exports in `aun-ffi` (`AunCore.swift`) for `OfflineDownloadStore`, `offline_default_download_settings`, `offline_can_start_download`, `offline_select_auto_downloads`, `PlayerMachine` (`aun-player`), and `OfflineSyncEngine` (`aun-sync` CRDT watch state, history, Continue watching, likes, Watch later, timestamped study notes, change listeners, `flush`, and `sync`).
   - Hardened `aun-sync` `sanitize_thumbnail_url` to strip signed/private thumbnail URLs (`/priv/`, `token=`, `sig=`, `X-Amz-Signature`, `bcdn_token=`, `access_token=`, `jwt=`).
 
 ### Breaking
 
 - Epic 14 (`E14-S7`, `Core#53`): removed legacy download-manifest helpers from `aun-sync` (`upsert_download`, `remove_download`, `downloads`, `DownloadRecord`, and `SyncChange::Downloads`); offline downloads now live exclusively in the dedicated `aun-downloads` crate (`DownloadStore` / FFI `OfflineDownloadStore`).
+
+## [0.4.0-rc.5] - 2026-11-23
+
+### Added
+
 - Epic 22 (`E22-S7`, `Core#40`):
   - `aun-common::short_links` & UniFFI `short_link_origin_for`, `short_link_for`, `share_short_link`, and `parse_short_link_path` matching `packages/shared-types/src/short-links.ts` (`/v/`, `/s/`, `/@`, `/c/`, `/p/`, `/l/`, `/e/`, `?list=`, `?index=`, `?t=`, and `?lang=ar`).
   - `aun-api::notifications` & UniFFI `ApiClient` methods for the notification bell (`unseenCount` with `9+` / `٩+` formatting, `POST /api/notifications/seen`, `menuOpen` mode, realtime `notifications_state` reducer per `Core#40`), daily quiet hours & prayer-time quiet windows (`GET` / `PUT /api/notifications/settings`), and native push device registration (`PUT` / `DELETE /api/devices/:installId`).
