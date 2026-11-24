@@ -2635,6 +2635,441 @@ public func FfiConverterTypeModelStore_lower(_ value: ModelStore) -> UInt64 {
 
 
 /**
+ * Thread-safe handle to the persistent plain-file offline download manifest keyed by `(user_id, video_id)`.
+ */
+public protocol OfflineDownloadStoreProtocol: AnyObject, Sendable {
+    
+    func activeCountForUser(userId: String) throws  -> UInt32
+    
+    func applyAvailabilitySync(results: [OfflineAvailabilityResult]) throws  -> [OfflineDownloadItem]
+    
+    func applyRevocations(entries: [OfflineRevocationEntry]) throws  -> [OfflineDownloadItem]
+    
+    func clearForUser(userId: String) throws  -> [OfflineDownloadItem]
+    
+    func commitRevocationsCursor(newSeq: UInt64) throws 
+    
+    func confirmRemoved(userId: String, videoId: String) throws  -> Bool
+    
+    func confirmRemovedBatch(keys: [OfflineDownloadKey]) throws  -> UInt32
+    
+    func evictToBudget(maxBytes: UInt64) throws  -> [OfflineDownloadItem]
+    
+    func get(userId: String, videoId: String) throws  -> OfflineDownloadItem?
+    
+    func hasLocalDownloads() throws  -> Bool
+    
+    func isPlayableOffline(userId: String, videoId: String) throws  -> Bool
+    
+    func list() throws  -> [OfflineDownloadItem]
+    
+    func listForUser(userId: String) throws  -> [OfflineDownloadItem]
+    
+    func markCompleted(userId: String, videoId: String, finalBytes: UInt64, nowMs: Int64) throws  -> OfflineUpdateOutcome
+    
+    func markDownloading(userId: String, videoId: String, nowMs: Int64) throws  -> OfflineUpdateOutcome
+    
+    func markFailed(userId: String, videoId: String, nowMs: Int64) throws  -> OfflineUpdateOutcome
+    
+    func markPaused(userId: String, videoId: String, nowMs: Int64) throws  -> OfflineUpdateOutcome
+    
+    func markReconciled() throws 
+    
+    func needsDiskReconciliation() throws  -> Bool
+    
+    func pendingDeletions() throws  -> [OfflineDownloadItem]
+    
+    func purgeInactive() throws  -> [OfflineDownloadItem]
+    
+    func reconcileOrphanedPaths(diskPaths: [String]) throws  -> [String]
+    
+    func remove(userId: String, videoId: String) throws  -> OfflineDownloadItem?
+    
+    func revocationsCursor() throws  -> UInt64
+    
+    func totalBytes() throws  -> UInt64
+    
+    /**
+     * Atomically checks network + storage cap / free-space reserve (excluding this item's own
+     * reservation) and persists the record on `Allow`. Refuses to create over a `Removed` record.
+     */
+    func tryReserve(item: OfflineDownloadItem, settings: OfflineDownloadSettings, network: OfflineNetworkKind, availableDiskBytes: UInt64?) throws  -> OfflineTransferDecision
+    
+    func updateProgress(userId: String, videoId: String, bytesDownloaded: UInt64, totalBytes: UInt64, nowMs: Int64) throws  -> OfflineUpdateOutcome
+    
+}
+/**
+ * Thread-safe handle to the persistent plain-file offline download manifest keyed by `(user_id, video_id)`.
+ */
+open class OfflineDownloadStore: OfflineDownloadStoreProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aun_core_fn_clone_offlinedownloadstore(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aun_core_fn_free_offlinedownloadstore(handle, $0) }
+    }
+
+    
+public static func `open`(path: String)throws  -> OfflineDownloadStore  {
+    return try  FfiConverterTypeOfflineDownloadStore_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_constructor_offlinedownloadstore_open(
+        FfiConverterString.lower(path),$0
+    )
+})
+}
+    
+
+    
+open func activeCountForUser(userId: String)throws  -> UInt32  {
+    return try  FfiConverterUInt32.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_active_count_for_user(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(userId),$0
+    )
+})
+}
+    
+open func applyAvailabilitySync(results: [OfflineAvailabilityResult])throws  -> [OfflineDownloadItem]  {
+    return try  FfiConverterSequenceTypeOfflineDownloadItem.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_apply_availability_sync(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceTypeOfflineAvailabilityResult.lower(results),$0
+    )
+})
+}
+    
+open func applyRevocations(entries: [OfflineRevocationEntry])throws  -> [OfflineDownloadItem]  {
+    return try  FfiConverterSequenceTypeOfflineDownloadItem.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_apply_revocations(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceTypeOfflineRevocationEntry.lower(entries),$0
+    )
+})
+}
+    
+open func clearForUser(userId: String)throws  -> [OfflineDownloadItem]  {
+    return try  FfiConverterSequenceTypeOfflineDownloadItem.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_clear_for_user(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(userId),$0
+    )
+})
+}
+    
+open func commitRevocationsCursor(newSeq: UInt64)throws   {try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_commit_revocations_cursor(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt64.lower(newSeq),$0
+    )
+}
+}
+    
+open func confirmRemoved(userId: String, videoId: String)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_confirm_removed(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(userId),
+        FfiConverterString.lower(videoId),$0
+    )
+})
+}
+    
+open func confirmRemovedBatch(keys: [OfflineDownloadKey])throws  -> UInt32  {
+    return try  FfiConverterUInt32.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_confirm_removed_batch(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceTypeOfflineDownloadKey.lower(keys),$0
+    )
+})
+}
+    
+open func evictToBudget(maxBytes: UInt64)throws  -> [OfflineDownloadItem]  {
+    return try  FfiConverterSequenceTypeOfflineDownloadItem.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_evict_to_budget(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt64.lower(maxBytes),$0
+    )
+})
+}
+    
+open func get(userId: String, videoId: String)throws  -> OfflineDownloadItem?  {
+    return try  FfiConverterOptionTypeOfflineDownloadItem.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_get(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(userId),
+        FfiConverterString.lower(videoId),$0
+    )
+})
+}
+    
+open func hasLocalDownloads()throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_has_local_downloads(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func isPlayableOffline(userId: String, videoId: String)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_is_playable_offline(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(userId),
+        FfiConverterString.lower(videoId),$0
+    )
+})
+}
+    
+open func list()throws  -> [OfflineDownloadItem]  {
+    return try  FfiConverterSequenceTypeOfflineDownloadItem.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_list(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func listForUser(userId: String)throws  -> [OfflineDownloadItem]  {
+    return try  FfiConverterSequenceTypeOfflineDownloadItem.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_list_for_user(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(userId),$0
+    )
+})
+}
+    
+open func markCompleted(userId: String, videoId: String, finalBytes: UInt64, nowMs: Int64)throws  -> OfflineUpdateOutcome  {
+    return try  FfiConverterTypeOfflineUpdateOutcome_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_mark_completed(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(userId),
+        FfiConverterString.lower(videoId),
+        FfiConverterUInt64.lower(finalBytes),
+        FfiConverterInt64.lower(nowMs),$0
+    )
+})
+}
+    
+open func markDownloading(userId: String, videoId: String, nowMs: Int64)throws  -> OfflineUpdateOutcome  {
+    return try  FfiConverterTypeOfflineUpdateOutcome_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_mark_downloading(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(userId),
+        FfiConverterString.lower(videoId),
+        FfiConverterInt64.lower(nowMs),$0
+    )
+})
+}
+    
+open func markFailed(userId: String, videoId: String, nowMs: Int64)throws  -> OfflineUpdateOutcome  {
+    return try  FfiConverterTypeOfflineUpdateOutcome_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_mark_failed(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(userId),
+        FfiConverterString.lower(videoId),
+        FfiConverterInt64.lower(nowMs),$0
+    )
+})
+}
+    
+open func markPaused(userId: String, videoId: String, nowMs: Int64)throws  -> OfflineUpdateOutcome  {
+    return try  FfiConverterTypeOfflineUpdateOutcome_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_mark_paused(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(userId),
+        FfiConverterString.lower(videoId),
+        FfiConverterInt64.lower(nowMs),$0
+    )
+})
+}
+    
+open func markReconciled()throws   {try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_mark_reconciled(
+            self.uniffiCloneHandle(),$0
+    )
+}
+}
+    
+open func needsDiskReconciliation()throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_needs_disk_reconciliation(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func pendingDeletions()throws  -> [OfflineDownloadItem]  {
+    return try  FfiConverterSequenceTypeOfflineDownloadItem.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_pending_deletions(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func purgeInactive()throws  -> [OfflineDownloadItem]  {
+    return try  FfiConverterSequenceTypeOfflineDownloadItem.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_purge_inactive(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func reconcileOrphanedPaths(diskPaths: [String])throws  -> [String]  {
+    return try  FfiConverterSequenceString.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_reconcile_orphaned_paths(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceString.lower(diskPaths),$0
+    )
+})
+}
+    
+open func remove(userId: String, videoId: String)throws  -> OfflineDownloadItem?  {
+    return try  FfiConverterOptionTypeOfflineDownloadItem.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_remove(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(userId),
+        FfiConverterString.lower(videoId),$0
+    )
+})
+}
+    
+open func revocationsCursor()throws  -> UInt64  {
+    return try  FfiConverterUInt64.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_revocations_cursor(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func totalBytes()throws  -> UInt64  {
+    return try  FfiConverterUInt64.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_total_bytes(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * Atomically checks network + storage cap / free-space reserve (excluding this item's own
+     * reservation) and persists the record on `Allow`. Refuses to create over a `Removed` record.
+     */
+open func tryReserve(item: OfflineDownloadItem, settings: OfflineDownloadSettings, network: OfflineNetworkKind, availableDiskBytes: UInt64?)throws  -> OfflineTransferDecision  {
+    return try  FfiConverterTypeOfflineTransferDecision_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_try_reserve(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeOfflineDownloadItem_lower(item),
+        FfiConverterTypeOfflineDownloadSettings_lower(settings),
+        FfiConverterTypeOfflineNetworkKind_lower(network),
+        FfiConverterOptionUInt64.lower(availableDiskBytes),$0
+    )
+})
+}
+    
+open func updateProgress(userId: String, videoId: String, bytesDownloaded: UInt64, totalBytes: UInt64, nowMs: Int64)throws  -> OfflineUpdateOutcome  {
+    return try  FfiConverterTypeOfflineUpdateOutcome_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinedownloadstore_update_progress(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(userId),
+        FfiConverterString.lower(videoId),
+        FfiConverterUInt64.lower(bytesDownloaded),
+        FfiConverterUInt64.lower(totalBytes),
+        FfiConverterInt64.lower(nowMs),$0
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOfflineDownloadStore: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = OfflineDownloadStore
+
+    public static func lift(_ handle: UInt64) throws -> OfflineDownloadStore {
+        return OfflineDownloadStore(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: OfflineDownloadStore) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OfflineDownloadStore {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: OfflineDownloadStore, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineDownloadStore_lift(_ handle: UInt64) throws -> OfflineDownloadStore {
+    return try FfiConverterTypeOfflineDownloadStore.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineDownloadStore_lower(_ value: OfflineDownloadStore) -> UInt64 {
+    return FfiConverterTypeOfflineDownloadStore.lower(value)
+}
+
+
+
+
+
+
+/**
  * Persistent offline write queue (likes, comments, notes made while offline).
  */
 public protocol OfflineQueueProtocol: AnyObject, Sendable {
@@ -2833,6 +3268,656 @@ public func FfiConverterTypeOfflineQueue_lift(_ handle: UInt64) throws -> Offlin
 #endif
 public func FfiConverterTypeOfflineQueue_lower(_ value: OfflineQueue) -> UInt64 {
     return FfiConverterTypeOfflineQueue.lower(value)
+}
+
+
+
+
+
+
+/**
+ * Offline-first CRDT sync engine for a signed-in viewer account.
+ */
+public protocol OfflineSyncEngineProtocol: AnyObject, Sendable {
+    
+    func addListener(listener: SyncChangeListener)  -> UInt64
+    
+    func addNote(videoId: String, positionMs: UInt64, text: String) throws  -> String
+    
+    func allNotes(limit: UInt32)  -> [SyncNote]
+    
+    func clearHistory() 
+    
+    func continueWatching(limit: UInt32)  -> [SyncContinueItem]
+    
+    func deleteNote(id: String) throws 
+    
+    func deviceId()  -> String
+    
+    func flush() async throws  -> SyncSummary
+    
+    func history(limit: UInt32, offset: UInt32)  -> [SyncHistoryItem]
+    
+    func isLiked(videoId: String)  -> Bool
+    
+    func isSaved(videoId: String)  -> Bool
+    
+    func likedItems()  -> [SyncLibraryItem]
+    
+    func moveNote(id: String, positionMs: UInt64) throws 
+    
+    func nextDueMs()  -> Int64?
+    
+    func notesForVideo(videoId: String)  -> [SyncNote]
+    
+    func pendingCount()  -> UInt32
+    
+    func persist() throws 
+    
+    func recordPosition(videoId: String, positionMs: UInt64, durationMs: UInt64) throws 
+    
+    func removeFromHistory(videoId: String) 
+    
+    func removeListener(id: UInt64) 
+    
+    func reorderSaved(videoIds: [String]) 
+    
+    func resumePositionMs(videoId: String)  -> UInt64?
+    
+    func savedItems()  -> [SyncLibraryItem]
+    
+    func setCompleted(videoId: String, completed: Bool) throws 
+    
+    func setLiked(videoId: String, liked: Bool) throws 
+    
+    func setSaved(videoId: String, saved: Bool) throws 
+    
+    func sync() async throws  -> SyncSummary
+    
+    func updateNoteText(id: String, text: String) throws 
+    
+    func watchState(videoId: String)  -> SyncWatchState?
+    
+}
+/**
+ * Offline-first CRDT sync engine for a signed-in viewer account.
+ */
+open class OfflineSyncEngine: OfflineSyncEngineProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aun_core_fn_clone_offlinesyncengine(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aun_core_fn_free_offlinesyncengine(handle, $0) }
+    }
+
+    
+public static func `open`(storePath: String, deviceId: String?, client: ApiClient)throws  -> OfflineSyncEngine  {
+    return try  FfiConverterTypeOfflineSyncEngine_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_constructor_offlinesyncengine_open(
+        FfiConverterString.lower(storePath),
+        FfiConverterOptionString.lower(deviceId),
+        FfiConverterTypeApiClient_lower(client),$0
+    )
+})
+}
+    
+
+    
+open func addListener(listener: SyncChangeListener) -> UInt64  {
+    return try!  FfiConverterUInt64.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_offlinesyncengine_add_listener(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeSyncChangeListener_lower(listener),$0
+    )
+})
+}
+    
+open func addNote(videoId: String, positionMs: UInt64, text: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinesyncengine_add_note(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(videoId),
+        FfiConverterUInt64.lower(positionMs),
+        FfiConverterString.lower(text),$0
+    )
+})
+}
+    
+open func allNotes(limit: UInt32) -> [SyncNote]  {
+    return try!  FfiConverterSequenceTypeSyncNote.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_offlinesyncengine_all_notes(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(limit),$0
+    )
+})
+}
+    
+open func clearHistory()  {try! rustCall() {
+    uniffi_aun_core_fn_method_offlinesyncengine_clear_history(
+            self.uniffiCloneHandle(),$0
+    )
+}
+}
+    
+open func continueWatching(limit: UInt32) -> [SyncContinueItem]  {
+    return try!  FfiConverterSequenceTypeSyncContinueItem.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_offlinesyncengine_continue_watching(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(limit),$0
+    )
+})
+}
+    
+open func deleteNote(id: String)throws   {try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinesyncengine_delete_note(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),$0
+    )
+}
+}
+    
+open func deviceId() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_offlinesyncengine_device_id(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func flush()async throws  -> SyncSummary  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_offlinesyncengine_flush(
+                    self.uniffiCloneHandle()
+                    
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeSyncSummary_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+open func history(limit: UInt32, offset: UInt32) -> [SyncHistoryItem]  {
+    return try!  FfiConverterSequenceTypeSyncHistoryItem.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_offlinesyncengine_history(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(limit),
+        FfiConverterUInt32.lower(offset),$0
+    )
+})
+}
+    
+open func isLiked(videoId: String) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_offlinesyncengine_is_liked(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(videoId),$0
+    )
+})
+}
+    
+open func isSaved(videoId: String) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_offlinesyncengine_is_saved(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(videoId),$0
+    )
+})
+}
+    
+open func likedItems() -> [SyncLibraryItem]  {
+    return try!  FfiConverterSequenceTypeSyncLibraryItem.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_offlinesyncengine_liked_items(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func moveNote(id: String, positionMs: UInt64)throws   {try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinesyncengine_move_note(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),
+        FfiConverterUInt64.lower(positionMs),$0
+    )
+}
+}
+    
+open func nextDueMs() -> Int64?  {
+    return try!  FfiConverterOptionInt64.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_offlinesyncengine_next_due_ms(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func notesForVideo(videoId: String) -> [SyncNote]  {
+    return try!  FfiConverterSequenceTypeSyncNote.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_offlinesyncengine_notes_for_video(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(videoId),$0
+    )
+})
+}
+    
+open func pendingCount() -> UInt32  {
+    return try!  FfiConverterUInt32.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_offlinesyncengine_pending_count(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func persist()throws   {try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinesyncengine_persist(
+            self.uniffiCloneHandle(),$0
+    )
+}
+}
+    
+open func recordPosition(videoId: String, positionMs: UInt64, durationMs: UInt64)throws   {try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinesyncengine_record_position(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(videoId),
+        FfiConverterUInt64.lower(positionMs),
+        FfiConverterUInt64.lower(durationMs),$0
+    )
+}
+}
+    
+open func removeFromHistory(videoId: String)  {try! rustCall() {
+    uniffi_aun_core_fn_method_offlinesyncengine_remove_from_history(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(videoId),$0
+    )
+}
+}
+    
+open func removeListener(id: UInt64)  {try! rustCall() {
+    uniffi_aun_core_fn_method_offlinesyncengine_remove_listener(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt64.lower(id),$0
+    )
+}
+}
+    
+open func reorderSaved(videoIds: [String])  {try! rustCall() {
+    uniffi_aun_core_fn_method_offlinesyncengine_reorder_saved(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceString.lower(videoIds),$0
+    )
+}
+}
+    
+open func resumePositionMs(videoId: String) -> UInt64?  {
+    return try!  FfiConverterOptionUInt64.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_offlinesyncengine_resume_position_ms(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(videoId),$0
+    )
+})
+}
+    
+open func savedItems() -> [SyncLibraryItem]  {
+    return try!  FfiConverterSequenceTypeSyncLibraryItem.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_offlinesyncengine_saved_items(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func setCompleted(videoId: String, completed: Bool)throws   {try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinesyncengine_set_completed(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(videoId),
+        FfiConverterBool.lower(completed),$0
+    )
+}
+}
+    
+open func setLiked(videoId: String, liked: Bool)throws   {try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinesyncengine_set_liked(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(videoId),
+        FfiConverterBool.lower(liked),$0
+    )
+}
+}
+    
+open func setSaved(videoId: String, saved: Bool)throws   {try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinesyncengine_set_saved(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(videoId),
+        FfiConverterBool.lower(saved),$0
+    )
+}
+}
+    
+open func sync()async throws  -> SyncSummary  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_offlinesyncengine_sync(
+                    self.uniffiCloneHandle()
+                    
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeSyncSummary_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+open func updateNoteText(id: String, text: String)throws   {try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_offlinesyncengine_update_note_text(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),
+        FfiConverterString.lower(text),$0
+    )
+}
+}
+    
+open func watchState(videoId: String) -> SyncWatchState?  {
+    return try!  FfiConverterOptionTypeSyncWatchState.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_offlinesyncengine_watch_state(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(videoId),$0
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOfflineSyncEngine: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = OfflineSyncEngine
+
+    public static func lift(_ handle: UInt64) throws -> OfflineSyncEngine {
+        return OfflineSyncEngine(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: OfflineSyncEngine) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OfflineSyncEngine {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: OfflineSyncEngine, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineSyncEngine_lift(_ handle: UInt64) throws -> OfflineSyncEngine {
+    return try FfiConverterTypeOfflineSyncEngine.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineSyncEngine_lower(_ value: OfflineSyncEngine) -> UInt64 {
+    return FfiConverterTypeOfflineSyncEngine.lower(value)
+}
+
+
+
+
+
+
+/**
+ * Thread-safe UniFFI wrapper around [`aun_player::Player`].
+ */
+public protocol PlayerMachineProtocol: AnyObject, Sendable {
+    
+    func config() throws  -> PlayerConfig
+    
+    func handle(input: PlayerInput, nowMs: Int64) throws  -> [PlayerCommand]
+    
+    func isCompleted(positionMs: UInt64, durationMs: UInt64) throws  -> Bool
+    
+    func nextDeadlineMs() throws  -> Int64?
+    
+    func playOrder() throws  -> [UInt32]
+    
+    func resumePosition(item: PlayerMediaItem) throws  -> UInt64
+    
+    func snapshot() throws  -> PlayerSnapshot
+    
+}
+/**
+ * Thread-safe UniFFI wrapper around [`aun_player::Player`].
+ */
+open class PlayerMachine: PlayerMachineProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aun_core_fn_clone_playermachine(self.handle, $0) }
+    }
+public convenience init() {
+    let handle =
+        try! rustCall() {
+    uniffi_aun_core_fn_constructor_playermachine_new($0
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aun_core_fn_free_playermachine(handle, $0) }
+    }
+
+    
+public static func withConfig(config: PlayerConfig) -> PlayerMachine  {
+    return try!  FfiConverterTypePlayerMachine_lift(try! rustCall() {
+    uniffi_aun_core_fn_constructor_playermachine_with_config(
+        FfiConverterTypePlayerConfig_lower(config),$0
+    )
+})
+}
+    
+
+    
+open func config()throws  -> PlayerConfig  {
+    return try  FfiConverterTypePlayerConfig_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_playermachine_config(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func handle(input: PlayerInput, nowMs: Int64)throws  -> [PlayerCommand]  {
+    return try  FfiConverterSequenceTypePlayerCommand.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_playermachine_handle(
+            self.uniffiCloneHandle(),
+        FfiConverterTypePlayerInput_lower(input),
+        FfiConverterInt64.lower(nowMs),$0
+    )
+})
+}
+    
+open func isCompleted(positionMs: UInt64, durationMs: UInt64)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_playermachine_is_completed(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt64.lower(positionMs),
+        FfiConverterUInt64.lower(durationMs),$0
+    )
+})
+}
+    
+open func nextDeadlineMs()throws  -> Int64?  {
+    return try  FfiConverterOptionInt64.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_playermachine_next_deadline_ms(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func playOrder()throws  -> [UInt32]  {
+    return try  FfiConverterSequenceUInt32.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_playermachine_play_order(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func resumePosition(item: PlayerMediaItem)throws  -> UInt64  {
+    return try  FfiConverterUInt64.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_playermachine_resume_position(
+            self.uniffiCloneHandle(),
+        FfiConverterTypePlayerMediaItem_lower(item),$0
+    )
+})
+}
+    
+open func snapshot()throws  -> PlayerSnapshot  {
+    return try  FfiConverterTypePlayerSnapshot_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_playermachine_snapshot(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlayerMachine: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = PlayerMachine
+
+    public static func lift(_ handle: UInt64) throws -> PlayerMachine {
+        return PlayerMachine(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: PlayerMachine) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlayerMachine {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: PlayerMachine, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerMachine_lift(_ handle: UInt64) throws -> PlayerMachine {
+    return try FfiConverterTypePlayerMachine.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerMachine_lower(_ value: PlayerMachine) -> UInt64 {
+    return FfiConverterTypePlayerMachine.lower(value)
 }
 
 
@@ -3339,6 +4424,192 @@ public func FfiConverterTypeSelfTestListener_lift(_ handle: UInt64) throws -> Se
 #endif
 public func FfiConverterTypeSelfTestListener_lower(_ value: SelfTestListener) -> UInt64 {
     return FfiConverterTypeSelfTestListener.lower(value)
+}
+
+
+
+
+
+
+public protocol SyncChangeListener: AnyObject, Sendable {
+    
+    func onChanged(changes: [SyncChangeKind]) 
+    
+}
+open class SyncChangeListenerImpl: SyncChangeListener, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aun_core_fn_clone_syncchangelistener(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aun_core_fn_free_syncchangelistener(handle, $0) }
+    }
+
+    
+
+    
+open func onChanged(changes: [SyncChangeKind])  {try! rustCall() {
+    uniffi_aun_core_fn_method_syncchangelistener_on_changed(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceTypeSyncChangeKind.lower(changes),$0
+    )
+}
+}
+    
+
+    
+}
+
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfaceSyncChangeListener {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    //
+    // This creates 1-element array, since this seems to be the only way to construct a const
+    // pointer that we can pass to the Rust code.
+    static let vtable: [UniffiVTableCallbackInterfaceSyncChangeListener] = [UniffiVTableCallbackInterfaceSyncChangeListener(
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            do {
+                try FfiConverterTypeSyncChangeListener.handleMap.remove(handle: uniffiHandle)
+            } catch {
+                print("Uniffi callback interface SyncChangeListener: handle missing in uniffiFree")
+            }
+        },
+        uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
+            do {
+                return try FfiConverterTypeSyncChangeListener.handleMap.clone(handle: uniffiHandle)
+            } catch {
+                fatalError("Uniffi callback interface SyncChangeListener: handle missing in uniffiClone")
+            }
+        },
+        onChanged: { (
+            uniffiHandle: UInt64,
+            changes: RustBuffer,
+            uniffiOutReturn: UnsafeMutableRawPointer,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> () in
+                guard let uniffiObj = try? FfiConverterTypeSyncChangeListener.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return uniffiObj.onChanged(
+                     changes: try FfiConverterSequenceTypeSyncChangeKind.lift(changes)
+                )
+            }
+
+            
+            let writeReturn = { () }
+            uniffiTraitInterfaceCall(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn
+            )
+        }
+    )]
+}
+
+private func uniffiCallbackInitSyncChangeListener() {
+    uniffi_aun_core_fn_init_callback_vtable_syncchangelistener(UniffiCallbackInterfaceSyncChangeListener.vtable)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSyncChangeListener: FfiConverter {
+    fileprivate static let handleMap = UniffiHandleMap<SyncChangeListener>()
+
+    typealias FfiType = UInt64
+    typealias SwiftType = SyncChangeListener
+
+    public static func lift(_ handle: UInt64) throws -> SyncChangeListener {
+        if ((handle & 1) == 0) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return SyncChangeListenerImpl(unsafeFromHandle: handle)
+        } else {
+            // Swift-generated handle, get the object from the handle map
+            return try handleMap.remove(handle: handle)
+        }
+    }
+
+    public static func lower(_ value: SyncChangeListener) -> UInt64 {
+         if let rustImpl = value as? SyncChangeListenerImpl {
+             // Rust-implemented object.  Clone the handle and return it
+            return rustImpl.uniffiCloneHandle()
+         } else {
+            // Swift object, generate a new vtable handle and return that.
+            return handleMap.insert(obj: value)
+         }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SyncChangeListener {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: SyncChangeListener, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncChangeListener_lift(_ handle: UInt64) throws -> SyncChangeListener {
+    return try FfiConverterTypeSyncChangeListener.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncChangeListener_lower(_ value: SyncChangeListener) -> UInt64 {
+    return FfiConverterTypeSyncChangeListener.lower(value)
 }
 
 
@@ -6335,6 +7606,464 @@ public func FfiConverterTypeNotificationSettings_lower(_ value: NotificationSett
 }
 
 
+public struct OfflineAutoDownloadRule: Equatable, Hashable {
+    public var sourceId: String
+    public var maxEpisodes: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(sourceId: String, maxEpisodes: UInt32) {
+        self.sourceId = sourceId
+        self.maxEpisodes = maxEpisodes
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension OfflineAutoDownloadRule: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOfflineAutoDownloadRule: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OfflineAutoDownloadRule {
+        return
+            try OfflineAutoDownloadRule(
+                sourceId: FfiConverterString.read(from: &buf), 
+                maxEpisodes: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: OfflineAutoDownloadRule, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.sourceId, into: &buf)
+        FfiConverterUInt32.write(value.maxEpisodes, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineAutoDownloadRule_lift(_ buf: RustBuffer) throws -> OfflineAutoDownloadRule {
+    return try FfiConverterTypeOfflineAutoDownloadRule.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineAutoDownloadRule_lower(_ value: OfflineAutoDownloadRule) -> RustBuffer {
+    return FfiConverterTypeOfflineAutoDownloadRule.lower(value)
+}
+
+
+public struct OfflineAvailabilityResult: Equatable, Hashable {
+    public var videoId: String
+    public var available: Bool
+    public var reason: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(videoId: String, available: Bool, reason: String?) {
+        self.videoId = videoId
+        self.available = available
+        self.reason = reason
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension OfflineAvailabilityResult: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOfflineAvailabilityResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OfflineAvailabilityResult {
+        return
+            try OfflineAvailabilityResult(
+                videoId: FfiConverterString.read(from: &buf), 
+                available: FfiConverterBool.read(from: &buf), 
+                reason: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: OfflineAvailabilityResult, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.videoId, into: &buf)
+        FfiConverterBool.write(value.available, into: &buf)
+        FfiConverterOptionString.write(value.reason, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineAvailabilityResult_lift(_ buf: RustBuffer) throws -> OfflineAvailabilityResult {
+    return try FfiConverterTypeOfflineAvailabilityResult.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineAvailabilityResult_lower(_ value: OfflineAvailabilityResult) -> RustBuffer {
+    return FfiConverterTypeOfflineAvailabilityResult.lower(value)
+}
+
+
+public struct OfflineDownloadItem: Equatable, Hashable {
+    public var videoId: String
+    public var userId: String
+    public var rung: String?
+    public var title: String
+    public var channelId: String?
+    public var channelName: String?
+    public var thumbnailPath: String?
+    public var durationSeconds: UInt64
+    public var localPath: String
+    public var bytesDownloaded: UInt64
+    public var totalBytes: UInt64
+    public var status: OfflineDownloadStatus
+    public var removedReason: String?
+    public var createdAtMs: Int64
+    public var lastAccessedAtMs: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(videoId: String, userId: String, rung: String?, title: String, channelId: String?, channelName: String?, thumbnailPath: String?, durationSeconds: UInt64, localPath: String, bytesDownloaded: UInt64, totalBytes: UInt64, status: OfflineDownloadStatus, removedReason: String?, createdAtMs: Int64, lastAccessedAtMs: Int64) {
+        self.videoId = videoId
+        self.userId = userId
+        self.rung = rung
+        self.title = title
+        self.channelId = channelId
+        self.channelName = channelName
+        self.thumbnailPath = thumbnailPath
+        self.durationSeconds = durationSeconds
+        self.localPath = localPath
+        self.bytesDownloaded = bytesDownloaded
+        self.totalBytes = totalBytes
+        self.status = status
+        self.removedReason = removedReason
+        self.createdAtMs = createdAtMs
+        self.lastAccessedAtMs = lastAccessedAtMs
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension OfflineDownloadItem: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOfflineDownloadItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OfflineDownloadItem {
+        return
+            try OfflineDownloadItem(
+                videoId: FfiConverterString.read(from: &buf), 
+                userId: FfiConverterString.read(from: &buf), 
+                rung: FfiConverterOptionString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                channelId: FfiConverterOptionString.read(from: &buf), 
+                channelName: FfiConverterOptionString.read(from: &buf), 
+                thumbnailPath: FfiConverterOptionString.read(from: &buf), 
+                durationSeconds: FfiConverterUInt64.read(from: &buf), 
+                localPath: FfiConverterString.read(from: &buf), 
+                bytesDownloaded: FfiConverterUInt64.read(from: &buf), 
+                totalBytes: FfiConverterUInt64.read(from: &buf), 
+                status: FfiConverterTypeOfflineDownloadStatus.read(from: &buf), 
+                removedReason: FfiConverterOptionString.read(from: &buf), 
+                createdAtMs: FfiConverterInt64.read(from: &buf), 
+                lastAccessedAtMs: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: OfflineDownloadItem, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.videoId, into: &buf)
+        FfiConverterString.write(value.userId, into: &buf)
+        FfiConverterOptionString.write(value.rung, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.channelId, into: &buf)
+        FfiConverterOptionString.write(value.channelName, into: &buf)
+        FfiConverterOptionString.write(value.thumbnailPath, into: &buf)
+        FfiConverterUInt64.write(value.durationSeconds, into: &buf)
+        FfiConverterString.write(value.localPath, into: &buf)
+        FfiConverterUInt64.write(value.bytesDownloaded, into: &buf)
+        FfiConverterUInt64.write(value.totalBytes, into: &buf)
+        FfiConverterTypeOfflineDownloadStatus.write(value.status, into: &buf)
+        FfiConverterOptionString.write(value.removedReason, into: &buf)
+        FfiConverterInt64.write(value.createdAtMs, into: &buf)
+        FfiConverterInt64.write(value.lastAccessedAtMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineDownloadItem_lift(_ buf: RustBuffer) throws -> OfflineDownloadItem {
+    return try FfiConverterTypeOfflineDownloadItem.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineDownloadItem_lower(_ value: OfflineDownloadItem) -> RustBuffer {
+    return FfiConverterTypeOfflineDownloadItem.lower(value)
+}
+
+
+public struct OfflineDownloadKey: Equatable, Hashable {
+    public var userId: String
+    public var videoId: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(userId: String, videoId: String) {
+        self.userId = userId
+        self.videoId = videoId
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension OfflineDownloadKey: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOfflineDownloadKey: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OfflineDownloadKey {
+        return
+            try OfflineDownloadKey(
+                userId: FfiConverterString.read(from: &buf), 
+                videoId: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: OfflineDownloadKey, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.userId, into: &buf)
+        FfiConverterString.write(value.videoId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineDownloadKey_lift(_ buf: RustBuffer) throws -> OfflineDownloadKey {
+    return try FfiConverterTypeOfflineDownloadKey.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineDownloadKey_lower(_ value: OfflineDownloadKey) -> RustBuffer {
+    return FfiConverterTypeOfflineDownloadKey.lower(value)
+}
+
+
+public struct OfflineDownloadSettings: Equatable, Hashable {
+    public var wifiOnly: Bool
+    public var maxStorageBytes: UInt64?
+    public var minFreeSpaceBytes: UInt64
+    public var autoDownloadEnabled: Bool
+    public var autoDownloadChargingOnly: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(wifiOnly: Bool, maxStorageBytes: UInt64?, minFreeSpaceBytes: UInt64, autoDownloadEnabled: Bool, autoDownloadChargingOnly: Bool) {
+        self.wifiOnly = wifiOnly
+        self.maxStorageBytes = maxStorageBytes
+        self.minFreeSpaceBytes = minFreeSpaceBytes
+        self.autoDownloadEnabled = autoDownloadEnabled
+        self.autoDownloadChargingOnly = autoDownloadChargingOnly
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension OfflineDownloadSettings: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOfflineDownloadSettings: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OfflineDownloadSettings {
+        return
+            try OfflineDownloadSettings(
+                wifiOnly: FfiConverterBool.read(from: &buf), 
+                maxStorageBytes: FfiConverterOptionUInt64.read(from: &buf), 
+                minFreeSpaceBytes: FfiConverterUInt64.read(from: &buf), 
+                autoDownloadEnabled: FfiConverterBool.read(from: &buf), 
+                autoDownloadChargingOnly: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: OfflineDownloadSettings, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.wifiOnly, into: &buf)
+        FfiConverterOptionUInt64.write(value.maxStorageBytes, into: &buf)
+        FfiConverterUInt64.write(value.minFreeSpaceBytes, into: &buf)
+        FfiConverterBool.write(value.autoDownloadEnabled, into: &buf)
+        FfiConverterBool.write(value.autoDownloadChargingOnly, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineDownloadSettings_lift(_ buf: RustBuffer) throws -> OfflineDownloadSettings {
+    return try FfiConverterTypeOfflineDownloadSettings.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineDownloadSettings_lower(_ value: OfflineDownloadSettings) -> RustBuffer {
+    return FfiConverterTypeOfflineDownloadSettings.lower(value)
+}
+
+
+public struct OfflineEpisodeCandidate: Equatable, Hashable {
+    public var videoId: String
+    public var sourceId: String
+    public var publishedAtMs: Int64
+    public var allowDownloads: Bool
+    public var estimatedBytes: UInt64?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(videoId: String, sourceId: String, publishedAtMs: Int64, allowDownloads: Bool, estimatedBytes: UInt64?) {
+        self.videoId = videoId
+        self.sourceId = sourceId
+        self.publishedAtMs = publishedAtMs
+        self.allowDownloads = allowDownloads
+        self.estimatedBytes = estimatedBytes
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension OfflineEpisodeCandidate: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOfflineEpisodeCandidate: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OfflineEpisodeCandidate {
+        return
+            try OfflineEpisodeCandidate(
+                videoId: FfiConverterString.read(from: &buf), 
+                sourceId: FfiConverterString.read(from: &buf), 
+                publishedAtMs: FfiConverterInt64.read(from: &buf), 
+                allowDownloads: FfiConverterBool.read(from: &buf), 
+                estimatedBytes: FfiConverterOptionUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: OfflineEpisodeCandidate, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.videoId, into: &buf)
+        FfiConverterString.write(value.sourceId, into: &buf)
+        FfiConverterInt64.write(value.publishedAtMs, into: &buf)
+        FfiConverterBool.write(value.allowDownloads, into: &buf)
+        FfiConverterOptionUInt64.write(value.estimatedBytes, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineEpisodeCandidate_lift(_ buf: RustBuffer) throws -> OfflineEpisodeCandidate {
+    return try FfiConverterTypeOfflineEpisodeCandidate.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineEpisodeCandidate_lower(_ value: OfflineEpisodeCandidate) -> RustBuffer {
+    return FfiConverterTypeOfflineEpisodeCandidate.lower(value)
+}
+
+
+public struct OfflineRevocationEntry: Equatable, Hashable {
+    public var seq: UInt64
+    public var videoId: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(seq: UInt64, videoId: String) {
+        self.seq = seq
+        self.videoId = videoId
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension OfflineRevocationEntry: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOfflineRevocationEntry: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OfflineRevocationEntry {
+        return
+            try OfflineRevocationEntry(
+                seq: FfiConverterUInt64.read(from: &buf), 
+                videoId: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: OfflineRevocationEntry, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.seq, into: &buf)
+        FfiConverterString.write(value.videoId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineRevocationEntry_lift(_ buf: RustBuffer) throws -> OfflineRevocationEntry {
+    return try FfiConverterTypeOfflineRevocationEntry.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineRevocationEntry_lower(_ value: OfflineRevocationEntry) -> RustBuffer {
+    return FfiConverterTypeOfflineRevocationEntry.lower(value)
+}
+
+
 /**
  * A call to an api-videos path that is not (yet) in the pinned OpenAPI document, e.g. a Studio
  * endpoint that shipped after the last spec sync. Prefer [`ApiCall`] when the operation exists.
@@ -6450,6 +8179,472 @@ public func FfiConverterTypePathCall_lift(_ buf: RustBuffer) throws -> PathCall 
 #endif
 public func FfiConverterTypePathCall_lower(_ value: PathCall) -> RustBuffer {
     return FfiConverterTypePathCall.lower(value)
+}
+
+
+public struct PlayerAbLoop: Equatable, Hashable {
+    public var startMs: UInt64
+    public var endMs: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(startMs: UInt64, endMs: UInt64) {
+        self.startMs = startMs
+        self.endMs = endMs
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PlayerAbLoop: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlayerAbLoop: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlayerAbLoop {
+        return
+            try PlayerAbLoop(
+                startMs: FfiConverterUInt64.read(from: &buf), 
+                endMs: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PlayerAbLoop, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.startMs, into: &buf)
+        FfiConverterUInt64.write(value.endMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerAbLoop_lift(_ buf: RustBuffer) throws -> PlayerAbLoop {
+    return try FfiConverterTypePlayerAbLoop.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerAbLoop_lower(_ value: PlayerAbLoop) -> RustBuffer {
+    return FfiConverterTypePlayerAbLoop.lower(value)
+}
+
+
+public struct PlayerChapter: Equatable, Hashable {
+    public var startMs: UInt64
+    public var title: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(startMs: UInt64, title: String) {
+        self.startMs = startMs
+        self.title = title
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PlayerChapter: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlayerChapter: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlayerChapter {
+        return
+            try PlayerChapter(
+                startMs: FfiConverterUInt64.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PlayerChapter, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.startMs, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerChapter_lift(_ buf: RustBuffer) throws -> PlayerChapter {
+    return try FfiConverterTypePlayerChapter.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerChapter_lower(_ value: PlayerChapter) -> RustBuffer {
+    return FfiConverterTypePlayerChapter.lower(value)
+}
+
+
+public struct PlayerConfig: Equatable, Hashable {
+    public var resumeMinMs: UInt64
+    public var completedFraction: Double
+    public var skipMs: UInt64
+    public var minRate: Double
+    public var maxRate: Double
+    public var restartThresholdMs: UInt64
+    public var saveIntervalMs: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(resumeMinMs: UInt64, completedFraction: Double, skipMs: UInt64, minRate: Double, maxRate: Double, restartThresholdMs: UInt64, saveIntervalMs: UInt64) {
+        self.resumeMinMs = resumeMinMs
+        self.completedFraction = completedFraction
+        self.skipMs = skipMs
+        self.minRate = minRate
+        self.maxRate = maxRate
+        self.restartThresholdMs = restartThresholdMs
+        self.saveIntervalMs = saveIntervalMs
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PlayerConfig: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlayerConfig: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlayerConfig {
+        return
+            try PlayerConfig(
+                resumeMinMs: FfiConverterUInt64.read(from: &buf), 
+                completedFraction: FfiConverterDouble.read(from: &buf), 
+                skipMs: FfiConverterUInt64.read(from: &buf), 
+                minRate: FfiConverterDouble.read(from: &buf), 
+                maxRate: FfiConverterDouble.read(from: &buf), 
+                restartThresholdMs: FfiConverterUInt64.read(from: &buf), 
+                saveIntervalMs: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PlayerConfig, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.resumeMinMs, into: &buf)
+        FfiConverterDouble.write(value.completedFraction, into: &buf)
+        FfiConverterUInt64.write(value.skipMs, into: &buf)
+        FfiConverterDouble.write(value.minRate, into: &buf)
+        FfiConverterDouble.write(value.maxRate, into: &buf)
+        FfiConverterUInt64.write(value.restartThresholdMs, into: &buf)
+        FfiConverterUInt64.write(value.saveIntervalMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerConfig_lift(_ buf: RustBuffer) throws -> PlayerConfig {
+    return try FfiConverterTypePlayerConfig.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerConfig_lower(_ value: PlayerConfig) -> RustBuffer {
+    return FfiConverterTypePlayerConfig.lower(value)
+}
+
+
+public struct PlayerMediaItem: Equatable, Hashable {
+    public var id: String
+    public var durationMs: UInt64
+    public var resumePositionMs: UInt64?
+    public var chapters: [PlayerChapter]
+    public var isLive: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, durationMs: UInt64, resumePositionMs: UInt64?, chapters: [PlayerChapter], isLive: Bool) {
+        self.id = id
+        self.durationMs = durationMs
+        self.resumePositionMs = resumePositionMs
+        self.chapters = chapters
+        self.isLive = isLive
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PlayerMediaItem: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlayerMediaItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlayerMediaItem {
+        return
+            try PlayerMediaItem(
+                id: FfiConverterString.read(from: &buf), 
+                durationMs: FfiConverterUInt64.read(from: &buf), 
+                resumePositionMs: FfiConverterOptionUInt64.read(from: &buf), 
+                chapters: FfiConverterSequenceTypePlayerChapter.read(from: &buf), 
+                isLive: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PlayerMediaItem, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterUInt64.write(value.durationMs, into: &buf)
+        FfiConverterOptionUInt64.write(value.resumePositionMs, into: &buf)
+        FfiConverterSequenceTypePlayerChapter.write(value.chapters, into: &buf)
+        FfiConverterBool.write(value.isLive, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerMediaItem_lift(_ buf: RustBuffer) throws -> PlayerMediaItem {
+    return try FfiConverterTypePlayerMediaItem.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerMediaItem_lower(_ value: PlayerMediaItem) -> RustBuffer {
+    return FfiConverterTypePlayerMediaItem.lower(value)
+}
+
+
+public struct PlayerQualityCap: Equatable, Hashable {
+    public var maxHeight: UInt32?
+    public var maxBitrateBps: UInt64?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(maxHeight: UInt32?, maxBitrateBps: UInt64?) {
+        self.maxHeight = maxHeight
+        self.maxBitrateBps = maxBitrateBps
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PlayerQualityCap: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlayerQualityCap: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlayerQualityCap {
+        return
+            try PlayerQualityCap(
+                maxHeight: FfiConverterOptionUInt32.read(from: &buf), 
+                maxBitrateBps: FfiConverterOptionUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PlayerQualityCap, into buf: inout [UInt8]) {
+        FfiConverterOptionUInt32.write(value.maxHeight, into: &buf)
+        FfiConverterOptionUInt64.write(value.maxBitrateBps, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerQualityCap_lift(_ buf: RustBuffer) throws -> PlayerQualityCap {
+    return try FfiConverterTypePlayerQualityCap.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerQualityCap_lower(_ value: PlayerQualityCap) -> RustBuffer {
+    return FfiConverterTypePlayerQualityCap.lower(value)
+}
+
+
+public struct PlayerQualitySettings: Equatable, Hashable {
+    public var dataSaver: Bool
+    public var userMaxHeight: UInt32?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(dataSaver: Bool, userMaxHeight: UInt32?) {
+        self.dataSaver = dataSaver
+        self.userMaxHeight = userMaxHeight
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PlayerQualitySettings: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlayerQualitySettings: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlayerQualitySettings {
+        return
+            try PlayerQualitySettings(
+                dataSaver: FfiConverterBool.read(from: &buf), 
+                userMaxHeight: FfiConverterOptionUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PlayerQualitySettings, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.dataSaver, into: &buf)
+        FfiConverterOptionUInt32.write(value.userMaxHeight, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerQualitySettings_lift(_ buf: RustBuffer) throws -> PlayerQualitySettings {
+    return try FfiConverterTypePlayerQualitySettings.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerQualitySettings_lower(_ value: PlayerQualitySettings) -> RustBuffer {
+    return FfiConverterTypePlayerQualitySettings.lower(value)
+}
+
+
+public struct PlayerSnapshot: Equatable, Hashable {
+    public var state: PlayerPlaybackState
+    public var currentIndex: UInt32?
+    public var currentItemId: String?
+    public var positionMs: UInt64
+    public var durationMs: UInt64
+    public var rate: Double
+    public var shuffle: Bool
+    public var repeatMode: PlayerRepeatMode
+    public var autoplay: Bool
+    public var abLoop: PlayerAbLoop?
+    public var repeatTimes: UInt32
+    public var repeatPassesDone: UInt32
+    public var sleepTimer: PlayerSleepTimer
+    public var sleepDeadlineMs: Int64?
+    public var qualityCap: PlayerQualityCap
+    public var currentChapter: UInt32?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(state: PlayerPlaybackState, currentIndex: UInt32?, currentItemId: String?, positionMs: UInt64, durationMs: UInt64, rate: Double, shuffle: Bool, repeatMode: PlayerRepeatMode, autoplay: Bool, abLoop: PlayerAbLoop?, repeatTimes: UInt32, repeatPassesDone: UInt32, sleepTimer: PlayerSleepTimer, sleepDeadlineMs: Int64?, qualityCap: PlayerQualityCap, currentChapter: UInt32?) {
+        self.state = state
+        self.currentIndex = currentIndex
+        self.currentItemId = currentItemId
+        self.positionMs = positionMs
+        self.durationMs = durationMs
+        self.rate = rate
+        self.shuffle = shuffle
+        self.repeatMode = repeatMode
+        self.autoplay = autoplay
+        self.abLoop = abLoop
+        self.repeatTimes = repeatTimes
+        self.repeatPassesDone = repeatPassesDone
+        self.sleepTimer = sleepTimer
+        self.sleepDeadlineMs = sleepDeadlineMs
+        self.qualityCap = qualityCap
+        self.currentChapter = currentChapter
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PlayerSnapshot: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlayerSnapshot: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlayerSnapshot {
+        return
+            try PlayerSnapshot(
+                state: FfiConverterTypePlayerPlaybackState.read(from: &buf), 
+                currentIndex: FfiConverterOptionUInt32.read(from: &buf), 
+                currentItemId: FfiConverterOptionString.read(from: &buf), 
+                positionMs: FfiConverterUInt64.read(from: &buf), 
+                durationMs: FfiConverterUInt64.read(from: &buf), 
+                rate: FfiConverterDouble.read(from: &buf), 
+                shuffle: FfiConverterBool.read(from: &buf), 
+                repeatMode: FfiConverterTypePlayerRepeatMode.read(from: &buf), 
+                autoplay: FfiConverterBool.read(from: &buf), 
+                abLoop: FfiConverterOptionTypePlayerAbLoop.read(from: &buf), 
+                repeatTimes: FfiConverterUInt32.read(from: &buf), 
+                repeatPassesDone: FfiConverterUInt32.read(from: &buf), 
+                sleepTimer: FfiConverterTypePlayerSleepTimer.read(from: &buf), 
+                sleepDeadlineMs: FfiConverterOptionInt64.read(from: &buf), 
+                qualityCap: FfiConverterTypePlayerQualityCap.read(from: &buf), 
+                currentChapter: FfiConverterOptionUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PlayerSnapshot, into buf: inout [UInt8]) {
+        FfiConverterTypePlayerPlaybackState.write(value.state, into: &buf)
+        FfiConverterOptionUInt32.write(value.currentIndex, into: &buf)
+        FfiConverterOptionString.write(value.currentItemId, into: &buf)
+        FfiConverterUInt64.write(value.positionMs, into: &buf)
+        FfiConverterUInt64.write(value.durationMs, into: &buf)
+        FfiConverterDouble.write(value.rate, into: &buf)
+        FfiConverterBool.write(value.shuffle, into: &buf)
+        FfiConverterTypePlayerRepeatMode.write(value.repeatMode, into: &buf)
+        FfiConverterBool.write(value.autoplay, into: &buf)
+        FfiConverterOptionTypePlayerAbLoop.write(value.abLoop, into: &buf)
+        FfiConverterUInt32.write(value.repeatTimes, into: &buf)
+        FfiConverterUInt32.write(value.repeatPassesDone, into: &buf)
+        FfiConverterTypePlayerSleepTimer.write(value.sleepTimer, into: &buf)
+        FfiConverterOptionInt64.write(value.sleepDeadlineMs, into: &buf)
+        FfiConverterTypePlayerQualityCap.write(value.qualityCap, into: &buf)
+        FfiConverterOptionUInt32.write(value.currentChapter, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerSnapshot_lift(_ buf: RustBuffer) throws -> PlayerSnapshot {
+    return try FfiConverterTypePlayerSnapshot.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerSnapshot_lower(_ value: PlayerSnapshot) -> RustBuffer {
+    return FfiConverterTypePlayerSnapshot.lower(value)
 }
 
 
@@ -7319,6 +9514,430 @@ public func FfiConverterTypeSuggestionQuery_lift(_ buf: RustBuffer) throws -> Su
 #endif
 public func FfiConverterTypeSuggestionQuery_lower(_ value: SuggestionQuery) -> RustBuffer {
     return FfiConverterTypeSuggestionQuery.lower(value)
+}
+
+
+public struct SyncContinueItem: Equatable, Hashable {
+    public var videoId: String
+    public var positionMs: UInt64
+    public var durationMs: UInt64
+    public var title: String?
+    public var thumbnailUrl: String?
+    public var channelName: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(videoId: String, positionMs: UInt64, durationMs: UInt64, title: String?, thumbnailUrl: String?, channelName: String?) {
+        self.videoId = videoId
+        self.positionMs = positionMs
+        self.durationMs = durationMs
+        self.title = title
+        self.thumbnailUrl = thumbnailUrl
+        self.channelName = channelName
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SyncContinueItem: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSyncContinueItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SyncContinueItem {
+        return
+            try SyncContinueItem(
+                videoId: FfiConverterString.read(from: &buf), 
+                positionMs: FfiConverterUInt64.read(from: &buf), 
+                durationMs: FfiConverterUInt64.read(from: &buf), 
+                title: FfiConverterOptionString.read(from: &buf), 
+                thumbnailUrl: FfiConverterOptionString.read(from: &buf), 
+                channelName: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SyncContinueItem, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.videoId, into: &buf)
+        FfiConverterUInt64.write(value.positionMs, into: &buf)
+        FfiConverterUInt64.write(value.durationMs, into: &buf)
+        FfiConverterOptionString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.thumbnailUrl, into: &buf)
+        FfiConverterOptionString.write(value.channelName, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncContinueItem_lift(_ buf: RustBuffer) throws -> SyncContinueItem {
+    return try FfiConverterTypeSyncContinueItem.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncContinueItem_lower(_ value: SyncContinueItem) -> RustBuffer {
+    return FfiConverterTypeSyncContinueItem.lower(value)
+}
+
+
+public struct SyncHistoryItem: Equatable, Hashable {
+    public var videoId: String
+    public var positionMs: UInt64
+    public var durationMs: UInt64
+    public var completed: Bool
+    public var lastWatchedAtMs: Int64
+    public var title: String?
+    public var thumbnailUrl: String?
+    public var channelName: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(videoId: String, positionMs: UInt64, durationMs: UInt64, completed: Bool, lastWatchedAtMs: Int64, title: String?, thumbnailUrl: String?, channelName: String?) {
+        self.videoId = videoId
+        self.positionMs = positionMs
+        self.durationMs = durationMs
+        self.completed = completed
+        self.lastWatchedAtMs = lastWatchedAtMs
+        self.title = title
+        self.thumbnailUrl = thumbnailUrl
+        self.channelName = channelName
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SyncHistoryItem: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSyncHistoryItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SyncHistoryItem {
+        return
+            try SyncHistoryItem(
+                videoId: FfiConverterString.read(from: &buf), 
+                positionMs: FfiConverterUInt64.read(from: &buf), 
+                durationMs: FfiConverterUInt64.read(from: &buf), 
+                completed: FfiConverterBool.read(from: &buf), 
+                lastWatchedAtMs: FfiConverterInt64.read(from: &buf), 
+                title: FfiConverterOptionString.read(from: &buf), 
+                thumbnailUrl: FfiConverterOptionString.read(from: &buf), 
+                channelName: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SyncHistoryItem, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.videoId, into: &buf)
+        FfiConverterUInt64.write(value.positionMs, into: &buf)
+        FfiConverterUInt64.write(value.durationMs, into: &buf)
+        FfiConverterBool.write(value.completed, into: &buf)
+        FfiConverterInt64.write(value.lastWatchedAtMs, into: &buf)
+        FfiConverterOptionString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.thumbnailUrl, into: &buf)
+        FfiConverterOptionString.write(value.channelName, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncHistoryItem_lift(_ buf: RustBuffer) throws -> SyncHistoryItem {
+    return try FfiConverterTypeSyncHistoryItem.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncHistoryItem_lower(_ value: SyncHistoryItem) -> RustBuffer {
+    return FfiConverterTypeSyncHistoryItem.lower(value)
+}
+
+
+public struct SyncLibraryItem: Equatable, Hashable {
+    public var videoId: String
+    public var addedAtMs: Int64
+    public var title: String?
+    public var thumbnailUrl: String?
+    public var channelName: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(videoId: String, addedAtMs: Int64, title: String?, thumbnailUrl: String?, channelName: String?) {
+        self.videoId = videoId
+        self.addedAtMs = addedAtMs
+        self.title = title
+        self.thumbnailUrl = thumbnailUrl
+        self.channelName = channelName
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SyncLibraryItem: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSyncLibraryItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SyncLibraryItem {
+        return
+            try SyncLibraryItem(
+                videoId: FfiConverterString.read(from: &buf), 
+                addedAtMs: FfiConverterInt64.read(from: &buf), 
+                title: FfiConverterOptionString.read(from: &buf), 
+                thumbnailUrl: FfiConverterOptionString.read(from: &buf), 
+                channelName: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SyncLibraryItem, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.videoId, into: &buf)
+        FfiConverterInt64.write(value.addedAtMs, into: &buf)
+        FfiConverterOptionString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.thumbnailUrl, into: &buf)
+        FfiConverterOptionString.write(value.channelName, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncLibraryItem_lift(_ buf: RustBuffer) throws -> SyncLibraryItem {
+    return try FfiConverterTypeSyncLibraryItem.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncLibraryItem_lower(_ value: SyncLibraryItem) -> RustBuffer {
+    return FfiConverterTypeSyncLibraryItem.lower(value)
+}
+
+
+public struct SyncNote: Equatable, Hashable {
+    public var id: String
+    public var videoId: String
+    public var positionMs: UInt64
+    public var text: String
+    public var createdAtMs: Int64
+    public var updatedAtMs: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, videoId: String, positionMs: UInt64, text: String, createdAtMs: Int64, updatedAtMs: Int64) {
+        self.id = id
+        self.videoId = videoId
+        self.positionMs = positionMs
+        self.text = text
+        self.createdAtMs = createdAtMs
+        self.updatedAtMs = updatedAtMs
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SyncNote: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSyncNote: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SyncNote {
+        return
+            try SyncNote(
+                id: FfiConverterString.read(from: &buf), 
+                videoId: FfiConverterString.read(from: &buf), 
+                positionMs: FfiConverterUInt64.read(from: &buf), 
+                text: FfiConverterString.read(from: &buf), 
+                createdAtMs: FfiConverterInt64.read(from: &buf), 
+                updatedAtMs: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SyncNote, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.videoId, into: &buf)
+        FfiConverterUInt64.write(value.positionMs, into: &buf)
+        FfiConverterString.write(value.text, into: &buf)
+        FfiConverterInt64.write(value.createdAtMs, into: &buf)
+        FfiConverterInt64.write(value.updatedAtMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncNote_lift(_ buf: RustBuffer) throws -> SyncNote {
+    return try FfiConverterTypeSyncNote.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncNote_lower(_ value: SyncNote) -> RustBuffer {
+    return FfiConverterTypeSyncNote.lower(value)
+}
+
+
+public struct SyncSummary: Equatable, Hashable {
+    public var pushed: UInt32
+    public var dropped: UInt32
+    public var pending: UInt32
+    public var historyEntriesPulled: UInt32
+    public var savedPulled: UInt32
+    public var likedPulled: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(pushed: UInt32, dropped: UInt32, pending: UInt32, historyEntriesPulled: UInt32, savedPulled: UInt32, likedPulled: UInt32) {
+        self.pushed = pushed
+        self.dropped = dropped
+        self.pending = pending
+        self.historyEntriesPulled = historyEntriesPulled
+        self.savedPulled = savedPulled
+        self.likedPulled = likedPulled
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SyncSummary: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSyncSummary: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SyncSummary {
+        return
+            try SyncSummary(
+                pushed: FfiConverterUInt32.read(from: &buf), 
+                dropped: FfiConverterUInt32.read(from: &buf), 
+                pending: FfiConverterUInt32.read(from: &buf), 
+                historyEntriesPulled: FfiConverterUInt32.read(from: &buf), 
+                savedPulled: FfiConverterUInt32.read(from: &buf), 
+                likedPulled: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SyncSummary, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.pushed, into: &buf)
+        FfiConverterUInt32.write(value.dropped, into: &buf)
+        FfiConverterUInt32.write(value.pending, into: &buf)
+        FfiConverterUInt32.write(value.historyEntriesPulled, into: &buf)
+        FfiConverterUInt32.write(value.savedPulled, into: &buf)
+        FfiConverterUInt32.write(value.likedPulled, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncSummary_lift(_ buf: RustBuffer) throws -> SyncSummary {
+    return try FfiConverterTypeSyncSummary.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncSummary_lower(_ value: SyncSummary) -> RustBuffer {
+    return FfiConverterTypeSyncSummary.lower(value)
+}
+
+
+public struct SyncWatchState: Equatable, Hashable {
+    public var videoId: String
+    public var positionMs: UInt64
+    public var durationMs: UInt64
+    public var completed: Bool
+    public var updatedAtMs: Int64
+    public var inHistory: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(videoId: String, positionMs: UInt64, durationMs: UInt64, completed: Bool, updatedAtMs: Int64, inHistory: Bool) {
+        self.videoId = videoId
+        self.positionMs = positionMs
+        self.durationMs = durationMs
+        self.completed = completed
+        self.updatedAtMs = updatedAtMs
+        self.inHistory = inHistory
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SyncWatchState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSyncWatchState: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SyncWatchState {
+        return
+            try SyncWatchState(
+                videoId: FfiConverterString.read(from: &buf), 
+                positionMs: FfiConverterUInt64.read(from: &buf), 
+                durationMs: FfiConverterUInt64.read(from: &buf), 
+                completed: FfiConverterBool.read(from: &buf), 
+                updatedAtMs: FfiConverterInt64.read(from: &buf), 
+                inHistory: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SyncWatchState, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.videoId, into: &buf)
+        FfiConverterUInt64.write(value.positionMs, into: &buf)
+        FfiConverterUInt64.write(value.durationMs, into: &buf)
+        FfiConverterBool.write(value.completed, into: &buf)
+        FfiConverterInt64.write(value.updatedAtMs, into: &buf)
+        FfiConverterBool.write(value.inHistory, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncWatchState_lift(_ buf: RustBuffer) throws -> SyncWatchState {
+    return try FfiConverterTypeSyncWatchState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncWatchState_lower(_ value: SyncWatchState) -> RustBuffer {
+    return FfiConverterTypeSyncWatchState.lower(value)
 }
 
 
@@ -8789,6 +11408,1142 @@ public func FfiConverterTypeNotificationMenuOpenMode_lower(_ value: Notification
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum OfflineDownloadStatus: Equatable, Hashable {
+    
+    case queued
+    case downloading
+    case paused
+    case completed
+    case removed
+    case failed
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension OfflineDownloadStatus: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOfflineDownloadStatus: FfiConverterRustBuffer {
+    typealias SwiftType = OfflineDownloadStatus
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OfflineDownloadStatus {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .queued
+        
+        case 2: return .downloading
+        
+        case 3: return .paused
+        
+        case 4: return .completed
+        
+        case 5: return .removed
+        
+        case 6: return .failed
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: OfflineDownloadStatus, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .queued:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .downloading:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .paused:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .completed:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .removed:
+            writeInt(&buf, Int32(5))
+        
+        
+        case .failed:
+            writeInt(&buf, Int32(6))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineDownloadStatus_lift(_ buf: RustBuffer) throws -> OfflineDownloadStatus {
+    return try FfiConverterTypeOfflineDownloadStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineDownloadStatus_lower(_ value: OfflineDownloadStatus) -> RustBuffer {
+    return FfiConverterTypeOfflineDownloadStatus.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum OfflineNetworkKind: Equatable, Hashable {
+    
+    case unknown
+    case wifi
+    case ethernet
+    case cellular
+    case offline
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension OfflineNetworkKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOfflineNetworkKind: FfiConverterRustBuffer {
+    typealias SwiftType = OfflineNetworkKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OfflineNetworkKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .unknown
+        
+        case 2: return .wifi
+        
+        case 3: return .ethernet
+        
+        case 4: return .cellular
+        
+        case 5: return .offline
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: OfflineNetworkKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .unknown:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .wifi:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .ethernet:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .cellular:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .offline:
+            writeInt(&buf, Int32(5))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineNetworkKind_lift(_ buf: RustBuffer) throws -> OfflineNetworkKind {
+    return try FfiConverterTypeOfflineNetworkKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineNetworkKind_lower(_ value: OfflineNetworkKind) -> RustBuffer {
+    return FfiConverterTypeOfflineNetworkKind.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum OfflineTransferDecision: Equatable, Hashable {
+    
+    case allow
+    case waitForWifi
+    case offline
+    case storageBudgetExceeded
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension OfflineTransferDecision: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOfflineTransferDecision: FfiConverterRustBuffer {
+    typealias SwiftType = OfflineTransferDecision
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OfflineTransferDecision {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .allow
+        
+        case 2: return .waitForWifi
+        
+        case 3: return .offline
+        
+        case 4: return .storageBudgetExceeded
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: OfflineTransferDecision, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .allow:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .waitForWifi:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .offline:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .storageBudgetExceeded:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineTransferDecision_lift(_ buf: RustBuffer) throws -> OfflineTransferDecision {
+    return try FfiConverterTypeOfflineTransferDecision.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineTransferDecision_lower(_ value: OfflineTransferDecision) -> RustBuffer {
+    return FfiConverterTypeOfflineTransferDecision.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum OfflineUpdateOutcome: Equatable, Hashable {
+    
+    case updated
+    case removedOrMissing
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension OfflineUpdateOutcome: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOfflineUpdateOutcome: FfiConverterRustBuffer {
+    typealias SwiftType = OfflineUpdateOutcome
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OfflineUpdateOutcome {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .updated
+        
+        case 2: return .removedOrMissing
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: OfflineUpdateOutcome, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .updated:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .removedOrMissing:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineUpdateOutcome_lift(_ buf: RustBuffer) throws -> OfflineUpdateOutcome {
+    return try FfiConverterTypeOfflineUpdateOutcome.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineUpdateOutcome_lower(_ value: OfflineUpdateOutcome) -> RustBuffer {
+    return FfiConverterTypeOfflineUpdateOutcome.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum PlayerCommand: Equatable, Hashable {
+    
+    case load(itemId: String, startPositionMs: UInt64, playWhenReady: Bool
+    )
+    case play
+    case pause
+    case seekTo(positionMs: UInt64
+    )
+    case setRate(rate: Double
+    )
+    case setQualityCap(cap: PlayerQualityCap
+    )
+    case stop
+    case savePosition(itemId: String, positionMs: UInt64, durationMs: UInt64, completed: Bool
+    )
+    case createBookmark(itemId: String, positionMs: UInt64, label: String
+    )
+    case sleepTimerFired
+    case repeatFinished
+    case queueEnded
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension PlayerCommand: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlayerCommand: FfiConverterRustBuffer {
+    typealias SwiftType = PlayerCommand
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlayerCommand {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .load(itemId: try FfiConverterString.read(from: &buf), startPositionMs: try FfiConverterUInt64.read(from: &buf), playWhenReady: try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 2: return .play
+        
+        case 3: return .pause
+        
+        case 4: return .seekTo(positionMs: try FfiConverterUInt64.read(from: &buf)
+        )
+        
+        case 5: return .setRate(rate: try FfiConverterDouble.read(from: &buf)
+        )
+        
+        case 6: return .setQualityCap(cap: try FfiConverterTypePlayerQualityCap.read(from: &buf)
+        )
+        
+        case 7: return .stop
+        
+        case 8: return .savePosition(itemId: try FfiConverterString.read(from: &buf), positionMs: try FfiConverterUInt64.read(from: &buf), durationMs: try FfiConverterUInt64.read(from: &buf), completed: try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 9: return .createBookmark(itemId: try FfiConverterString.read(from: &buf), positionMs: try FfiConverterUInt64.read(from: &buf), label: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 10: return .sleepTimerFired
+        
+        case 11: return .repeatFinished
+        
+        case 12: return .queueEnded
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: PlayerCommand, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .load(itemId,startPositionMs,playWhenReady):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(itemId, into: &buf)
+            FfiConverterUInt64.write(startPositionMs, into: &buf)
+            FfiConverterBool.write(playWhenReady, into: &buf)
+            
+        
+        case .play:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .pause:
+            writeInt(&buf, Int32(3))
+        
+        
+        case let .seekTo(positionMs):
+            writeInt(&buf, Int32(4))
+            FfiConverterUInt64.write(positionMs, into: &buf)
+            
+        
+        case let .setRate(rate):
+            writeInt(&buf, Int32(5))
+            FfiConverterDouble.write(rate, into: &buf)
+            
+        
+        case let .setQualityCap(cap):
+            writeInt(&buf, Int32(6))
+            FfiConverterTypePlayerQualityCap.write(cap, into: &buf)
+            
+        
+        case .stop:
+            writeInt(&buf, Int32(7))
+        
+        
+        case let .savePosition(itemId,positionMs,durationMs,completed):
+            writeInt(&buf, Int32(8))
+            FfiConverterString.write(itemId, into: &buf)
+            FfiConverterUInt64.write(positionMs, into: &buf)
+            FfiConverterUInt64.write(durationMs, into: &buf)
+            FfiConverterBool.write(completed, into: &buf)
+            
+        
+        case let .createBookmark(itemId,positionMs,label):
+            writeInt(&buf, Int32(9))
+            FfiConverterString.write(itemId, into: &buf)
+            FfiConverterUInt64.write(positionMs, into: &buf)
+            FfiConverterString.write(label, into: &buf)
+            
+        
+        case .sleepTimerFired:
+            writeInt(&buf, Int32(10))
+        
+        
+        case .repeatFinished:
+            writeInt(&buf, Int32(11))
+        
+        
+        case .queueEnded:
+            writeInt(&buf, Int32(12))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerCommand_lift(_ buf: RustBuffer) throws -> PlayerCommand {
+    return try FfiConverterTypePlayerCommand.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerCommand_lower(_ value: PlayerCommand) -> RustBuffer {
+    return FfiConverterTypePlayerCommand.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum PlayerDeviceClass: Equatable, Hashable {
+    
+    case phone
+    case tablet
+    case desktop
+    case tv
+    case car
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension PlayerDeviceClass: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlayerDeviceClass: FfiConverterRustBuffer {
+    typealias SwiftType = PlayerDeviceClass
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlayerDeviceClass {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .phone
+        
+        case 2: return .tablet
+        
+        case 3: return .desktop
+        
+        case 4: return .tv
+        
+        case 5: return .car
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: PlayerDeviceClass, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .phone:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .tablet:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .desktop:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .tv:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .car:
+            writeInt(&buf, Int32(5))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerDeviceClass_lift(_ buf: RustBuffer) throws -> PlayerDeviceClass {
+    return try FfiConverterTypePlayerDeviceClass.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerDeviceClass_lower(_ value: PlayerDeviceClass) -> RustBuffer {
+    return FfiConverterTypePlayerDeviceClass.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum PlayerInput: Equatable, Hashable {
+    
+    case loadQueue(items: [PlayerMediaItem], startIndex: UInt32, playWhenReady: Bool
+    )
+    case selectItem(index: UInt32
+    )
+    case next
+    case previous
+    case setShuffle(enabled: Bool, seed: UInt64
+    )
+    case setRepeatMode(mode: PlayerRepeatMode
+    )
+    case setAutoplay(enabled: Bool
+    )
+    case play
+    case pause
+    case seekTo(positionMs: UInt64
+    )
+    case skipForward
+    case skipBackward
+    case nextChapter
+    case previousChapter
+    case setRate(rate: Double
+    )
+    case stop
+    case setAbLoop(startMs: UInt64, endMs: UInt64
+    )
+    case clearAbLoop
+    case setRepeatCount(times: UInt32
+    )
+    case addBookmark(label: String
+    )
+    case setSleepTimer(timer: PlayerSleepTimer
+    )
+    case setNetwork(network: OfflineNetworkKind
+    )
+    case setDeviceClass(device: PlayerDeviceClass
+    )
+    case setQualitySettings(settings: PlayerQualitySettings
+    )
+    case tick(positionMs: UInt64, durationMs: UInt64
+    )
+    case playbackStarted
+    case playbackPaused
+    case ended
+    case failed(code: String
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension PlayerInput: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlayerInput: FfiConverterRustBuffer {
+    typealias SwiftType = PlayerInput
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlayerInput {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .loadQueue(items: try FfiConverterSequenceTypePlayerMediaItem.read(from: &buf), startIndex: try FfiConverterUInt32.read(from: &buf), playWhenReady: try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 2: return .selectItem(index: try FfiConverterUInt32.read(from: &buf)
+        )
+        
+        case 3: return .next
+        
+        case 4: return .previous
+        
+        case 5: return .setShuffle(enabled: try FfiConverterBool.read(from: &buf), seed: try FfiConverterUInt64.read(from: &buf)
+        )
+        
+        case 6: return .setRepeatMode(mode: try FfiConverterTypePlayerRepeatMode.read(from: &buf)
+        )
+        
+        case 7: return .setAutoplay(enabled: try FfiConverterBool.read(from: &buf)
+        )
+        
+        case 8: return .play
+        
+        case 9: return .pause
+        
+        case 10: return .seekTo(positionMs: try FfiConverterUInt64.read(from: &buf)
+        )
+        
+        case 11: return .skipForward
+        
+        case 12: return .skipBackward
+        
+        case 13: return .nextChapter
+        
+        case 14: return .previousChapter
+        
+        case 15: return .setRate(rate: try FfiConverterDouble.read(from: &buf)
+        )
+        
+        case 16: return .stop
+        
+        case 17: return .setAbLoop(startMs: try FfiConverterUInt64.read(from: &buf), endMs: try FfiConverterUInt64.read(from: &buf)
+        )
+        
+        case 18: return .clearAbLoop
+        
+        case 19: return .setRepeatCount(times: try FfiConverterUInt32.read(from: &buf)
+        )
+        
+        case 20: return .addBookmark(label: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 21: return .setSleepTimer(timer: try FfiConverterTypePlayerSleepTimer.read(from: &buf)
+        )
+        
+        case 22: return .setNetwork(network: try FfiConverterTypeOfflineNetworkKind.read(from: &buf)
+        )
+        
+        case 23: return .setDeviceClass(device: try FfiConverterTypePlayerDeviceClass.read(from: &buf)
+        )
+        
+        case 24: return .setQualitySettings(settings: try FfiConverterTypePlayerQualitySettings.read(from: &buf)
+        )
+        
+        case 25: return .tick(positionMs: try FfiConverterUInt64.read(from: &buf), durationMs: try FfiConverterUInt64.read(from: &buf)
+        )
+        
+        case 26: return .playbackStarted
+        
+        case 27: return .playbackPaused
+        
+        case 28: return .ended
+        
+        case 29: return .failed(code: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: PlayerInput, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .loadQueue(items,startIndex,playWhenReady):
+            writeInt(&buf, Int32(1))
+            FfiConverterSequenceTypePlayerMediaItem.write(items, into: &buf)
+            FfiConverterUInt32.write(startIndex, into: &buf)
+            FfiConverterBool.write(playWhenReady, into: &buf)
+            
+        
+        case let .selectItem(index):
+            writeInt(&buf, Int32(2))
+            FfiConverterUInt32.write(index, into: &buf)
+            
+        
+        case .next:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .previous:
+            writeInt(&buf, Int32(4))
+        
+        
+        case let .setShuffle(enabled,seed):
+            writeInt(&buf, Int32(5))
+            FfiConverterBool.write(enabled, into: &buf)
+            FfiConverterUInt64.write(seed, into: &buf)
+            
+        
+        case let .setRepeatMode(mode):
+            writeInt(&buf, Int32(6))
+            FfiConverterTypePlayerRepeatMode.write(mode, into: &buf)
+            
+        
+        case let .setAutoplay(enabled):
+            writeInt(&buf, Int32(7))
+            FfiConverterBool.write(enabled, into: &buf)
+            
+        
+        case .play:
+            writeInt(&buf, Int32(8))
+        
+        
+        case .pause:
+            writeInt(&buf, Int32(9))
+        
+        
+        case let .seekTo(positionMs):
+            writeInt(&buf, Int32(10))
+            FfiConverterUInt64.write(positionMs, into: &buf)
+            
+        
+        case .skipForward:
+            writeInt(&buf, Int32(11))
+        
+        
+        case .skipBackward:
+            writeInt(&buf, Int32(12))
+        
+        
+        case .nextChapter:
+            writeInt(&buf, Int32(13))
+        
+        
+        case .previousChapter:
+            writeInt(&buf, Int32(14))
+        
+        
+        case let .setRate(rate):
+            writeInt(&buf, Int32(15))
+            FfiConverterDouble.write(rate, into: &buf)
+            
+        
+        case .stop:
+            writeInt(&buf, Int32(16))
+        
+        
+        case let .setAbLoop(startMs,endMs):
+            writeInt(&buf, Int32(17))
+            FfiConverterUInt64.write(startMs, into: &buf)
+            FfiConverterUInt64.write(endMs, into: &buf)
+            
+        
+        case .clearAbLoop:
+            writeInt(&buf, Int32(18))
+        
+        
+        case let .setRepeatCount(times):
+            writeInt(&buf, Int32(19))
+            FfiConverterUInt32.write(times, into: &buf)
+            
+        
+        case let .addBookmark(label):
+            writeInt(&buf, Int32(20))
+            FfiConverterString.write(label, into: &buf)
+            
+        
+        case let .setSleepTimer(timer):
+            writeInt(&buf, Int32(21))
+            FfiConverterTypePlayerSleepTimer.write(timer, into: &buf)
+            
+        
+        case let .setNetwork(network):
+            writeInt(&buf, Int32(22))
+            FfiConverterTypeOfflineNetworkKind.write(network, into: &buf)
+            
+        
+        case let .setDeviceClass(device):
+            writeInt(&buf, Int32(23))
+            FfiConverterTypePlayerDeviceClass.write(device, into: &buf)
+            
+        
+        case let .setQualitySettings(settings):
+            writeInt(&buf, Int32(24))
+            FfiConverterTypePlayerQualitySettings.write(settings, into: &buf)
+            
+        
+        case let .tick(positionMs,durationMs):
+            writeInt(&buf, Int32(25))
+            FfiConverterUInt64.write(positionMs, into: &buf)
+            FfiConverterUInt64.write(durationMs, into: &buf)
+            
+        
+        case .playbackStarted:
+            writeInt(&buf, Int32(26))
+        
+        
+        case .playbackPaused:
+            writeInt(&buf, Int32(27))
+        
+        
+        case .ended:
+            writeInt(&buf, Int32(28))
+        
+        
+        case let .failed(code):
+            writeInt(&buf, Int32(29))
+            FfiConverterString.write(code, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerInput_lift(_ buf: RustBuffer) throws -> PlayerInput {
+    return try FfiConverterTypePlayerInput.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerInput_lower(_ value: PlayerInput) -> RustBuffer {
+    return FfiConverterTypePlayerInput.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum PlayerPlaybackState: Equatable, Hashable {
+    
+    case idle
+    case playing
+    case paused
+    case ended
+    case stopped
+    case failed
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension PlayerPlaybackState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlayerPlaybackState: FfiConverterRustBuffer {
+    typealias SwiftType = PlayerPlaybackState
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlayerPlaybackState {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .idle
+        
+        case 2: return .playing
+        
+        case 3: return .paused
+        
+        case 4: return .ended
+        
+        case 5: return .stopped
+        
+        case 6: return .failed
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: PlayerPlaybackState, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .idle:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .playing:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .paused:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .ended:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .stopped:
+            writeInt(&buf, Int32(5))
+        
+        
+        case .failed:
+            writeInt(&buf, Int32(6))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerPlaybackState_lift(_ buf: RustBuffer) throws -> PlayerPlaybackState {
+    return try FfiConverterTypePlayerPlaybackState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerPlaybackState_lower(_ value: PlayerPlaybackState) -> RustBuffer {
+    return FfiConverterTypePlayerPlaybackState.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum PlayerRepeatMode: Equatable, Hashable {
+    
+    case off
+    case one
+    case all
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension PlayerRepeatMode: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlayerRepeatMode: FfiConverterRustBuffer {
+    typealias SwiftType = PlayerRepeatMode
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlayerRepeatMode {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .off
+        
+        case 2: return .one
+        
+        case 3: return .all
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: PlayerRepeatMode, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .off:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .one:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .all:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerRepeatMode_lift(_ buf: RustBuffer) throws -> PlayerRepeatMode {
+    return try FfiConverterTypePlayerRepeatMode.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerRepeatMode_lower(_ value: PlayerRepeatMode) -> RustBuffer {
+    return FfiConverterTypePlayerRepeatMode.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum PlayerSleepTimer: Equatable, Hashable {
+    
+    case off
+    case after(durationMs: UInt64
+    )
+    case endOfItem
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension PlayerSleepTimer: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlayerSleepTimer: FfiConverterRustBuffer {
+    typealias SwiftType = PlayerSleepTimer
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlayerSleepTimer {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .off
+        
+        case 2: return .after(durationMs: try FfiConverterUInt64.read(from: &buf)
+        )
+        
+        case 3: return .endOfItem
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: PlayerSleepTimer, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .off:
+            writeInt(&buf, Int32(1))
+        
+        
+        case let .after(durationMs):
+            writeInt(&buf, Int32(2))
+            FfiConverterUInt64.write(durationMs, into: &buf)
+            
+        
+        case .endOfItem:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerSleepTimer_lift(_ buf: RustBuffer) throws -> PlayerSleepTimer {
+    return try FfiConverterTypePlayerSleepTimer.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlayerSleepTimer_lower(_ value: PlayerSleepTimer) -> RustBuffer {
+    return FfiConverterTypePlayerSleepTimer.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
  * Kind of entity addressed by a short link on `alummahnow.link`.
  */
@@ -9011,6 +12766,87 @@ public func FfiConverterTypeSuggestionKind_lift(_ buf: RustBuffer) throws -> Sug
 #endif
 public func FfiConverterTypeSuggestionKind_lower(_ value: SuggestionKind) -> RustBuffer {
     return FfiConverterTypeSuggestionKind.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum SyncChangeKind: Equatable, Hashable {
+    
+    case watchState
+    case history
+    case notes
+    case library
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SyncChangeKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSyncChangeKind: FfiConverterRustBuffer {
+    typealias SwiftType = SyncChangeKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SyncChangeKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .watchState
+        
+        case 2: return .history
+        
+        case 3: return .notes
+        
+        case 4: return .library
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SyncChangeKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .watchState:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .history:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .notes:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .library:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncChangeKind_lift(_ buf: RustBuffer) throws -> SyncChangeKind {
+    return try FfiConverterTypeSyncChangeKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSyncChangeKind_lower(_ value: SyncChangeKind) -> RustBuffer {
+    return FfiConverterTypeSyncChangeKind.lower(value)
 }
 
 
@@ -9524,6 +13360,78 @@ fileprivate struct FfiConverterOptionTypeAccountInfo: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeOfflineDownloadItem: FfiConverterRustBuffer {
+    typealias SwiftType = OfflineDownloadItem?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeOfflineDownloadItem.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeOfflineDownloadItem.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypePlayerAbLoop: FfiConverterRustBuffer {
+    typealias SwiftType = PlayerAbLoop?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypePlayerAbLoop.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypePlayerAbLoop.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeSyncWatchState: FfiConverterRustBuffer {
+    typealias SwiftType = SyncWatchState?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeSyncWatchState.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeSyncWatchState.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeTranscriptionDevice: FfiConverterRustBuffer {
     typealias SwiftType = TranscriptionDevice?
 
@@ -9638,6 +13546,31 @@ fileprivate struct FfiConverterOptionTypeShortLinkTarget: FfiConverterRustBuffer
         case 1: return try FfiConverterTypeShortLinkTarget.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceUInt32: FfiConverterRustBuffer {
+    typealias SwiftType = [UInt32]
+
+    public static func write(_ value: [UInt32], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterUInt32.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [UInt32] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [UInt32]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterUInt32.read(from: &buf))
+        }
+        return seq
     }
 }
 
@@ -9944,6 +13877,206 @@ fileprivate struct FfiConverterSequenceTypeNotificationItem: FfiConverterRustBuf
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeOfflineAutoDownloadRule: FfiConverterRustBuffer {
+    typealias SwiftType = [OfflineAutoDownloadRule]
+
+    public static func write(_ value: [OfflineAutoDownloadRule], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeOfflineAutoDownloadRule.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [OfflineAutoDownloadRule] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [OfflineAutoDownloadRule]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeOfflineAutoDownloadRule.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeOfflineAvailabilityResult: FfiConverterRustBuffer {
+    typealias SwiftType = [OfflineAvailabilityResult]
+
+    public static func write(_ value: [OfflineAvailabilityResult], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeOfflineAvailabilityResult.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [OfflineAvailabilityResult] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [OfflineAvailabilityResult]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeOfflineAvailabilityResult.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeOfflineDownloadItem: FfiConverterRustBuffer {
+    typealias SwiftType = [OfflineDownloadItem]
+
+    public static func write(_ value: [OfflineDownloadItem], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeOfflineDownloadItem.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [OfflineDownloadItem] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [OfflineDownloadItem]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeOfflineDownloadItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeOfflineDownloadKey: FfiConverterRustBuffer {
+    typealias SwiftType = [OfflineDownloadKey]
+
+    public static func write(_ value: [OfflineDownloadKey], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeOfflineDownloadKey.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [OfflineDownloadKey] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [OfflineDownloadKey]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeOfflineDownloadKey.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeOfflineEpisodeCandidate: FfiConverterRustBuffer {
+    typealias SwiftType = [OfflineEpisodeCandidate]
+
+    public static func write(_ value: [OfflineEpisodeCandidate], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeOfflineEpisodeCandidate.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [OfflineEpisodeCandidate] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [OfflineEpisodeCandidate]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeOfflineEpisodeCandidate.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeOfflineRevocationEntry: FfiConverterRustBuffer {
+    typealias SwiftType = [OfflineRevocationEntry]
+
+    public static func write(_ value: [OfflineRevocationEntry], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeOfflineRevocationEntry.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [OfflineRevocationEntry] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [OfflineRevocationEntry]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeOfflineRevocationEntry.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypePlayerChapter: FfiConverterRustBuffer {
+    typealias SwiftType = [PlayerChapter]
+
+    public static func write(_ value: [PlayerChapter], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypePlayerChapter.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [PlayerChapter] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [PlayerChapter]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypePlayerChapter.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypePlayerMediaItem: FfiConverterRustBuffer {
+    typealias SwiftType = [PlayerMediaItem]
+
+    public static func write(_ value: [PlayerMediaItem], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypePlayerMediaItem.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [PlayerMediaItem] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [PlayerMediaItem]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypePlayerMediaItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypePrayerQuietWindow: FfiConverterRustBuffer {
     typealias SwiftType = [PrayerQuietWindow]
 
@@ -10119,6 +14252,106 @@ fileprivate struct FfiConverterSequenceTypeSuggestionGroup: FfiConverterRustBuff
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeSyncContinueItem: FfiConverterRustBuffer {
+    typealias SwiftType = [SyncContinueItem]
+
+    public static func write(_ value: [SyncContinueItem], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSyncContinueItem.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SyncContinueItem] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SyncContinueItem]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSyncContinueItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSyncHistoryItem: FfiConverterRustBuffer {
+    typealias SwiftType = [SyncHistoryItem]
+
+    public static func write(_ value: [SyncHistoryItem], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSyncHistoryItem.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SyncHistoryItem] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SyncHistoryItem]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSyncHistoryItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSyncLibraryItem: FfiConverterRustBuffer {
+    typealias SwiftType = [SyncLibraryItem]
+
+    public static func write(_ value: [SyncLibraryItem], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSyncLibraryItem.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SyncLibraryItem] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SyncLibraryItem]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSyncLibraryItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSyncNote: FfiConverterRustBuffer {
+    typealias SwiftType = [SyncNote]
+
+    public static func write(_ value: [SyncNote], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSyncNote.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SyncNote] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SyncNote]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSyncNote.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeTextRange: FfiConverterRustBuffer {
     typealias SwiftType = [TextRange]
 
@@ -10244,6 +14477,31 @@ fileprivate struct FfiConverterSequenceTypeWaveformLevel: FfiConverterRustBuffer
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypePlayerCommand: FfiConverterRustBuffer {
+    typealias SwiftType = [PlayerCommand]
+
+    public static func write(_ value: [PlayerCommand], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypePlayerCommand.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [PlayerCommand] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [PlayerCommand]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypePlayerCommand.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeSuggestionKind: FfiConverterRustBuffer {
     typealias SwiftType = [SuggestionKind]
 
@@ -10261,6 +14519,31 @@ fileprivate struct FfiConverterSequenceTypeSuggestionKind: FfiConverterRustBuffe
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeSuggestionKind.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSyncChangeKind: FfiConverterRustBuffer {
+    typealias SwiftType = [SyncChangeKind]
+
+    public static func write(_ value: [SyncChangeKind], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSyncChangeKind.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SyncChangeKind] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SyncChangeKind]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSyncChangeKind.read(from: &buf))
         }
         return seq
     }
@@ -10466,6 +14749,38 @@ public func selftestThrow(kind: String)throws   {try rustCallWithError(FfiConver
         FfiConverterString.lower(kind),$0
     )
 }
+}
+public func offlineCanStartDownload(settings: OfflineDownloadSettings, network: OfflineNetworkKind, usedBytes: UInt64, itemBytes: UInt64, availableDiskBytes: UInt64?) -> OfflineTransferDecision  {
+    return try!  FfiConverterTypeOfflineTransferDecision_lift(try! rustCall() {
+    uniffi_aun_core_fn_func_offline_can_start_download(
+        FfiConverterTypeOfflineDownloadSettings_lower(settings),
+        FfiConverterTypeOfflineNetworkKind_lower(network),
+        FfiConverterUInt64.lower(usedBytes),
+        FfiConverterUInt64.lower(itemBytes),
+        FfiConverterOptionUInt64.lower(availableDiskBytes),$0
+    )
+})
+}
+public func offlineDefaultDownloadSettings() -> OfflineDownloadSettings  {
+    return try!  FfiConverterTypeOfflineDownloadSettings_lift(try! rustCall() {
+    uniffi_aun_core_fn_func_offline_default_download_settings($0
+    )
+})
+}
+public func offlineSelectAutoDownloads(settings: OfflineDownloadSettings, network: OfflineNetworkKind, isCharging: Bool, usedBytes: UInt64, availableDiskBytes: UInt64?, rules: [OfflineAutoDownloadRule], candidates: [OfflineEpisodeCandidate], existingVideoIds: [String], dismissedVideoIds: [String]) -> [String]  {
+    return try!  FfiConverterSequenceString.lift(try! rustCall() {
+    uniffi_aun_core_fn_func_offline_select_auto_downloads(
+        FfiConverterTypeOfflineDownloadSettings_lower(settings),
+        FfiConverterTypeOfflineNetworkKind_lower(network),
+        FfiConverterBool.lower(isCharging),
+        FfiConverterUInt64.lower(usedBytes),
+        FfiConverterOptionUInt64.lower(availableDiskBytes),
+        FfiConverterSequenceTypeOfflineAutoDownloadRule.lower(rules),
+        FfiConverterSequenceTypeOfflineEpisodeCandidate.lower(candidates),
+        FfiConverterSequenceString.lower(existingVideoIds),
+        FfiConverterSequenceString.lower(dismissedVideoIds),$0
+    )
+})
 }
 /**
  * Applies one edit (`aun_media::edl::EditOp` JSON, e.g. `{"op":"split","clipId":"c1","atMs":5000,
@@ -11019,6 +15334,15 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_func_selftest_throw() != 9695) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_func_offline_can_start_download() != 37661) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_func_offline_default_download_settings() != 50332) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_func_offline_select_auto_downloads() != 40617) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aun_core_checksum_func_edl_apply_json() != 18840) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -11289,6 +15613,87 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_method_selftestlistener_on_event() != 53827) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_active_count_for_user() != 44963) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_apply_availability_sync() != 38600) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_apply_revocations() != 14070) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_clear_for_user() != 63829) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_commit_revocations_cursor() != 59378) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_confirm_removed() != 36979) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_confirm_removed_batch() != 26527) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_evict_to_budget() != 65391) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_get() != 33830) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_has_local_downloads() != 13213) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_is_playable_offline() != 46081) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_list() != 9879) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_list_for_user() != 38539) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_mark_completed() != 26548) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_mark_downloading() != 53791) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_mark_failed() != 23129) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_mark_paused() != 21517) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_mark_reconciled() != 58139) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_needs_disk_reconciliation() != 34075) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_pending_deletions() != 8536) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_purge_inactive() != 28281) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_reconcile_orphaned_paths() != 1949) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_remove() != 19802) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_revocations_cursor() != 65335) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_total_bytes() != 10169) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_try_reserve() != 34376) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinedownloadstore_update_progress() != 289) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aun_core_checksum_method_mediacancel_cancel() != 35329) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -11326,6 +15731,117 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_securestorage_list() != 12307) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_playermachine_config() != 22425) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_playermachine_handle() != 40633) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_playermachine_is_completed() != 7934) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_playermachine_next_deadline_ms() != 59770) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_playermachine_play_order() != 48809) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_playermachine_resume_position() != 52865) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_playermachine_snapshot() != 32862) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_add_listener() != 43027) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_add_note() != 13521) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_all_notes() != 24597) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_clear_history() != 50400) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_continue_watching() != 20094) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_delete_note() != 46356) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_device_id() != 18547) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_flush() != 21387) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_history() != 31733) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_is_liked() != 52149) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_is_saved() != 23495) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_liked_items() != 46410) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_move_note() != 4654) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_next_due_ms() != 58850) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_notes_for_video() != 4046) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_pending_count() != 49077) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_persist() != 18671) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_record_position() != 61234) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_remove_from_history() != 63450) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_remove_listener() != 4882) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_reorder_saved() != 35674) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_resume_position_ms() != 40263) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_saved_items() != 5141) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_set_completed() != 7077) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_set_liked() != 29498) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_set_saved() != 39884) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_sync() != 17905) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_update_note_text() != 47911) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_offlinesyncengine_watch_state() != 57509) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_syncchangelistener_on_changed() != 55964) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_updatechecker_allowed_download_url() != 6449) {
@@ -11424,10 +15940,22 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_constructor_authmanager_new() != 64790) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_constructor_offlinedownloadstore_open() != 9574) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aun_core_checksum_constructor_mediacancel_new() != 53288) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_constructor_modelstore_new() != 3285) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_constructor_playermachine_new() != 29824) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_constructor_playermachine_with_config() != 50602) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_constructor_offlinesyncengine_open() != 16548) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_constructor_updatechecker_new() != 62479) {
@@ -11442,6 +15970,7 @@ private let initializationResult: InitializationResult = {
     uniffiCallbackInitMediaProgress()
     uniffiCallbackInitSecureStorage()
     uniffiCallbackInitSelfTestListener()
+    uniffiCallbackInitSyncChangeListener()
     uniffiCallbackInitTokenSource()
     uniffiCallbackInitUploadListener()
     return InitializationResult.ok

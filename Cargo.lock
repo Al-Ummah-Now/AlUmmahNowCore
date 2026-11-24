@@ -175,6 +175,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "aun-downloads"
+version = "0.4.0-rc.4"
+dependencies = [
+ "aun-common",
+ "aun-player",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "aun-ffi"
 version = "0.4.0-rc.4"
 dependencies = [
@@ -182,8 +194,11 @@ dependencies = [
  "aun-api",
  "aun-auth",
  "aun-common",
+ "aun-downloads",
  "aun-media",
+ "aun-player",
  "aun-search",
+ "aun-sync",
  "aun-updates",
  "aun-upload",
  "reqwest 0.13.5",

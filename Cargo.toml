@@ -20,6 +20,7 @@ aun-media = { path = "crates/aun-media" }
 aun-i18n = { path = "crates/aun-i18n" }
 aun-telemetry = { path = "crates/aun-telemetry" }
 aun-player = { path = "crates/aun-player" }
+aun-downloads = { path = "crates/aun-downloads" }
 aun-search = { path = "crates/aun-search" }
 aun-updates = { path = "crates/aun-updates" }
 

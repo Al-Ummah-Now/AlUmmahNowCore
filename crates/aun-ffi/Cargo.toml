@@ -30,6 +30,9 @@ aun-common.workspace = true
 aun-api.workspace = true
 aun-auth.workspace = true
 aun-upload.workspace = true
+aun-downloads.workspace = true
+aun-player.workspace = true
+aun-sync.workspace = true
 aun-media = { workspace = true, features = ["http-download"] }
 aun-search.workspace = true
 aun-updates.workspace = true
