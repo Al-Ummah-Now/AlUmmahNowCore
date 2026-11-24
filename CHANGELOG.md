@@ -7,6 +7,11 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+### Breaking
+
+- `aun-api`: the profile and channel `email` is optional (`Option<String>`), as in the api-videos contract:
+  the API takes a profile's email from the signed-in account, and channels no longer return one.
+
 ## [0.4.0-rc.6] - 2026-11-24
 
 ### Added

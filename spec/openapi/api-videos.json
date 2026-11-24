@@ -1869,7 +1869,8 @@
                             },
                             "email": {
                               "type": "string",
-                              "format": "email"
+                              "format": "email",
+                              "description": "Not returned any more; the account's email is on the profile"
                             },
                             "name": {
                               "type": "string"
@@ -1968,7 +1969,6 @@
                           "required": [
                             "id",
                             "userId",
-                            "email",
                             "name",
                             "isMain",
                             "dateCreated",
@@ -4152,7 +4152,8 @@
                             },
                             "email": {
                               "type": "string",
-                              "format": "email"
+                              "format": "email",
+                              "description": "Not returned any more; the account's email is on the profile"
                             },
                             "name": {
                               "type": "string"
@@ -4251,7 +4252,6 @@
                           "required": [
                             "id",
                             "userId",
-                            "email",
                             "name",
                             "isMain",
                             "dateCreated",
@@ -5867,7 +5867,8 @@
                     },
                     "email": {
                       "type": "string",
-                      "format": "email"
+                      "format": "email",
+                      "description": "Not returned any more; the account's email is on the profile"
                     },
                     "name": {
                       "type": "string"
@@ -5966,7 +5967,6 @@
                   "required": [
                     "id",
                     "userId",
-                    "email",
                     "name",
                     "isMain",
                     "dateCreated",
@@ -18436,7 +18436,6 @@
                           },
                           "required": [
                             "id",
-                            "email",
                             "dateCreated",
                             "dateModified",
                             "channelsCount"
@@ -18522,7 +18521,7 @@
                 "properties": {
                   "email": {
                     "type": "string",
-                    "description": "User email address"
+                    "description": "Ignored: the profile's email is the signed-in account's"
                   },
                   "userName": {
                     "type": "string",
@@ -18705,7 +18704,6 @@
                           },
                           "required": [
                             "id",
-                            "email",
                             "dateCreated",
                             "dateModified",
                             "channelsCount"
@@ -19386,8 +19384,7 @@
                 "properties": {
                   "email": {
                     "type": "string",
-                    "format": "email",
-                    "description": "User email address"
+                    "description": "Ignored: the profile's email is the signed-in account's"
                   },
                   "userName": {
                     "type": "string",
@@ -19449,10 +19446,7 @@
                     "type": "string",
                     "description": "User timezone (IANA format, e.g., 'America/New_York', 'Asia/Dubai')"
                   }
-                },
-                "required": [
-                  "email"
-                ]
+                }
               }
             }
           }
@@ -19573,7 +19567,6 @@
                           },
                           "required": [
                             "id",
-                            "email",
                             "dateCreated",
                             "dateModified",
                             "channelsCount"
