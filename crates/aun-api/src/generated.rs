@@ -2644,7 +2644,9 @@ pub struct GetChannelOwnerFetchResponse {
     pub id: String,
     #[serde(rename = "userId")]
     pub user_id: String,
-    pub email: String,
+    /// Not returned any more; the account's email is on the profile
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
     pub name: String,
     #[serde(rename = "isMain")]
     pub is_main: bool,
@@ -4459,7 +4461,8 @@ pub struct GetProfileCurrentFetchResponseResultProfileChannelsItem {
 #[serde(default)]
 pub struct GetProfileCurrentFetchResponseResultProfile {
     pub id: String,
-    pub email: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
     #[serde(rename = "userName", skip_serializing_if = "Option::is_none")]
     pub user_name: Option<String>,
     #[serde(rename = "firstName", skip_serializing_if = "Option::is_none")]
@@ -6540,7 +6543,9 @@ pub struct PostChannelCreateResponseResultChannel {
     pub id: String,
     #[serde(rename = "userId")]
     pub user_id: String,
-    pub email: String,
+    /// Not returned any more; the account's email is on the profile
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
     pub name: String,
     #[serde(rename = "isMain")]
     pub is_main: bool,
@@ -7737,8 +7742,9 @@ pub struct PostPlaylistVideosBulkRemoveResponse {
 #[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct PostProfileCreateBody {
-    /// User email address
-    pub email: String,
+    /// Ignored: the profile's email is the signed-in account's
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
     /// Display username
     #[serde(rename = "userName", skip_serializing_if = "Option::is_none")]
     pub user_name: Option<String>,
@@ -7792,7 +7798,8 @@ pub struct PostProfileCreateResponseResultProfileChannelsItem {
 #[serde(default)]
 pub struct PostProfileCreateResponseResultProfile {
     pub id: String,
-    pub email: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
     #[serde(rename = "userName", skip_serializing_if = "Option::is_none")]
     pub user_name: Option<String>,
     #[serde(rename = "firstName", skip_serializing_if = "Option::is_none")]
@@ -9297,7 +9304,9 @@ pub struct PutChannelUpdateResponseResultChannel {
     pub id: String,
     #[serde(rename = "userId")]
     pub user_id: String,
-    pub email: String,
+    /// Not returned any more; the account's email is on the profile
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
     pub name: String,
     #[serde(rename = "isMain")]
     pub is_main: bool,
@@ -9516,7 +9525,7 @@ pub struct PutPrivacyConsentPutBody {
 #[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct PutProfileUpdateBody {
-    /// User email address
+    /// Ignored: the profile's email is the signed-in account's
     #[serde(skip_serializing_if = "Option::is_none")]
     pub email: Option<String>,
     /// Display username
@@ -9572,7 +9581,8 @@ pub struct PutProfileUpdateResponseResultProfileChannelsItem {
 #[serde(default)]
 pub struct PutProfileUpdateResponseResultProfile {
     pub id: String,
-    pub email: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
     #[serde(rename = "userName", skip_serializing_if = "Option::is_none")]
     pub user_name: Option<String>,
     #[serde(rename = "firstName", skip_serializing_if = "Option::is_none")]
