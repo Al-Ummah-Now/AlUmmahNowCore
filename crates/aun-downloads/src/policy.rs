@@ -123,13 +123,45 @@ pub fn can_start_download(
     TransferDecision::Allow
 }
 
+/// Kind of auto-download rule source (channel or playlist).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AutoSourceKind {
+    Channel,
+    Playlist,
+}
+
+/// Identifies the specific auto-download rule (`kind` + `id`) that owns an auto-downloaded episode,
+/// preventing channel rules and playlist rules from colliding or evicting each other's episodes.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct AutoDownloadSource {
+    pub kind: AutoSourceKind,
+    pub id: String,
+}
+
+impl AutoDownloadSource {
+    pub fn channel(id: impl Into<String>) -> Self {
+        Self {
+            kind: AutoSourceKind::Channel,
+            id: id.into(),
+        }
+    }
+
+    pub fn playlist(id: impl Into<String>) -> Self {
+        Self {
+            kind: AutoSourceKind::Playlist,
+            id: id.into(),
+        }
+    }
+}
+
 /// Auto-download rule for a subscribed channel or playlist (downloads the single progressive R2
 /// `video.mp4` file per E14-D5). `max_episodes` caps the total number of auto-downloaded episodes
-/// kept per channel over time (oldest auto-downloads beyond `max_episodes` are returned in
+/// kept per rule over time (oldest auto-downloads beyond `max_episodes` are returned in
 /// [`AutoDownloadPlan::to_evict`]; manual user downloads are never evicted).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AutoDownloadRule {
-    pub source_id: String,
+    pub source: AutoDownloadSource,
     pub max_episodes: usize,
 }
 
@@ -137,7 +169,7 @@ pub struct AutoDownloadRule {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EpisodeCandidate {
     pub video_id: String,
-    pub source_id: String,
+    pub source: AutoDownloadSource,
     pub published_at_ms: i64,
     pub allow_downloads: bool,
     /// Optional server-reported progressive `video.mp4` byte size (`None` uses the conservative estimate).
@@ -150,10 +182,10 @@ pub struct EpisodeCandidate {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExistingAutoDownload {
     pub video_id: String,
-    pub source_id: String,
+    pub source: AutoDownloadSource,
     pub published_at_ms: i64,
     /// Bytes currently reserved by this episode against the user's storage cap (`0` if unknown).
-    /// Credited back when a newer episode displaces this one so a channel at its storage cap can
+    /// Credited back when a newer episode displaces this one so a rule at its storage cap can
     /// still roll forward to newer episodes.
     #[serde(default)]
     pub size_bytes: u64,
@@ -208,12 +240,9 @@ pub fn select_auto_downloads(
     let mut running_pending = pending_remaining_bytes;
 
     for rule in rules {
-        // Deduplicate existing auto-downloads for this channel from the store, newest first.
+        // Deduplicate existing auto-downloads for this rule from the store, newest first.
         let mut existing_by_id: HashMap<&str, ExistingAutoDownload> = HashMap::new();
-        for e in existing_auto_downloads
-            .iter()
-            .filter(|e| e.source_id == rule.source_id)
-        {
+        for e in existing_auto_downloads.iter().filter(|e| e.source == rule.source) {
             existing_by_id
                 .entry(e.video_id.as_str())
                 .and_modify(|prev| {
@@ -247,10 +276,10 @@ pub fn select_auto_downloads(
 
         let kept_ids: HashSet<String> = kept_auto.iter().map(|e| e.video_id.clone()).collect();
 
-        // Rank existing auto-downloads AND eligible new candidates TOGETHER newest-first so that
-        // kept newer episodes that leave the candidate feed (e.g. creator turned off downloads or
-        // fell off page 1) still hold their slots in the `max_episodes` window and never cause
-        // older candidates to download and evict in a loop.
+        // Rank existing auto-downloads AND eligible deduplicated new candidates TOGETHER
+        // newest-first so that kept newer episodes that leave the candidate feed (e.g. creator
+        // turned off downloads or fell off page 1) still hold their slots in the `max_episodes`
+        // window and never cause older candidates to download and evict in a loop.
         enum RankedEntry<'e, 'c> {
             Existing(&'e ExistingAutoDownload),
             Candidate(&'c EpisodeCandidate),
@@ -274,16 +303,27 @@ pub fn select_auto_downloads(
         }
 
         let mut combined: Vec<RankedEntry<'_, '_>> = kept_auto.iter().map(RankedEntry::Existing).collect();
+        let mut eligible_by_id: HashMap<&str, &EpisodeCandidate> = HashMap::new();
         for c in candidates {
-            if c.source_id == rule.source_id
+            if c.source == rule.source
                 && c.allow_downloads
                 && !existing_video_ids.contains(&c.video_id)
                 && !dismissed_video_ids.contains(&c.video_id)
                 && !picked_this_pass.contains(&c.video_id)
                 && !kept_ids.contains(&c.video_id)
             {
-                combined.push(RankedEntry::Candidate(c));
+                eligible_by_id
+                    .entry(c.video_id.as_str())
+                    .and_modify(|prev| {
+                        if c.published_at_ms > prev.published_at_ms {
+                            *prev = c;
+                        }
+                    })
+                    .or_insert(c);
             }
+        }
+        for c in eligible_by_id.into_values() {
+            combined.push(RankedEntry::Candidate(c));
         }
         combined.sort_by(|a, b| {
             b.published_at_ms()
@@ -310,7 +350,7 @@ pub fn select_auto_downloads(
             if kept_auto.len() >= rule.max_episodes {
                 // Accepting this newer episode will displace the oldest kept auto-download.
                 // Credit the displaced episode's reserved bytes against the user storage cap so a
-                // channel at its cap can roll forward to newer episodes.
+                // rule at its cap can roll forward to newer episodes.
                 let Some(oldest_pos) = kept_auto
                     .iter()
                     .rposition(|e| !picked_this_pass.contains(&e.video_id))
@@ -341,7 +381,7 @@ pub fn select_auto_downloads(
                 plan.to_download.push(ep.video_id.clone());
                 kept_auto.push(ExistingAutoDownload {
                     video_id: ep.video_id.clone(),
-                    source_id: ep.source_id.clone(),
+                    source: ep.source.clone(),
                     published_at_ms: ep.published_at_ms,
                     size_bytes: item_bytes,
                 });
@@ -369,7 +409,7 @@ pub fn select_auto_downloads(
                 plan.to_download.push(ep.video_id.clone());
                 kept_auto.push(ExistingAutoDownload {
                     video_id: ep.video_id.clone(),
-                    source_id: ep.source_id.clone(),
+                    source: ep.source.clone(),
                     published_at_ms: ep.published_at_ms,
                     size_bytes: item_bytes,
                 });

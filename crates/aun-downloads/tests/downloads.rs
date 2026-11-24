@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::os::unix::fs::PermissionsExt;
 
 use aun_downloads::{
-    AutoDownloadRule, AvailabilitySyncResult, DEFAULT_MIN_FREE_SPACE_BYTES,
+    AutoDownloadRule, AutoDownloadSource, AvailabilitySyncResult, DEFAULT_MIN_FREE_SPACE_BYTES,
     DEFAULT_UNKNOWN_ITEM_ESTIMATE_BYTES, DownloadError, DownloadOrigin, DownloadRecord, DownloadSettings,
     DownloadStatus, DownloadStore, EpisodeCandidate, ExistingAutoDownload, RevocationEntry, TransferDecision,
     UpdateOutcome, can_start_download, select_auto_downloads,
@@ -32,6 +32,7 @@ fn sample_record(user_id: &str, video_id: &str, status: DownloadStatus, bytes: u
         last_accessed_at_ms: 1_000,
         reservation_id: 0,
         origin: DownloadOrigin::Manual,
+        auto_source: None,
         published_at_ms: None,
         extra: BTreeMap::new(),
     }
@@ -847,8 +848,9 @@ fn transfer_policy_enforces_wifi_storage_cap_and_pending_free_space() {
 
 #[test]
 fn auto_download_caps_kept_episodes_on_growing_feed_and_never_evicts_manual_downloads() {
+    let ch1 = AutoDownloadSource::channel("ch-1");
     let rules = vec![AutoDownloadRule {
-        source_id: "ch-1".into(),
+        source: ch1.clone(),
         max_episodes: 2,
     }];
     let strict = DownloadSettings {
@@ -862,7 +864,7 @@ fn auto_download_caps_kept_episodes_on_growing_feed_and_never_evicts_manual_down
     let empty_set: HashSet<String> = HashSet::new();
     let base_candidates = vec![EpisodeCandidate {
         video_id: "v0".into(),
-        source_id: "ch-1".into(),
+        source: ch1.clone(),
         published_at_ms: 100,
         allow_downloads: true,
         estimated_bytes: Some(1_000),
@@ -937,7 +939,7 @@ fn auto_download_caps_kept_episodes_on_growing_feed_and_never_evicts_manual_down
         let vid = format!("ep-{poll}");
         all_candidates.push(EpisodeCandidate {
             video_id: vid,
-            source_id: "ch-1".into(),
+            source: ch1.clone(),
             published_at_ms: poll * 1_000,
             allow_downloads: true,
             estimated_bytes: Some(1_000),
@@ -967,7 +969,7 @@ fn auto_download_caps_kept_episodes_on_growing_feed_and_never_evicts_manual_down
             existing_ids.insert(id.clone());
             existing_auto.push(ExistingAutoDownload {
                 video_id: id.clone(),
-                source_id: "ch-1".into(),
+                source: ch1.clone(),
                 published_at_ms: pub_ms,
                 size_bytes: 1_000,
             });
@@ -1120,14 +1122,23 @@ fn reconcile_orphaned_paths_normalizes_slashes_skips_uris_and_traversals_and_rej
                 "downloads//u1/v1.mp4".into(),
                 format!("{root}/downloads/x/../u1/v1.mp4"),
                 format!("file://{root}/downloads/u1/v1.mp4"),
+                format!("file:{root}/downloads/u1/v1.mp4"),
                 format!("{root}//downloads/u1/real-orphan.mp4"),
             ],
         )
         .unwrap();
     assert_eq!(orphans, vec![format!("{root}//downloads/u1/real-orphan.mp4")]);
 
-    // Relative roots (including `./root` and `downloads`) MUST be rejected with InvalidInput.
-    for bad_root in ["", "./root", "downloads", "file:///var/tmp", "/var/../etc"] {
+    // Relative roots (including `./root` and `downloads`) and single-slash `file:/...` URIs MUST
+    // be rejected with InvalidInput.
+    for bad_root in [
+        "",
+        "./root",
+        "downloads",
+        "file:///var/tmp",
+        "file:/var/tmp",
+        "/var/../etc",
+    ] {
         assert!(
             matches!(
                 store.reconcile_orphaned_paths(bad_root, &["downloads/u1/v1.mp4".into()]),
@@ -1140,8 +1151,9 @@ fn reconcile_orphaned_paths_normalizes_slashes_skips_uris_and_traversals_and_rej
 
 #[test]
 fn auto_download_prevents_thrashing_when_kept_leave_feed_rolls_forward_at_cap_and_tracks_origin() {
+    let ch1 = AutoDownloadSource::channel("ch-1");
     let rules = vec![AutoDownloadRule {
-        source_id: "ch-1".into(),
+        source: ch1.clone(),
         max_episodes: 2,
     }];
     let settings = DownloadSettings {
@@ -1159,13 +1171,13 @@ fn auto_download_prevents_thrashing_when_kept_leave_feed_rolls_forward_at_cap_an
     let mut existing_auto = vec![
         ExistingAutoDownload {
             video_id: "v9".into(),
-            source_id: "ch-1".into(),
+            source: ch1.clone(),
             published_at_ms: 9_000,
             size_bytes: 1_000,
         },
         ExistingAutoDownload {
             video_id: "v8".into(),
-            source_id: "ch-1".into(),
+            source: ch1.clone(),
             published_at_ms: 8_000,
             size_bytes: 1_000,
         },
@@ -1173,14 +1185,14 @@ fn auto_download_prevents_thrashing_when_kept_leave_feed_rolls_forward_at_cap_an
     let older_candidates = vec![
         EpisodeCandidate {
             video_id: "v7".into(),
-            source_id: "ch-1".into(),
+            source: ch1.clone(),
             published_at_ms: 7_000,
             allow_downloads: true,
             estimated_bytes: Some(1_000),
         },
         EpisodeCandidate {
             video_id: "v6".into(),
-            source_id: "ch-1".into(),
+            source: ch1.clone(),
             published_at_ms: 6_000,
             allow_downloads: true,
             estimated_bytes: Some(1_000),
@@ -1211,7 +1223,7 @@ fn auto_download_prevents_thrashing_when_kept_leave_feed_rolls_forward_at_cap_an
     // planner MUST evict v8 and download v10 so the channel moves forward!
     let newer_candidates = vec![EpisodeCandidate {
         video_id: "v10".into(),
-        source_id: "ch-1".into(),
+        source: ch1.clone(),
         published_at_ms: 10_000,
         allow_downloads: true,
         estimated_bytes: Some(1_000),
@@ -1368,4 +1380,287 @@ fn try_reserve_resets_fresh_bytes_downloaded_and_refuses_path_collisions_across_
         store.try_reserve(colliding, &permissive_settings(), NetworkKind::Wifi, None),
         Err(DownloadError::Conflict(_))
     ));
+}
+
+#[test]
+fn auto_download_playlist_rule_missing_channel_id_and_combined_rules_never_thrash() {
+    let settings = DownloadSettings {
+        wifi_only: false,
+        max_storage_bytes: None,
+        min_free_space_bytes: 0,
+        auto_download_enabled: true,
+        auto_download_charging_only: false,
+    };
+
+    // 1) Playlist rule P on videos of channel C (9 episodes, cap 2):
+    //    must keep strictly 2 episodes over repeated passes (not download all 9).
+    {
+        let dir = tempdir().unwrap();
+        let mut store = DownloadStore::open(dir.path().join("playlist.json")).unwrap();
+        let pl = AutoDownloadSource::playlist("pl-1");
+        let rules = vec![AutoDownloadRule {
+            source: pl.clone(),
+            max_episodes: 2,
+        }];
+        let candidates: Vec<EpisodeCandidate> = (1..=9i64)
+            .map(|i| EpisodeCandidate {
+                video_id: format!("v{i}"),
+                source: pl.clone(),
+                published_at_ms: i * 1_000,
+                allow_downloads: true,
+                estimated_bytes: Some(1_000),
+            })
+            .collect();
+        let dismissed = HashSet::new();
+        let mut total_downloads = 0usize;
+
+        for _pass in 0..5 {
+            let existing_ids: HashSet<String> = store
+                .list_for_user("u1")
+                .into_iter()
+                .map(|r| r.video_id)
+                .collect();
+            let existing_auto = store.existing_auto_downloads_for_user("u1");
+            let plan = select_auto_downloads(
+                &settings,
+                NetworkKind::Wifi,
+                true,
+                store.total_bytes(),
+                store.pending_remaining_bytes(),
+                None,
+                &rules,
+                &candidates,
+                &existing_ids,
+                &existing_auto,
+                &dismissed,
+            );
+            for ev in &plan.to_evict {
+                store.remove("u1", ev).unwrap();
+                store.confirm_removed("u1", ev).unwrap();
+            }
+            for vid in &plan.to_download {
+                let c = candidates.iter().find(|c| &c.video_id == vid).unwrap();
+                let mut rec = sample_record("u1", vid, DownloadStatus::Downloading, 1_000);
+                rec.channel_id = Some("ch-1".into());
+                rec.origin = DownloadOrigin::Auto;
+                rec.auto_source = Some(pl.clone());
+                rec.published_at_ms = Some(c.published_at_ms);
+                let rid = reserve_ok(&mut store, rec);
+                store.mark_completed("u1", vid, rid, 1_000, 10_000).unwrap();
+                total_downloads += 1;
+            }
+            assert!(store.list_for_user("u1").len() <= 2);
+        }
+        assert_eq!(total_downloads, 2);
+        let kept: HashSet<String> = store
+            .list_for_user("u1")
+            .into_iter()
+            .map(|r| r.video_id)
+            .collect();
+        assert_eq!(kept, HashSet::from(["v8".to_string(), "v9".to_string()]));
+    }
+
+    // 2) Channel rule C on records with `channel_id: None` (explicit `auto_source: Channel("ch-1")`):
+    //    must still enforce cap 2, and `try_reserve` must reject an Auto record with neither
+    //    `auto_source` nor `channel_id`.
+    {
+        let dir = tempdir().unwrap();
+        let mut store = DownloadStore::open(dir.path().join("no-channel-id.json")).unwrap();
+        let mut invalid_auto = sample_record("u1", "v-invalid", DownloadStatus::Queued, 1_000);
+        invalid_auto.origin = DownloadOrigin::Auto;
+        invalid_auto.channel_id = None;
+        invalid_auto.auto_source = None;
+        assert!(matches!(
+            store.try_reserve(invalid_auto, &permissive_settings(), NetworkKind::Wifi, None),
+            Err(DownloadError::InvalidInput(_))
+        ));
+
+        let ch = AutoDownloadSource::channel("ch-1");
+        let rules = vec![AutoDownloadRule {
+            source: ch.clone(),
+            max_episodes: 2,
+        }];
+        let candidates: Vec<EpisodeCandidate> = (1..=6i64)
+            .map(|i| EpisodeCandidate {
+                video_id: format!("v{i}"),
+                source: ch.clone(),
+                published_at_ms: i * 1_000,
+                allow_downloads: true,
+                estimated_bytes: Some(1_000),
+            })
+            .collect();
+        let dismissed = HashSet::new();
+        let mut total_downloads = 0usize;
+
+        for _pass in 0..4 {
+            let existing_ids: HashSet<String> = store
+                .list_for_user("u1")
+                .into_iter()
+                .map(|r| r.video_id)
+                .collect();
+            let existing_auto = store.existing_auto_downloads_for_user("u1");
+            let plan = select_auto_downloads(
+                &settings,
+                NetworkKind::Wifi,
+                true,
+                store.total_bytes(),
+                store.pending_remaining_bytes(),
+                None,
+                &rules,
+                &candidates,
+                &existing_ids,
+                &existing_auto,
+                &dismissed,
+            );
+            for ev in &plan.to_evict {
+                store.remove("u1", ev).unwrap();
+                store.confirm_removed("u1", ev).unwrap();
+            }
+            for vid in &plan.to_download {
+                let c = candidates.iter().find(|c| &c.video_id == vid).unwrap();
+                let mut rec = sample_record("u1", vid, DownloadStatus::Downloading, 1_000);
+                rec.channel_id = None;
+                rec.origin = DownloadOrigin::Auto;
+                rec.auto_source = Some(ch.clone());
+                rec.published_at_ms = Some(c.published_at_ms);
+                let rid = reserve_ok(&mut store, rec);
+                store.mark_completed("u1", vid, rid, 1_000, 10_000).unwrap();
+                total_downloads += 1;
+            }
+        }
+        assert_eq!(total_downloads, 2);
+        assert_eq!(store.existing_auto_downloads_for_user("u1").len(), 2);
+    }
+
+    // 3) Channel rule C + Playlist rule P together (even using the SAME raw ID "shared-1" on
+    //    videos of channel "shared-1"): zero eviction/re-download thrashing across 8 passes!
+    {
+        let dir = tempdir().unwrap();
+        let mut store = DownloadStore::open(dir.path().join("combined.json")).unwrap();
+        let ch = AutoDownloadSource::channel("shared-1");
+        let pl = AutoDownloadSource::playlist("shared-1");
+        let rules = vec![
+            AutoDownloadRule {
+                source: ch.clone(),
+                max_episodes: 2,
+            },
+            AutoDownloadRule {
+                source: pl.clone(),
+                max_episodes: 2,
+            },
+        ];
+        let mut candidates = Vec::new();
+        for i in 1..=9i64 {
+            candidates.push(EpisodeCandidate {
+                video_id: format!("v{i}"),
+                source: ch.clone(),
+                published_at_ms: i * 1_000,
+                allow_downloads: true,
+                estimated_bytes: Some(1_000),
+            });
+            candidates.push(EpisodeCandidate {
+                video_id: format!("v{i}"),
+                source: pl.clone(),
+                published_at_ms: i * 1_000,
+                allow_downloads: true,
+                estimated_bytes: Some(1_000),
+            });
+        }
+        let dismissed = HashSet::new();
+        let mut total_downloads = 0usize;
+        let mut total_evictions = 0usize;
+
+        for _pass in 0..8 {
+            let existing_ids: HashSet<String> = store
+                .list_for_user("u1")
+                .into_iter()
+                .map(|r| r.video_id)
+                .collect();
+            let existing_auto = store.existing_auto_downloads_for_user("u1");
+            let plan = select_auto_downloads(
+                &settings,
+                NetworkKind::Wifi,
+                true,
+                store.total_bytes(),
+                store.pending_remaining_bytes(),
+                None,
+                &rules,
+                &candidates,
+                &existing_ids,
+                &existing_auto,
+                &dismissed,
+            );
+            for ev in &plan.to_evict {
+                store.remove("u1", ev).unwrap();
+                store.confirm_removed("u1", ev).unwrap();
+                total_evictions += 1;
+            }
+            for vid in &plan.to_download {
+                // Attribute the first 2 picked in pass 1 to channel rule, next 2 to playlist rule.
+                let owner_source = if vid == "v9" || vid == "v8" {
+                    ch.clone()
+                } else {
+                    pl.clone()
+                };
+                let c = candidates.iter().find(|c| &c.video_id == vid).unwrap();
+                let mut rec = sample_record("u1", vid, DownloadStatus::Downloading, 1_000);
+                rec.channel_id = Some("shared-1".into());
+                rec.origin = DownloadOrigin::Auto;
+                rec.auto_source = Some(owner_source);
+                rec.published_at_ms = Some(c.published_at_ms);
+                let rid = reserve_ok(&mut store, rec);
+                store.mark_completed("u1", vid, rid, 1_000, 10_000).unwrap();
+                total_downloads += 1;
+            }
+        }
+        assert_eq!(total_downloads, 4);
+        assert_eq!(total_evictions, 0);
+    }
+
+    // 4) Duplicate candidate entries must be deduplicated before applying max_episodes.
+    {
+        let ch = AutoDownloadSource::channel("ch-dup");
+        let rules = vec![AutoDownloadRule {
+            source: ch.clone(),
+            max_episodes: 2,
+        }];
+        let dup_candidates = vec![
+            EpisodeCandidate {
+                video_id: "v2".into(),
+                source: ch.clone(),
+                published_at_ms: 2_000,
+                allow_downloads: true,
+                estimated_bytes: Some(1_000),
+            },
+            EpisodeCandidate {
+                video_id: "v2".into(),
+                source: ch.clone(),
+                published_at_ms: 2_000,
+                allow_downloads: true,
+                estimated_bytes: Some(1_000),
+            },
+            EpisodeCandidate {
+                video_id: "v1".into(),
+                source: ch,
+                published_at_ms: 1_000,
+                allow_downloads: true,
+                estimated_bytes: Some(1_000),
+            },
+        ];
+        let empty = HashSet::new();
+        let plan = select_auto_downloads(
+            &settings,
+            NetworkKind::Wifi,
+            true,
+            0,
+            0,
+            None,
+            &rules,
+            &dup_candidates,
+            &empty,
+            &[],
+            &empty,
+        );
+        assert_eq!(plan.to_download, vec!["v2".to_string(), "v1".to_string()]);
+    }
 }
