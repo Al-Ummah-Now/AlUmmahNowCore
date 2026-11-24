@@ -6,9 +6,9 @@ use std::os::unix::fs::PermissionsExt;
 
 use aun_downloads::{
     AutoDownloadRule, AvailabilitySyncResult, DEFAULT_MIN_FREE_SPACE_BYTES,
-    DEFAULT_UNKNOWN_ITEM_ESTIMATE_BYTES, DownloadError, DownloadRecord, DownloadSettings, DownloadStatus,
-    DownloadStore, EpisodeCandidate, ExistingAutoDownload, RevocationEntry, TransferDecision, UpdateOutcome,
-    can_start_download, select_auto_downloads,
+    DEFAULT_UNKNOWN_ITEM_ESTIMATE_BYTES, DownloadError, DownloadOrigin, DownloadRecord, DownloadSettings,
+    DownloadStatus, DownloadStore, EpisodeCandidate, ExistingAutoDownload, RevocationEntry, TransferDecision,
+    UpdateOutcome, can_start_download, select_auto_downloads,
 };
 use aun_player::NetworkKind;
 use tempfile::tempdir;
@@ -21,7 +21,7 @@ fn sample_record(user_id: &str, video_id: &str, status: DownloadStatus, bytes: u
         title: format!("Lecture {video_id}"),
         channel_id: Some("ch-1".into()),
         channel_name: Some("Scholar".into()),
-        thumbnail_path: Some(format!("thumbs/{video_id}.jpg")),
+        thumbnail_path: Some(format!("thumbs/{user_id}/{video_id}.jpg")),
         duration_seconds: 600,
         local_path: format!("downloads/{user_id}/{video_id}.mp4"),
         bytes_downloaded: 0,
@@ -31,6 +31,8 @@ fn sample_record(user_id: &str, video_id: &str, status: DownloadStatus, bytes: u
         created_at_ms: 1_000,
         last_accessed_at_ms: 1_000,
         reservation_id: 0,
+        origin: DownloadOrigin::Manual,
+        published_at_ms: None,
         extra: BTreeMap::new(),
     }
 }
@@ -287,7 +289,7 @@ fn try_reserve_refuses_completed_overwrite_preserves_fields_on_resume_and_guards
     assert_eq!(resumed.local_path, "downloads/u1/v1.mp4");
     assert_eq!(resumed.bytes_downloaded, 900);
     assert_eq!(resumed.created_at_ms, 1_000);
-    assert_eq!(resumed.thumbnail_path.as_deref(), Some("thumbs/v1.jpg"));
+    assert_eq!(resumed.thumbnail_path.as_deref(), Some("thumbs/u1/v1.jpg"));
     assert_eq!(
         resumed.extra.get("custom_key"),
         Some(&serde_json::json!("keep-me"))
@@ -599,18 +601,20 @@ fn quarantine_recovery_save_failure_salvage_backup_and_container_safe_reconcilia
     assert!(store.has_local_downloads());
     assert_eq!(store.revocations_cursor(), 0);
 
-    let orphans = store.reconcile_orphaned_paths(
-        root_str,
-        &[
-            format!("{root_str}/downloads/u1/orphan.mp4"),
-            "thumbs/orphan.jpg".into(),
-            format!("{root_str}/manifest.json"),
-            format!("{root_str}/manifest.json.lock"),
-            format!("{root_str}/manifest.json.corrupt.12345"),
-            format!("{root_str}/downloads/u1/inprogress.mp4.part"),
-            "/some/other/directory/not-ours.mp4".into(),
-        ],
-    );
+    let orphans = store
+        .reconcile_orphaned_paths(
+            root_str,
+            &[
+                format!("{root_str}/downloads/u1/orphan.mp4"),
+                "thumbs/orphan.jpg".into(),
+                format!("{root_str}/manifest.json"),
+                format!("{root_str}/manifest.json.lock"),
+                format!("{root_str}/manifest.json.corrupt.12345"),
+                format!("{root_str}/downloads/u1/inprogress.mp4.part"),
+                "/some/other/directory/not-ours.mp4".into(),
+            ],
+        )
+        .unwrap();
     assert_eq!(
         orphans,
         vec![
@@ -709,16 +713,18 @@ fn quarantine_recovery_save_failure_salvage_backup_and_container_safe_reconcilia
 
     // Container moved to NEW-UUID and macOS/iOS reports /private/var/... paths:
     // live files MUST NOT be listed as orphans; only truly orphaned files are returned.
-    let orphans2 = salvaged.reconcile_orphaned_paths(
-        root_str,
-        &[
-            format!("/private{root_str}/downloads/u1/v-good.mp4"),
-            format!("{root_str}/thumbs/v-good.jpg"),
-            "downloads/u1/v-good.mp4".into(),
-            format!("/private{root_str}/downloads/u1/v-bad.mp4"),
-            "downloads/u1/v-stale.mp4".into(),
-        ],
-    );
+    let orphans2 = salvaged
+        .reconcile_orphaned_paths(
+            root_str,
+            &[
+                format!("/private{root_str}/downloads/u1/v-good.mp4"),
+                format!("{root_str}/thumbs/v-good.jpg"),
+                "downloads/u1/v-good.mp4".into(),
+                format!("/private{root_str}/downloads/u1/v-bad.mp4"),
+                "downloads/u1/v-stale.mp4".into(),
+            ],
+        )
+        .unwrap();
     assert_eq!(
         orphans2,
         vec![
@@ -963,6 +969,7 @@ fn auto_download_caps_kept_episodes_on_growing_feed_and_never_evicts_manual_down
                 video_id: id.clone(),
                 source_id: "ch-1".into(),
                 published_at_ms: pub_ms,
+                size_bytes: 1_000,
             });
         }
         for evict_id in &plan.to_evict {
@@ -1014,4 +1021,351 @@ fn auto_download_caps_kept_episodes_on_growing_feed_and_never_evicts_manual_down
         &empty_set,
     );
     assert!(tight_free.to_download.is_empty());
+}
+
+#[test]
+fn late_mark_downloading_and_mark_failed_cannot_mutate_paused_or_failed_downloads() {
+    let dir = tempdir().unwrap();
+    let mut store = DownloadStore::open(dir.path().join("manifest.json")).unwrap();
+    let settings = DownloadSettings {
+        wifi_only: false,
+        max_storage_bytes: None,
+        min_free_space_bytes: 256,
+        auto_download_enabled: false,
+        auto_download_charging_only: false,
+    };
+
+    // Reserve item A (600 bytes) under 1,000 free / 256 reserve -> Allow.
+    let res_a = store
+        .try_reserve(
+            sample_record("u1", "v-a", DownloadStatus::Downloading, 600),
+            &settings,
+            NetworkKind::Wifi,
+            Some(1_000),
+        )
+        .unwrap()
+        .reservation_id
+        .unwrap();
+
+    // Pause A, then send late mark_downloading and late mark_failed (e.g. cancelled transfer error):
+    // BOTH must return AlreadyTerminal, A stays Paused, and purge_inactive MUST NOT delete A!
+    assert_eq!(
+        store.mark_paused("u1", "v-a", res_a, 2_000).unwrap(),
+        UpdateOutcome::Updated
+    );
+    assert_eq!(
+        store.mark_downloading("u1", "v-a", res_a, 2_100).unwrap(),
+        UpdateOutcome::AlreadyTerminal
+    );
+    assert_eq!(
+        store.mark_failed("u1", "v-a", res_a, 2_200).unwrap(),
+        UpdateOutcome::AlreadyTerminal
+    );
+    assert_eq!(store.get("u1", "v-a").unwrap().status, DownloadStatus::Paused);
+    assert!(
+        store.purge_inactive().unwrap().is_empty(),
+        "purge_inactive must never delete a Paused download after a late failure callback"
+    );
+
+    // Reserve item B (600 bytes) in a fresh store, mark Failed, then allow C (600 bytes):
+    // late mark_downloading on Failed B must return AlreadyTerminal so it cannot bypass budget!
+    let dir2 = tempdir().unwrap();
+    let mut store2 = DownloadStore::open(dir2.path().join("manifest.json")).unwrap();
+    let res_b = store2
+        .try_reserve(
+            sample_record("u1", "v-b", DownloadStatus::Downloading, 600),
+            &settings,
+            NetworkKind::Wifi,
+            Some(1_000),
+        )
+        .unwrap()
+        .reservation_id
+        .unwrap();
+    assert_eq!(
+        store2.mark_failed("u1", "v-b", res_b, 2_000).unwrap(),
+        UpdateOutcome::Updated
+    );
+    let res_c = store2
+        .try_reserve(
+            sample_record("u1", "v-c", DownloadStatus::Downloading, 600),
+            &settings,
+            NetworkKind::Wifi,
+            Some(1_000),
+        )
+        .unwrap();
+    assert_eq!(res_c.decision, TransferDecision::Allow);
+    assert_eq!(
+        store2.mark_downloading("u1", "v-b", res_b, 2_500).unwrap(),
+        UpdateOutcome::AlreadyTerminal
+    );
+    assert_eq!(store2.get("u1", "v-b").unwrap().status, DownloadStatus::Failed);
+    assert_eq!(store2.pending_remaining_bytes(), 600);
+}
+
+#[test]
+fn reconcile_orphaned_paths_normalizes_slashes_skips_uris_and_traversals_and_rejects_relative_roots() {
+    let dir = tempdir().unwrap();
+    let mut store = DownloadStore::open(dir.path().join("manifest.json")).unwrap();
+    reserve_and_complete(&mut store, "u1", "v1", 1_000);
+    let root = "/var/mobile/Containers/Data/Application/UUID/Documents";
+
+    // Live file in various path forms, URIs, and traversal forms must NEVER be listed as orphans;
+    // real orphans with doubled slashes ARE still detected.
+    let orphans = store
+        .reconcile_orphaned_paths(
+            &format!("{root}/"),
+            &[
+                format!("{root}//downloads/u1/v1.mp4"),
+                format!("{root}/./downloads/u1/v1.mp4"),
+                "downloads//u1/v1.mp4".into(),
+                format!("{root}/downloads/x/../u1/v1.mp4"),
+                format!("file://{root}/downloads/u1/v1.mp4"),
+                format!("{root}//downloads/u1/real-orphan.mp4"),
+            ],
+        )
+        .unwrap();
+    assert_eq!(orphans, vec![format!("{root}//downloads/u1/real-orphan.mp4")]);
+
+    // Relative roots (including `./root` and `downloads`) MUST be rejected with InvalidInput.
+    for bad_root in ["", "./root", "downloads", "file:///var/tmp", "/var/../etc"] {
+        assert!(
+            matches!(
+                store.reconcile_orphaned_paths(bad_root, &["downloads/u1/v1.mp4".into()]),
+                Err(DownloadError::InvalidInput(_))
+            ),
+            "expected InvalidInput for root {bad_root:?}"
+        );
+    }
+}
+
+#[test]
+fn auto_download_prevents_thrashing_when_kept_leave_feed_rolls_forward_at_cap_and_tracks_origin() {
+    let rules = vec![AutoDownloadRule {
+        source_id: "ch-1".into(),
+        max_episodes: 2,
+    }];
+    let settings = DownloadSettings {
+        wifi_only: false,
+        max_storage_bytes: Some(2_000),
+        min_free_space_bytes: 0,
+        auto_download_enabled: true,
+        auto_download_charging_only: false,
+    };
+
+    // Opus probe: v9 and v8 are kept (auto-downloaded), then creator disables downloads on both
+    // (or they leave page 1), leaving older v7 and v6 in candidates. Over 7 passes, ZERO downloads
+    // and ZERO evictions may happen!
+    let mut existing_ids: HashSet<String> = HashSet::from(["v9".into(), "v8".into()]);
+    let mut existing_auto = vec![
+        ExistingAutoDownload {
+            video_id: "v9".into(),
+            source_id: "ch-1".into(),
+            published_at_ms: 9_000,
+            size_bytes: 1_000,
+        },
+        ExistingAutoDownload {
+            video_id: "v8".into(),
+            source_id: "ch-1".into(),
+            published_at_ms: 8_000,
+            size_bytes: 1_000,
+        },
+    ];
+    let older_candidates = vec![
+        EpisodeCandidate {
+            video_id: "v7".into(),
+            source_id: "ch-1".into(),
+            published_at_ms: 7_000,
+            allow_downloads: true,
+            estimated_bytes: Some(1_000),
+        },
+        EpisodeCandidate {
+            video_id: "v6".into(),
+            source_id: "ch-1".into(),
+            published_at_ms: 6_000,
+            allow_downloads: true,
+            estimated_bytes: Some(1_000),
+        },
+    ];
+    let dismissed: HashSet<String> = HashSet::new();
+    for pass in 0..7 {
+        let plan = select_auto_downloads(
+            &settings,
+            NetworkKind::Wifi,
+            true,
+            2_000,
+            0,
+            None,
+            &rules,
+            &older_candidates,
+            &existing_ids,
+            &existing_auto,
+            &dismissed,
+        );
+        assert!(
+            plan.to_download.is_empty() && plan.to_evict.is_empty(),
+            "pass {pass}: older candidates must not exceed cap or thrash when kept episodes leave feed (got {plan:?})"
+        );
+    }
+
+    // Full storage cap (2,000 / 2,000 used by v9 + v8): when newer v10 (1,000 bytes) arrives,
+    // planner MUST evict v8 and download v10 so the channel moves forward!
+    let newer_candidates = vec![EpisodeCandidate {
+        video_id: "v10".into(),
+        source_id: "ch-1".into(),
+        published_at_ms: 10_000,
+        allow_downloads: true,
+        estimated_bytes: Some(1_000),
+    }];
+    let roll_plan = select_auto_downloads(
+        &settings,
+        NetworkKind::Wifi,
+        true,
+        2_000,
+        0,
+        None,
+        &rules,
+        &newer_candidates,
+        &existing_ids,
+        &existing_auto,
+        &dismissed,
+    );
+    assert_eq!(roll_plan.to_evict, vec!["v8".to_string()]);
+    assert_eq!(roll_plan.to_download, vec!["v10".to_string()]);
+
+    // Store tracks DownloadOrigin::Auto vs Manual and supports promoting Auto -> Manual via mark_manual.
+    let dir = tempdir().unwrap();
+    let mut store = DownloadStore::open(dir.path().join("manifest.json")).unwrap();
+    let mut auto_rec = sample_record("u1", "v-auto", DownloadStatus::Downloading, 1_000);
+    auto_rec.origin = DownloadOrigin::Auto;
+    auto_rec.published_at_ms = Some(5_000);
+    let r = reserve_ok(&mut store, auto_rec);
+    store.mark_completed("u1", "v-auto", r, 1_000, 5_100).unwrap();
+    assert_eq!(store.existing_auto_downloads_for_user("u1").len(), 1);
+    assert_eq!(store.existing_auto_downloads_for_user("u1")[0].size_bytes, 1_000);
+
+    // User taps Download on the auto-downloaded episode -> upgraded to Manual, never auto-evicted.
+    assert_eq!(store.mark_manual("u1", "v-auto").unwrap(), UpdateOutcome::Updated);
+    assert_eq!(store.get("u1", "v-auto").unwrap().origin, DownloadOrigin::Manual);
+    assert!(store.existing_auto_downloads_for_user("u1").is_empty());
+
+    // Keep compiler happy about mut bindings used above.
+    existing_ids.clear();
+    existing_auto.clear();
+}
+
+#[test]
+fn reservation_tokens_never_restart_at_1_after_full_quarantine() {
+    let dir = tempdir().unwrap();
+    let manifest = dir.path().join("manifest.json");
+
+    let res1 = {
+        let mut store = DownloadStore::open(&manifest).unwrap();
+        reserve_ok(
+            &mut store,
+            sample_record("u1", "v1", DownloadStatus::Downloading, 5_000),
+        )
+    };
+
+    // Corrupt manifest completely so open() quarantines it and has no stored counter.
+    std::fs::write(&manifest, b"{corrupt").unwrap();
+    let mut reopened = DownloadStore::open(&manifest).unwrap();
+    assert!(reopened.needs_disk_reconciliation());
+
+    let res2 = reserve_ok(
+        &mut reopened,
+        sample_record("u1", "v1", DownloadStatus::Downloading, 5_000),
+    );
+    assert!(
+        res2 > res1,
+        "post-quarantine reservation token ({res2}) must strictly exceed pre-quarantine token ({res1})"
+    );
+    assert_eq!(
+        reopened.mark_completed("u1", "v1", res1, 3, 2_000).unwrap(),
+        UpdateOutcome::StaleReservation
+    );
+    assert!(!reopened.is_playable_offline("u1", "v1"));
+}
+
+#[test]
+fn forensic_copy_failure_keeps_original_manifest_intact_and_surfaces_error() {
+    let dir = tempdir().unwrap();
+    // Create a valid filename near NAME_MAX (255 bytes on APFS/ext4) so appending `.corrupt.<ts>`
+    // fails with ENAMETOOLONG (while `.lock` = +5 bytes still fits).
+    let long_name = format!("{}.json", "m".repeat(240));
+    let manifest = dir.path().join(&long_name);
+    let partial_json = r#"{
+        "version": 4,
+        "revocations_cursor": 3,
+        "records": {
+            "u1\u001fv-good": {
+                "video_id": "v-good",
+                "user_id": "u1",
+                "title": "Good",
+                "channel_id": "ch-1",
+                "channel_name": "Scholar",
+                "thumbnail_path": null,
+                "duration_seconds": 100,
+                "local_path": "downloads/u1/v-good.mp4",
+                "bytes_downloaded": 500,
+                "total_bytes": 500,
+                "status": "completed",
+                "removed_reason": null,
+                "created_at_ms": 100,
+                "last_accessed_at_ms": 100,
+                "reservation_id": 10
+            },
+            "u1\u001fv-bad": {
+                "video_id": "v-bad",
+                "status": "corrupt_status"
+            }
+        }
+    }"#;
+    std::fs::write(&manifest, partial_json).unwrap();
+
+    let err = DownloadStore::open(&manifest);
+    assert!(
+        err.is_err(),
+        "open() must surface an error if the forensic copy cannot be created"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&manifest).unwrap(),
+        partial_json,
+        "original manifest must remain untouched when forensic copy fails"
+    );
+}
+
+#[test]
+fn try_reserve_resets_fresh_bytes_downloaded_and_refuses_path_collisions_across_accounts() {
+    let dir = tempdir().unwrap();
+    let mut store = DownloadStore::open(dir.path().join("manifest.json")).unwrap();
+    let tight = DownloadSettings {
+        wifi_only: false,
+        max_storage_bytes: Some(500_000),
+        min_free_space_bytes: 0,
+        auto_download_enabled: false,
+        auto_download_charging_only: false,
+    };
+
+    // Fresh download claiming all bytes already downloaded must NOT bypass the budget!
+    let mut forged = sample_record("u1", "v-forged", DownloadStatus::Downloading, 1_000_000);
+    forged.bytes_downloaded = 1_000_000;
+    let decision = store
+        .try_reserve(forged, &tight, NetworkKind::Wifi, Some(100))
+        .unwrap();
+    assert_eq!(decision.decision, TransferDecision::StorageBudgetExceeded);
+
+    // When allowed, a fresh download always starts at bytes_downloaded == 0.
+    let mut fresh = sample_record("u1", "v-ok", DownloadStatus::Downloading, 1_000);
+    fresh.bytes_downloaded = 999;
+    let res = reserve_ok(&mut store, fresh);
+    assert!(res > 0);
+    assert_eq!(store.get("u1", "v-ok").unwrap().bytes_downloaded, 0);
+
+    // A second account attempting to reserve the exact same local_path must get Conflict.
+    let mut colliding = sample_record("u2", "v-ok", DownloadStatus::Queued, 1_000);
+    colliding.local_path = "downloads/u1/v-ok.mp4".into();
+    assert!(matches!(
+        store.try_reserve(colliding, &permissive_settings(), NetworkKind::Wifi, None),
+        Err(DownloadError::Conflict(_))
+    ));
 }

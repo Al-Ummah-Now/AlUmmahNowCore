@@ -5,12 +5,12 @@ use std::thread;
 
 use aun_core::{
     ApiClient, ApiClientConfig, AunError, OfflineAutoDownloadPlan, OfflineAutoDownloadRule,
-    OfflineAvailabilityResult, OfflineDownloadItem, OfflineDownloadKey, OfflineDownloadSettings,
-    OfflineDownloadStatus, OfflineDownloadStore, OfflineEpisodeCandidate, OfflineExistingAutoDownload,
-    OfflineNetworkKind, OfflineRevocationEntry, OfflineSyncEngine, OfflineTransferDecision,
-    OfflineUpdateOutcome, PlayerCommand, PlayerInput, PlayerMachine, PlayerMediaItem, PlayerPlaybackState,
-    PlayerSleepTimer, SyncChangeKind, SyncChangeListener, TokenSource, offline_can_start_download,
-    offline_default_download_settings, offline_select_auto_downloads,
+    OfflineAvailabilityResult, OfflineDownloadItem, OfflineDownloadKey, OfflineDownloadOrigin,
+    OfflineDownloadSettings, OfflineDownloadStatus, OfflineDownloadStore, OfflineEpisodeCandidate,
+    OfflineExistingAutoDownload, OfflineNetworkKind, OfflineRevocationEntry, OfflineSyncEngine,
+    OfflineTransferDecision, OfflineUpdateOutcome, PlayerCommand, PlayerInput, PlayerMachine,
+    PlayerMediaItem, PlayerPlaybackState, PlayerSleepTimer, SyncChangeKind, SyncChangeListener, TokenSource,
+    offline_can_start_download, offline_default_download_settings, offline_select_auto_downloads,
 };
 use tempfile::tempdir;
 use wiremock::matchers::{method, path};
@@ -29,7 +29,7 @@ fn sample_item(
         title: format!("Surah {video_id}"),
         channel_id: Some("ch-1".into()),
         channel_name: Some("Recitations".into()),
-        thumbnail_path: Some(format!("thumbs/{video_id}.jpg")),
+        thumbnail_path: Some(format!("thumbs/{user_id}/{video_id}.jpg")),
         duration_seconds: 600,
         local_path: format!("downloads/{user_id}/{video_id}.mp4"),
         bytes_downloaded: 0,
@@ -39,6 +39,8 @@ fn sample_item(
         created_at_ms: 1_000,
         last_accessed_at_ms: 1_000,
         reservation_id: 0,
+        origin: OfflineDownloadOrigin::Manual,
+        published_at_ms: None,
     }
 }
 
@@ -75,8 +77,7 @@ fn ffi_download_store_revocations_non_revival_reconciliation_and_policy() {
 
     // Reserve a Downloading item, update progress with its reservation_id, then revoke it:
     // late progress/completion MUST NOT revive it.
-    let mut in_flight = sample_item("user-1", "vid-1", OfflineDownloadStatus::Downloading, 1_024);
-    in_flight.bytes_downloaded = 256;
+    let in_flight = sample_item("user-1", "vid-1", OfflineDownloadStatus::Downloading, 1_024);
     let reserve1 = store
         .try_reserve(in_flight, settings.clone(), OfflineNetworkKind::Wifi, None)
         .unwrap();
@@ -85,7 +86,7 @@ fn ffi_download_store_revocations_non_revival_reconciliation_and_policy() {
 
     assert!(store.has_local_downloads().unwrap());
     assert_eq!(store.active_count_for_user("user-1".into()).unwrap(), 1);
-    assert_eq!(store.pending_remaining_bytes().unwrap(), 768);
+    assert_eq!(store.pending_remaining_bytes().unwrap(), 1_024);
     assert_eq!(
         store
             .update_progress("user-1".into(), "vid-1".into(), res_id, 512, 1_024, 1_500)
@@ -129,6 +130,7 @@ fn ffi_download_store_revocations_non_revival_reconciliation_and_policy() {
         video_id: "vid-old".into(),
         source_id: "ch-1".into(),
         published_at_ms: 1_000,
+        size_bytes: 150,
     }];
     assert!(
         offline_select_auto_downloads(

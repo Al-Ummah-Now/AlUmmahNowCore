@@ -24,6 +24,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use aun_common::lock::StoreLock;
@@ -31,10 +32,23 @@ use aun_player::NetworkKind;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::policy::{DownloadSettings, TransferDecision, can_start_download, effective_item_total_bytes};
+use crate::policy::{
+    DownloadSettings, ExistingAutoDownload, TransferDecision, can_start_download, effective_item_total_bytes,
+};
 use crate::{DownloadError, Result};
 
 const MANIFEST_VERSION: u32 = 4;
+
+/// Whether a download was explicitly requested by the user or queued by channel auto-download.
+/// Auto-eviction only ever evicts [`DownloadOrigin::Auto`] records; tapping Download on an
+/// auto-downloaded video upgrades it to [`DownloadOrigin::Manual`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadOrigin {
+    #[default]
+    Manual,
+    Auto,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -98,6 +112,12 @@ pub struct DownloadRecord {
     /// Monotonic reservation generation assigned by `try_reserve`.
     #[serde(default)]
     pub reservation_id: u64,
+    /// Whether the user manually requested this download or auto-download queued it.
+    #[serde(default)]
+    pub origin: DownloadOrigin,
+    /// Optional episode publish timestamp (ms since epoch) used for auto-download `max_episodes` ranking.
+    #[serde(default)]
+    pub published_at_ms: Option<i64>,
     /// Forward-compatible passthrough for unknown fields written by compatible builds.
     #[serde(flatten, default, skip_serializing_if = "BTreeMap::is_empty")]
     pub extra: BTreeMap<String, Value>,
@@ -228,12 +248,94 @@ fn validate_and_normalize_relative_path(path: &str, field: &str) -> Result<Strin
     Ok(parts.join("/"))
 }
 
-fn normalize_slashes(raw: &str) -> String {
-    let mut s = raw.trim().replace('\\', "/");
-    while s.len() > 1 && s.ends_with('/') {
-        s.pop();
+static RESERVATION_FLOOR: AtomicU64 = AtomicU64::new(0);
+
+/// Produces a strictly advancing reservation token base seeded from wall-clock microseconds (and a
+/// process-wide monotonic floor) so a full manifest quarantine never restarts tokens at 1 and can
+/// never collide with an older in-flight background transfer's token.
+fn fresh_reservation_base() -> u64 {
+    let now_us = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| u64::try_from(d.as_micros()).unwrap_or(u64::MAX / 2))
+        .unwrap_or(1)
+        .max(1);
+    loop {
+        let prev = RESERVATION_FLOOR.load(Ordering::Relaxed);
+        let next = now_us.max(prev.saturating_add(1));
+        if RESERVATION_FLOOR
+            .compare_exchange(prev, next, Ordering::SeqCst, Ordering::Relaxed)
+            .is_ok()
+        {
+            return next;
+        }
     }
-    s
+}
+
+fn record_reservation_floor(token: u64) {
+    RESERVATION_FLOOR.fetch_max(token, Ordering::SeqCst);
+}
+
+fn has_uri_scheme(raw: &str) -> bool {
+    let lower = raw.to_ascii_lowercase();
+    lower.contains("://") || lower.starts_with("data:")
+}
+
+fn is_absolute_local_path(raw: &str) -> bool {
+    raw.starts_with('/')
+        || (raw.len() >= 2 && raw.as_bytes()[0].is_ascii_alphabetic() && raw.as_bytes()[1] == b':')
+}
+
+/// Normalizes slashes, collapses repeated `//` and `.` segments, and rejects URIs or any path
+/// containing `..` segments. Returns `(is_absolute, normalized)` or `None` if rejected/empty.
+fn normalize_disk_path_safe(raw: &str) -> Option<(bool, String)> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed.contains('\0') || has_uri_scheme(trimmed) {
+        return None;
+    }
+    let replaced = trimmed.replace('\\', "/");
+    if replaced.starts_with("//") {
+        // Reject UNC / scheme-relative paths.
+        return None;
+    }
+    let bytes = replaced.as_bytes();
+    let (prefix, rest, is_abs) = if let Some(stripped) = replaced.strip_prefix('/') {
+        ("/", stripped, true)
+    } else if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+        // Require drive-absolute (`C:/...`), reject drive-relative (`C:foo`).
+        let after = replaced[2..].strip_prefix('/')?;
+        (&replaced[..2], after, true)
+    } else {
+        ("", replaced.as_str(), false)
+    };
+
+    let mut segs: Vec<&str> = Vec::new();
+    for seg in rest.split('/') {
+        if seg.is_empty() || seg == "." {
+            continue;
+        }
+        if seg == ".." {
+            return None;
+        }
+        segs.push(seg);
+    }
+
+    if is_abs {
+        if prefix == "/" {
+            if segs.is_empty() {
+                Some((true, "/".to_string()))
+            } else {
+                Some((true, format!("/{}", segs.join("/"))))
+            }
+        } else if segs.is_empty() {
+            Some((true, format!("{prefix}/")))
+        } else {
+            Some((true, format!("{prefix}/{}", segs.join("/"))))
+        }
+    } else if segs.is_empty() {
+        None
+    } else {
+        Some((false, segs.join("/")))
+    }
 }
 
 fn strip_private_prefix(path: &str) -> &str {
@@ -329,9 +431,13 @@ fn quarantine_move(path: &Path) -> Result<PathBuf> {
     )))
 }
 
-/// Copies partially-salvaged manifest bytes to a unique `<path>.corrupt.<ts>[.n]` sibling (fsynced)
-/// WITHOUT deleting `path` first, preserving any unparseable records for forensics.
-fn write_quarantine_copy(path: &Path, raw_bytes: &[u8]) -> Result<PathBuf> {
+/// Preserves a forensic copy of partially-salvaged manifest bytes at a unique
+/// `<path>.corrupt.<ts>[.n]` sibling WITHOUT overwriting `path` first.
+///
+/// Prefers `std::fs::hard_link` (0 extra disk blocks, works even on a full disk) and falls back to
+/// writing + fsyncing a copy only when hard-linking is unsupported; propagates any error so the
+/// caller never replaces the original manifest without a forensic copy on disk.
+fn preserve_quarantine_copy(path: &Path, raw_bytes: &[u8]) -> Result<PathBuf> {
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis())
@@ -343,20 +449,40 @@ fn write_quarantine_copy(path: &Path, raw_bytes: &[u8]) -> Result<PathBuf> {
             PathBuf::from(format!("{}.corrupt.{ts}.{attempt}", path.display()))
         };
         if !candidate.exists() {
-            let mut file = OpenOptions::new().write(true).create_new(true).open(&candidate)?;
-            let write_res = file.write_all(raw_bytes).and_then(|()| file.sync_all());
-            drop(file);
-            if let Err(e) = write_res {
-                let _ = std::fs::remove_file(&candidate);
-                return Err(DownloadError::Io(e));
+            match std::fs::hard_link(path, &candidate) {
+                Ok(()) => {
+                    #[cfg(unix)]
+                    if let Some(parent) = candidate.parent()
+                        && let Ok(dir) = File::open(parent)
+                    {
+                        let _ = dir.sync_all();
+                    }
+                    return Ok(candidate);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::Unsupported | std::io::ErrorKind::CrossesDevices
+                    ) =>
+                {
+                    let mut file = OpenOptions::new().write(true).create_new(true).open(&candidate)?;
+                    let write_res = file.write_all(raw_bytes).and_then(|()| file.sync_all());
+                    drop(file);
+                    if let Err(we) = write_res {
+                        let _ = std::fs::remove_file(&candidate);
+                        return Err(DownloadError::Io(we));
+                    }
+                    #[cfg(unix)]
+                    if let Some(parent) = candidate.parent()
+                        && let Ok(dir) = File::open(parent)
+                    {
+                        let _ = dir.sync_all();
+                    }
+                    return Ok(candidate);
+                }
+                Err(e) => return Err(DownloadError::Io(e)),
             }
-            #[cfg(unix)]
-            if let Some(parent) = candidate.parent()
-                && let Ok(dir) = File::open(parent)
-            {
-                let _ = dir.sync_all();
-            }
-            return Ok(candidate);
         }
     }
     Err(DownloadError::Storage(format!(
@@ -444,7 +570,7 @@ impl DownloadStore {
         let loaded = match std::fs::read(&path) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => LoadedManifest {
                 revocations_cursor: 0,
-                next_reservation_id: 0,
+                next_reservation_id: fresh_reservation_base(),
                 needs_reconciliation: has_quarantined_sibling(&path),
                 records: BTreeMap::new(),
                 extra: BTreeMap::new(),
@@ -455,7 +581,7 @@ impl DownloadStore {
                 quarantine_move(&path)?;
                 LoadedManifest {
                     revocations_cursor: 0,
-                    next_reservation_id: 0,
+                    next_reservation_id: fresh_reservation_base(),
                     needs_reconciliation: true,
                     records: BTreeMap::new(),
                     extra: BTreeMap::new(),
@@ -471,11 +597,13 @@ impl DownloadStore {
             .map(|r| r.reservation_id)
             .max()
             .unwrap_or(0);
+        let initial_res_id = loaded.next_reservation_id.max(max_record_res_id);
+        record_reservation_floor(initial_res_id);
         let store = Self {
             path,
             _lock: lock,
             revocations_cursor: loaded.revocations_cursor,
-            next_reservation_id: loaded.next_reservation_id.max(max_record_res_id),
+            next_reservation_id: initial_res_id,
             needs_reconciliation: loaded.needs_reconciliation,
             records: loaded.records,
             extra: loaded.extra,
@@ -494,7 +622,7 @@ impl DownloadStore {
             quarantine_move(path)?;
             return Ok(LoadedManifest {
                 revocations_cursor: 0,
-                next_reservation_id: 0,
+                next_reservation_id: fresh_reservation_base(),
                 needs_reconciliation: true,
                 records: BTreeMap::new(),
                 extra: BTreeMap::new(),
@@ -511,7 +639,7 @@ impl DownloadStore {
             quarantine_move(path)?;
             return Ok(LoadedManifest {
                 revocations_cursor: 0,
-                next_reservation_id: 0,
+                next_reservation_id: fresh_reservation_base(),
                 needs_reconciliation: true,
                 records: BTreeMap::new(),
                 extra: BTreeMap::new(),
@@ -531,7 +659,8 @@ impl DownloadStore {
         let next_reservation_id = root
             .remove("next_reservation_id")
             .and_then(|v| v.as_u64())
-            .unwrap_or(0);
+            .filter(|&v| v > 0)
+            .unwrap_or_else(fresh_reservation_base);
         let mut needs_reconciliation = root
             .remove("needs_reconciliation")
             .and_then(|v| v.as_bool())
@@ -558,7 +687,7 @@ impl DownloadStore {
                     quarantine_move(path)?;
                     return Ok(LoadedManifest {
                         revocations_cursor: 0,
-                        next_reservation_id: 0,
+                        next_reservation_id: fresh_reservation_base(),
                         needs_reconciliation: true,
                         records: BTreeMap::new(),
                         extra: BTreeMap::new(),
@@ -569,8 +698,9 @@ impl DownloadStore {
         }
 
         if had_corrupt_record {
-            // Preserve a forensic copy of the original file before persisting the salvaged records.
-            let _ = write_quarantine_copy(path, bytes);
+            // Preserve a forensic copy BEFORE replacing the original manifest. Propagate errors so
+            // the original file is never overwritten without a preserved forensic copy.
+            preserve_quarantine_copy(path, bytes)?;
         }
 
         let extra: BTreeMap<String, Value> = root.into_iter().collect();
@@ -606,54 +736,74 @@ impl DownloadStore {
         !self.records.is_empty() || self.needs_reconciliation
     }
 
-    /// Given the app's current `download_root` directory and the file paths discovered on disk
-    /// (relative to `download_root` OR absolute paths under `download_root`, including macOS/iOS
-    /// `/private/var/...` aliases), returns the paths NOT referenced by any live (non-`Removed`)
-    /// record so the app can delete orphaned files and then call [`Self::mark_reconciled`].
+    /// Given the app's current absolute `download_root` directory and the file paths discovered on
+    /// disk (relative to `download_root` OR absolute paths under `download_root`, including
+    /// macOS/iOS `/private/var/...` aliases), returns the paths NOT referenced by any live
+    /// (non-`Removed`) record so the app can delete orphaned files and then call
+    /// [`Self::mark_reconciled`].
     ///
-    /// - Never returns files belonging to live (non-`Removed`) downloads.
-    /// - Skips in-progress temp files (`*.tmp`, `*.part`, `*.download`), manifest/lock/quarantine
-    ///   files (`manifest.json*`), and absolute paths outside `download_root`.
-    pub fn reconcile_orphaned_paths(&self, download_root: &str, disk_paths: &[String]) -> Vec<String> {
-        let mut root_prefixes: Vec<String> = Vec::new();
-        let raw_root = normalize_slashes(download_root);
-        if !raw_root.is_empty() {
-            root_prefixes.push(raw_root.clone());
-            let stripped = strip_private_prefix(&raw_root);
-            if stripped != raw_root {
-                root_prefixes.push(stripped.to_string());
-            } else if raw_root.starts_with('/') {
-                root_prefixes.push(format!("/private{raw_root}"));
-            }
-            if let Ok(canon) = std::fs::canonicalize(download_root) {
-                let canon_s = normalize_slashes(&canon.to_string_lossy());
-                if !root_prefixes.contains(&canon_s) {
-                    root_prefixes.push(canon_s.clone());
-                }
-                let canon_stripped = strip_private_prefix(&canon_s);
-                if canon_stripped != canon_s && !root_prefixes.iter().any(|p| p == canon_stripped) {
-                    root_prefixes.push(canon_stripped.to_string());
-                }
-            }
+    /// - Rejects relative, empty, URI, or `..`-containing `download_root` values with
+    ///   [`DownloadError::InvalidInput`].
+    /// - Collapses repeated slashes (`//`) and `.` segments, and skips any disk path that is a URI
+    ///   (e.g. `file://...`), contains `..`, is outside `download_root`, or is a temp/manifest/lock
+    ///   file, so a live file is never returned as an orphan.
+    /// - Never strips `download_root` from stored record paths (which are already relative).
+    pub fn reconcile_orphaned_paths(
+        &self,
+        download_root: &str,
+        disk_paths: &[String],
+    ) -> Result<Vec<String>> {
+        let Some((root_is_abs, raw_root)) = normalize_disk_path_safe(download_root) else {
+            return Err(DownloadError::InvalidInput(
+                "download_root must be a clean absolute local directory path".into(),
+            ));
+        };
+        if !root_is_abs || !is_absolute_local_path(&raw_root) {
+            return Err(DownloadError::InvalidInput(
+                "download_root must be an absolute local directory path".into(),
+            ));
         }
 
-        let to_rel_if_under_root = |raw: &str| -> String {
-            let norm = normalize_slashes(raw);
-            for prefix in &root_prefixes {
-                let prefix_with_slash = format!("{prefix}/");
-                if let Some(rest) = norm.strip_prefix(&prefix_with_slash) {
-                    return rest.to_string();
-                }
+        let mut root_prefixes: Vec<String> = Vec::new();
+        let mut push_prefix = |p: String| {
+            let trimmed = p.trim_end_matches('/').to_string();
+            if !trimmed.is_empty() && !root_prefixes.contains(&trimmed) {
+                root_prefixes.push(trimmed);
             }
-            norm.trim_start_matches("./").to_string()
         };
+        push_prefix(raw_root.clone());
+        let stripped = strip_private_prefix(&raw_root);
+        if stripped != raw_root {
+            push_prefix(stripped.to_string());
+        } else if raw_root.starts_with('/') {
+            push_prefix(format!("/private{raw_root}"));
+        }
+        if let Ok(canon) = std::fs::canonicalize(download_root)
+            && let Some((true, canon_s)) = normalize_disk_path_safe(&canon.to_string_lossy())
+        {
+            push_prefix(canon_s.clone());
+            let canon_stripped = strip_private_prefix(&canon_s);
+            if canon_stripped != canon_s {
+                push_prefix(canon_stripped.to_string());
+            } else if canon_s.starts_with('/') {
+                push_prefix(format!("/private{canon_s}"));
+            }
+        }
 
         let mut live: HashSet<String> = HashSet::new();
         for rec in self.records.values() {
             if rec.status != DownloadStatus::Removed {
-                live.insert(to_rel_if_under_root(&rec.local_path));
+                if let Some((false, norm_rel)) = normalize_disk_path_safe(&rec.local_path) {
+                    live.insert(norm_rel);
+                } else {
+                    live.insert(rec.local_path.clone());
+                }
                 if let Some(ref thumb) = rec.thumbnail_path {
-                    live.insert(to_rel_if_under_root(thumb));
+                    if let Some((false, norm_rel)) = normalize_disk_path_safe(thumb) {
+                        live.insert(norm_rel);
+                    } else {
+                        live.insert(thumb.clone());
+                    }
                 }
             }
         }
@@ -661,14 +811,10 @@ impl DownloadStore {
         let m_name = manifest_file_name(&self.path);
         let mut orphans = Vec::new();
         for original in disk_paths {
-            let norm = normalize_slashes(original);
-            if norm.is_empty() {
+            let Some((is_abs, norm)) = normalize_disk_path_safe(original) else {
+                // Skip empty paths, URIs (`file://...`), and paths containing `..`.
                 continue;
-            }
-            let is_abs = norm.starts_with('/')
-                || (norm.len() >= 2
-                    && norm.as_bytes()[0].is_ascii_alphabetic()
-                    && norm.as_bytes()[1] == b':');
+            };
             let rel = if is_abs {
                 let mut matched = None;
                 for prefix in &root_prefixes {
@@ -684,7 +830,7 @@ impl DownloadStore {
                 };
                 rel
             } else {
-                norm.trim_start_matches("./").to_string()
+                norm
             };
 
             if rel.is_empty() || is_temp_or_manifest_path(&rel, &m_name) {
@@ -694,7 +840,7 @@ impl DownloadStore {
                 orphans.push(original.clone());
             }
         }
-        orphans
+        Ok(orphans)
     }
 
     /// Clears `needs_disk_reconciliation` after the app has swept its download folder and deleted
@@ -801,6 +947,12 @@ impl DownloadStore {
                     if record.duration_seconds > 0 {
                         resumed.duration_seconds = record.duration_seconds;
                     }
+                    if record.origin == DownloadOrigin::Manual {
+                        resumed.origin = DownloadOrigin::Manual;
+                    }
+                    if record.published_at_ms.is_some() {
+                        resumed.published_at_ms = record.published_at_ms;
+                    }
                     resumed.last_accessed_at_ms = record.last_accessed_at_ms;
                     resumed.removed_reason = None;
                     for (k, v) in record.extra {
@@ -810,8 +962,34 @@ impl DownloadStore {
                 }
             }
         } else {
+            // Fresh downloads always start at 0 downloaded bytes so callers cannot bypass the
+            // storage cap or OS free-space reserve by pre-populating `bytes_downloaded`.
+            record.bytes_downloaded = 0;
             record
         };
+
+        // Refuse local_path / thumbnail_path collisions with any OTHER record (including another
+        // account's download or a record pending deletion) so removing one never deletes another's file.
+        for (other_key, other) in &self.records {
+            if other_key == &key {
+                continue;
+            }
+            if other.local_path == merged.local_path
+                || other.thumbnail_path.as_deref() == Some(merged.local_path.as_str())
+            {
+                return Err(DownloadError::Conflict(format!(
+                    "local_path '{}' is already in use by another download record",
+                    merged.local_path
+                )));
+            }
+            if let Some(ref thumb) = merged.thumbnail_path
+                && (other.local_path == *thumb || other.thumbnail_path.as_deref() == Some(thumb.as_str()))
+            {
+                return Err(DownloadError::Conflict(format!(
+                    "thumbnail_path '{thumb}' is already in use by another download record"
+                )));
+            }
+        }
 
         let used_excluding_self = self
             .records
@@ -849,6 +1027,7 @@ impl DownloadStore {
         draft.records.insert(key, to_store);
         persist_manifest(&self.path, &draft)?;
         self.next_reservation_id = new_res_id;
+        record_reservation_floor(new_res_id);
         self.records = draft.records;
         Ok(ReserveResult {
             decision: TransferDecision::Allow,
@@ -1006,6 +1185,16 @@ impl DownloadStore {
             }
             Some(_) => {}
         }
+        for (other_key, other) in &self.records {
+            if other_key != &key
+                && (other.local_path == normalized
+                    || other.thumbnail_path.as_deref() == Some(normalized.as_str()))
+            {
+                return Err(DownloadError::Conflict(format!(
+                    "thumbnail_path '{normalized}' is already in use by another download record"
+                )));
+            }
+        }
         let mut draft = self.to_manifest();
         if let Some(rec) = draft.records.get_mut(&key) {
             rec.thumbnail_path = Some(normalized);
@@ -1013,6 +1202,47 @@ impl DownloadStore {
         persist_manifest(&self.path, &draft)?;
         self.records = draft.records;
         Ok(UpdateOutcome::Updated)
+    }
+
+    /// Promotes an existing non-`Removed` record (e.g. an already-completed `Auto` download) to
+    /// [`DownloadOrigin::Manual`] so per-channel `max_episodes` auto-eviction will never remove it.
+    pub fn mark_manual(&mut self, user_id: &str, video_id: &str) -> Result<UpdateOutcome> {
+        let key = record_key(user_id, video_id);
+        match self.records.get(&key) {
+            None => return Ok(UpdateOutcome::RemovedOrMissing),
+            Some(r) if r.status == DownloadStatus::Removed => {
+                return Ok(UpdateOutcome::RemovedOrMissing);
+            }
+            Some(r) if r.origin == DownloadOrigin::Manual => return Ok(UpdateOutcome::Updated),
+            Some(_) => {}
+        }
+        let mut draft = self.to_manifest();
+        if let Some(rec) = draft.records.get_mut(&key) {
+            rec.origin = DownloadOrigin::Manual;
+        }
+        persist_manifest(&self.path, &draft)?;
+        self.records = draft.records;
+        Ok(UpdateOutcome::Updated)
+    }
+
+    /// Returns the store's active `Auto`-origin downloads for `user_id` formatted for
+    /// [`crate::select_auto_downloads`] (so apps do not have to maintain a separate auto-download list).
+    pub fn existing_auto_downloads_for_user(&self, user_id: &str) -> Vec<ExistingAutoDownload> {
+        self.records
+            .values()
+            .filter(|r| {
+                r.user_id == user_id
+                    && r.origin == DownloadOrigin::Auto
+                    && r.is_active()
+                    && r.channel_id.is_some()
+            })
+            .map(|r| ExistingAutoDownload {
+                video_id: r.video_id.clone(),
+                source_id: r.channel_id.clone().unwrap_or_default(),
+                published_at_ms: r.published_at_ms.unwrap_or(r.created_at_ms),
+                size_bytes: r.reserved_bytes(),
+            })
+            .collect()
     }
 
     fn transition_unfinished(
@@ -1032,7 +1262,9 @@ impl DownloadStore {
             Some(r) if r.reservation_id != reservation_id => {
                 return Ok(UpdateOutcome::StaleReservation);
             }
-            Some(r) if r.status == DownloadStatus::Completed => {
+            Some(r) if !matches!(r.status, DownloadStatus::Queued | DownloadStatus::Downloading) => {
+                // Completed, Paused, and Failed are terminal for this transfer; resuming must go
+                // through `try_reserve` (with a fresh budget check and new reservation_id).
                 return Ok(UpdateOutcome::AlreadyTerminal);
             }
             Some(_) => {}
