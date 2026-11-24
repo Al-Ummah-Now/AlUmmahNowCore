@@ -425,6 +425,22 @@ private let UNIFFI_CALLBACK_UNEXPECTED_ERROR: Int32 = 2
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterInt8: FfiConverterPrimitive {
+    typealias FfiType = Int8
+    typealias SwiftType = Int8
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Int8 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: Int8, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterUInt16: FfiConverterPrimitive {
     typealias FfiType = UInt16
     typealias SwiftType = UInt16
@@ -3562,6 +3578,297 @@ public func FfiConverterTypeTokenSource_lower(_ value: TokenSource) -> UInt64 {
 
 
 /**
+ * One app's update state and rules. Not `Send` across awaits: every method is quick and sync.
+ */
+public protocol UpdateCheckerProtocol: AnyObject, Sendable {
+    
+    /**
+     * Whether a download URL or redirect hop is allowed for this repo (check every hop).
+     */
+    func allowedDownloadUrl(url: String)  -> Bool
+    
+    /**
+     * Reads the `update` block (JSON text of `result.update` or the whole answer's `update`), takes
+     * a newer key list from it, and says what to show. `device_has_update`: Play In-App Updates or
+     * the Microsoft Store's answer, None elsewhere.
+     */
+    func applyAnswer(updateJson: String, deviceHasUpdate: Bool?) throws  -> UpdatePrompt
+    
+    /**
+     * Desktop "Install updates automatically": the user's choice, None for the default.
+     */
+    func autoInstall()  -> Bool?
+    
+    /**
+     * The user closed the notice for this version.
+     */
+    func dismiss(version: String) 
+    
+    func lastCheckMs()  -> Int64?
+    
+    /**
+     * Record a successful check (Unix ms).
+     */
+    func markChecked(atMs: Int64) 
+    
+    /**
+     * What to show without a network: a bar for a minimum already seen, else nothing.
+     */
+    func offlinePromptKind()  -> UpdatePromptKind
+    
+    func setAutoInstall(value: Bool?) 
+    
+    /**
+     * What to save for the next run.
+     */
+    func stateJson()  -> String
+    
+    /**
+     * Checks a downloaded `app-release.json` and its `.sig` for the tag the API named. On success
+     * the replay floor rises; nothing is trusted when `refused` is set.
+     */
+    func verifyManifest(manifest: Data, signature: String, tag: String)  -> ManifestCheck
+    
+}
+/**
+ * One app's update state and rules. Not `Send` across awaits: every method is quick and sync.
+ */
+open class UpdateChecker: UpdateCheckerProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aun_core_fn_clone_updatechecker(self.handle, $0) }
+    }
+    /**
+     * `repo`: this app's repo (`AlUmmahNowTools`, ...). `root_keys`: the repo's root public keys
+     * compiled into the build. `bundled_key_list` / `_sig`: the key list the build carries, so a
+     * first run trusts the release keys of its time. `state_json`: what [`Self::state_json`] gave last run.
+     */
+public convenience init(repo: String, rootKeys: [String], installedVersion: String, betaChannel: Bool, stateJson: String?, bundledKeyList: String?, bundledKeyListSig: String?)throws  {
+    let handle =
+        try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_constructor_updatechecker_new(
+        FfiConverterString.lower(repo),
+        FfiConverterSequenceString.lower(rootKeys),
+        FfiConverterString.lower(installedVersion),
+        FfiConverterBool.lower(betaChannel),
+        FfiConverterOptionString.lower(stateJson),
+        FfiConverterOptionString.lower(bundledKeyList),
+        FfiConverterOptionString.lower(bundledKeyListSig),$0
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aun_core_fn_free_updatechecker(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * Whether a download URL or redirect hop is allowed for this repo (check every hop).
+     */
+open func allowedDownloadUrl(url: String) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_updatechecker_allowed_download_url(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(url),$0
+    )
+})
+}
+    
+    /**
+     * Reads the `update` block (JSON text of `result.update` or the whole answer's `update`), takes
+     * a newer key list from it, and says what to show. `device_has_update`: Play In-App Updates or
+     * the Microsoft Store's answer, None elsewhere.
+     */
+open func applyAnswer(updateJson: String, deviceHasUpdate: Bool?)throws  -> UpdatePrompt  {
+    return try  FfiConverterTypeUpdatePrompt_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_updatechecker_apply_answer(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(updateJson),
+        FfiConverterOptionBool.lower(deviceHasUpdate),$0
+    )
+})
+}
+    
+    /**
+     * Desktop "Install updates automatically": the user's choice, None for the default.
+     */
+open func autoInstall() -> Bool?  {
+    return try!  FfiConverterOptionBool.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_updatechecker_auto_install(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * The user closed the notice for this version.
+     */
+open func dismiss(version: String)  {try! rustCall() {
+    uniffi_aun_core_fn_method_updatechecker_dismiss(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(version),$0
+    )
+}
+}
+    
+open func lastCheckMs() -> Int64?  {
+    return try!  FfiConverterOptionInt64.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_updatechecker_last_check_ms(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * Record a successful check (Unix ms).
+     */
+open func markChecked(atMs: Int64)  {try! rustCall() {
+    uniffi_aun_core_fn_method_updatechecker_mark_checked(
+            self.uniffiCloneHandle(),
+        FfiConverterInt64.lower(atMs),$0
+    )
+}
+}
+    
+    /**
+     * What to show without a network: a bar for a minimum already seen, else nothing.
+     */
+open func offlinePromptKind() -> UpdatePromptKind  {
+    return try!  FfiConverterTypeUpdatePromptKind_lift(try! rustCall() {
+    uniffi_aun_core_fn_method_updatechecker_offline_prompt_kind(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func setAutoInstall(value: Bool?)  {try! rustCall() {
+    uniffi_aun_core_fn_method_updatechecker_set_auto_install(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionBool.lower(value),$0
+    )
+}
+}
+    
+    /**
+     * What to save for the next run.
+     */
+open func stateJson() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_updatechecker_state_json(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * Checks a downloaded `app-release.json` and its `.sig` for the tag the API named. On success
+     * the replay floor rises; nothing is trusted when `refused` is set.
+     */
+open func verifyManifest(manifest: Data, signature: String, tag: String) -> ManifestCheck  {
+    return try!  FfiConverterTypeManifestCheck_lift(try! rustCall() {
+    uniffi_aun_core_fn_method_updatechecker_verify_manifest(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(manifest),
+        FfiConverterString.lower(signature),
+        FfiConverterString.lower(tag),$0
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeUpdateChecker: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = UpdateChecker
+
+    public static func lift(_ handle: UInt64) throws -> UpdateChecker {
+        return UpdateChecker(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: UpdateChecker) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UpdateChecker {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: UpdateChecker, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUpdateChecker_lift(_ handle: UInt64) throws -> UpdateChecker {
+    return try FfiConverterTypeUpdateChecker.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUpdateChecker_lower(_ value: UpdateChecker) -> UInt64 {
+    return FfiConverterTypeUpdateChecker.lower(value)
+}
+
+
+
+
+
+
+/**
  * The resumable upload queue for one account. Uploads survive app restarts: create the engine
  * again with the same `store_dir` and `account_id` and they continue where they stopped.
  */
@@ -5297,6 +5604,69 @@ public func FfiConverterTypeLoudnessReport_lower(_ value: LoudnessReport) -> Rus
 
 
 /**
+ * [`UpdateChecker::verify_manifest`]'s answer: the release, or why it was refused.
+ */
+public struct ManifestCheck: Equatable, Hashable {
+    public var release: VerifiedRelease?
+    /**
+     * The reason code to report (`POST /api/v1/app-config/update-failure`) when refused
+     */
+    public var refused: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(release: VerifiedRelease?, 
+        /**
+         * The reason code to report (`POST /api/v1/app-config/update-failure`) when refused
+         */refused: String?) {
+        self.release = release
+        self.refused = refused
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ManifestCheck: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeManifestCheck: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ManifestCheck {
+        return
+            try ManifestCheck(
+                release: FfiConverterOptionTypeVerifiedRelease.read(from: &buf), 
+                refused: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ManifestCheck, into buf: inout [UInt8]) {
+        FfiConverterOptionTypeVerifiedRelease.write(value.release, into: &buf)
+        FfiConverterOptionString.write(value.refused, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeManifestCheck_lift(_ buf: RustBuffer) throws -> ManifestCheck {
+    return try FfiConverterTypeManifestCheck.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeManifestCheck_lower(_ value: ManifestCheck) -> RustBuffer {
+    return FfiConverterTypeManifestCheck.lower(value)
+}
+
+
+/**
  * A downloadable whisper model (see docs/MODELS.md for licences).
  */
 public struct ModelDescriptor: Equatable, Hashable {
@@ -6342,6 +6712,80 @@ public func FfiConverterTypeRejectedWrite_lower(_ value: RejectedWrite) -> RustB
 }
 
 
+public struct ReleaseArtifact: Equatable, Hashable {
+    public var app: String
+    public var platform: String
+    public var arch: String?
+    public var kind: String
+    public var url: String
+    public var sha256: String
+    public var size: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(app: String, platform: String, arch: String?, kind: String, url: String, sha256: String, size: UInt64) {
+        self.app = app
+        self.platform = platform
+        self.arch = arch
+        self.kind = kind
+        self.url = url
+        self.sha256 = sha256
+        self.size = size
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ReleaseArtifact: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeReleaseArtifact: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ReleaseArtifact {
+        return
+            try ReleaseArtifact(
+                app: FfiConverterString.read(from: &buf), 
+                platform: FfiConverterString.read(from: &buf), 
+                arch: FfiConverterOptionString.read(from: &buf), 
+                kind: FfiConverterString.read(from: &buf), 
+                url: FfiConverterString.read(from: &buf), 
+                sha256: FfiConverterString.read(from: &buf), 
+                size: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ReleaseArtifact, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.app, into: &buf)
+        FfiConverterString.write(value.platform, into: &buf)
+        FfiConverterOptionString.write(value.arch, into: &buf)
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterString.write(value.url, into: &buf)
+        FfiConverterString.write(value.sha256, into: &buf)
+        FfiConverterUInt64.write(value.size, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeReleaseArtifact_lift(_ buf: RustBuffer) throws -> ReleaseArtifact {
+    return try FfiConverterTypeReleaseArtifact.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeReleaseArtifact_lower(_ value: ReleaseArtifact) -> RustBuffer {
+    return FfiConverterTypeReleaseArtifact.lower(value)
+}
+
+
 public struct SceneChange: Equatable, Hashable {
     public var ptsMs: UInt64
     public var score: Double
@@ -7130,6 +7574,108 @@ public func FfiConverterTypeTranscriptionDevice_lower(_ value: TranscriptionDevi
 }
 
 
+public struct UpdatePrompt: Equatable, Hashable {
+    public var kind: UpdatePromptKind
+    public var version: String?
+    public var notesEn: String?
+    public var notesAr: String?
+    public var messageEn: String?
+    public var messageAr: String?
+    /**
+     * `store`, `install`, `download` or `none`
+     */
+    public var action: String
+    public var url: String?
+    public var manifestUrl: String?
+    public var tag: String?
+    /**
+     * Hours until the next check (the server's `checkHours`, default 6)
+     */
+    public var checkHours: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(kind: UpdatePromptKind, version: String?, notesEn: String?, notesAr: String?, messageEn: String?, messageAr: String?, 
+        /**
+         * `store`, `install`, `download` or `none`
+         */action: String, url: String?, manifestUrl: String?, tag: String?, 
+        /**
+         * Hours until the next check (the server's `checkHours`, default 6)
+         */checkHours: UInt32) {
+        self.kind = kind
+        self.version = version
+        self.notesEn = notesEn
+        self.notesAr = notesAr
+        self.messageEn = messageEn
+        self.messageAr = messageAr
+        self.action = action
+        self.url = url
+        self.manifestUrl = manifestUrl
+        self.tag = tag
+        self.checkHours = checkHours
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension UpdatePrompt: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeUpdatePrompt: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UpdatePrompt {
+        return
+            try UpdatePrompt(
+                kind: FfiConverterTypeUpdatePromptKind.read(from: &buf), 
+                version: FfiConverterOptionString.read(from: &buf), 
+                notesEn: FfiConverterOptionString.read(from: &buf), 
+                notesAr: FfiConverterOptionString.read(from: &buf), 
+                messageEn: FfiConverterOptionString.read(from: &buf), 
+                messageAr: FfiConverterOptionString.read(from: &buf), 
+                action: FfiConverterString.read(from: &buf), 
+                url: FfiConverterOptionString.read(from: &buf), 
+                manifestUrl: FfiConverterOptionString.read(from: &buf), 
+                tag: FfiConverterOptionString.read(from: &buf), 
+                checkHours: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: UpdatePrompt, into buf: inout [UInt8]) {
+        FfiConverterTypeUpdatePromptKind.write(value.kind, into: &buf)
+        FfiConverterOptionString.write(value.version, into: &buf)
+        FfiConverterOptionString.write(value.notesEn, into: &buf)
+        FfiConverterOptionString.write(value.notesAr, into: &buf)
+        FfiConverterOptionString.write(value.messageEn, into: &buf)
+        FfiConverterOptionString.write(value.messageAr, into: &buf)
+        FfiConverterString.write(value.action, into: &buf)
+        FfiConverterOptionString.write(value.url, into: &buf)
+        FfiConverterOptionString.write(value.manifestUrl, into: &buf)
+        FfiConverterOptionString.write(value.tag, into: &buf)
+        FfiConverterUInt32.write(value.checkHours, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUpdatePrompt_lift(_ buf: RustBuffer) throws -> UpdatePrompt {
+    return try FfiConverterTypeUpdatePrompt.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUpdatePrompt_lower(_ value: UpdatePrompt) -> RustBuffer {
+    return FfiConverterTypeUpdatePrompt.lower(value)
+}
+
+
 public struct UploadConfig: Equatable, Hashable {
     /**
      * Uploads at once, 1–5 (the server allows 5 concurrent sessions).
@@ -7431,6 +7977,76 @@ public func FfiConverterTypeUploadRequest_lift(_ buf: RustBuffer) throws -> Uplo
 #endif
 public func FfiConverterTypeUploadRequest_lower(_ value: UploadRequest) -> RustBuffer {
     return FfiConverterTypeUploadRequest.lower(value)
+}
+
+
+public struct VerifiedRelease: Equatable, Hashable {
+    public var version: String
+    public var tag: String
+    public var channel: String
+    public var notesEn: String
+    public var notesAr: String
+    public var artifacts: [ReleaseArtifact]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(version: String, tag: String, channel: String, notesEn: String, notesAr: String, artifacts: [ReleaseArtifact]) {
+        self.version = version
+        self.tag = tag
+        self.channel = channel
+        self.notesEn = notesEn
+        self.notesAr = notesAr
+        self.artifacts = artifacts
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension VerifiedRelease: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeVerifiedRelease: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> VerifiedRelease {
+        return
+            try VerifiedRelease(
+                version: FfiConverterString.read(from: &buf), 
+                tag: FfiConverterString.read(from: &buf), 
+                channel: FfiConverterString.read(from: &buf), 
+                notesEn: FfiConverterString.read(from: &buf), 
+                notesAr: FfiConverterString.read(from: &buf), 
+                artifacts: FfiConverterSequenceTypeReleaseArtifact.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: VerifiedRelease, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.version, into: &buf)
+        FfiConverterString.write(value.tag, into: &buf)
+        FfiConverterString.write(value.channel, into: &buf)
+        FfiConverterString.write(value.notesEn, into: &buf)
+        FfiConverterString.write(value.notesAr, into: &buf)
+        FfiConverterSequenceTypeReleaseArtifact.write(value.artifacts, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVerifiedRelease_lift(_ buf: RustBuffer) throws -> VerifiedRelease {
+    return try FfiConverterTypeVerifiedRelease.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVerifiedRelease_lower(_ value: VerifiedRelease) -> RustBuffer {
+    return FfiConverterTypeVerifiedRelease.lower(value)
 }
 
 
@@ -8401,6 +9017,99 @@ public func FfiConverterTypeSuggestionKind_lower(_ value: SuggestionKind) -> Rus
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
+public enum UpdatePromptKind: Equatable, Hashable {
+    
+    /**
+     * Show nothing
+     */
+    case none
+    /**
+     * The small bar; closing it hides this version
+     */
+    case notice
+    /**
+     * Below the minimum but no update is available to this build yet: a bar that can't be closed
+     */
+    case requiredBar
+    /**
+     * Below the minimum and an update is available: the full-window screen
+     */
+    case forced
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension UpdatePromptKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeUpdatePromptKind: FfiConverterRustBuffer {
+    typealias SwiftType = UpdatePromptKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UpdatePromptKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .none
+        
+        case 2: return .notice
+        
+        case 3: return .requiredBar
+        
+        case 4: return .forced
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: UpdatePromptKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .none:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .notice:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .requiredBar:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .forced:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUpdatePromptKind_lift(_ buf: RustBuffer) throws -> UpdatePromptKind {
+    return try FfiConverterTypeUpdatePromptKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUpdatePromptKind_lower(_ value: UpdatePromptKind) -> RustBuffer {
+    return FfiConverterTypeUpdatePromptKind.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 public enum UploadState: Equatable, Hashable {
     
     case queued
@@ -8523,6 +9232,30 @@ public func FfiConverterTypeUploadState_lower(_ value: UploadState) -> RustBuffe
     return FfiConverterTypeUploadState.lower(value)
 }
 
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionInt8: FfiConverterRustBuffer {
+    typealias SwiftType = Int8?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterInt8.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterInt8.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
@@ -8831,6 +9564,30 @@ fileprivate struct FfiConverterOptionTypeUploadInfo: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeUploadInfo.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeVerifiedRelease: FfiConverterRustBuffer {
+    typealias SwiftType = VerifiedRelease?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeVerifiedRelease.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeVerifiedRelease.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -9229,6 +9986,31 @@ fileprivate struct FfiConverterSequenceTypeRejectedWrite: FfiConverterRustBuffer
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeRejectedWrite.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeReleaseArtifact: FfiConverterRustBuffer {
+    typealias SwiftType = [ReleaseArtifact]
+
+    public static func write(_ value: [ReleaseArtifact], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeReleaseArtifact.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ReleaseArtifact] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ReleaseArtifact]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeReleaseArtifact.read(from: &buf))
         }
         return seq
     }
@@ -10177,6 +10959,18 @@ public func shortLinkOriginFor(siteOrApiUrl: String) -> String?  {
 })
 }
 /**
+ * `-1`, `0` or `1` by app-version precedence (`2026.11.22` < `2026.11.22.2`, `1.5.0-preview.2` <
+ * `1.5.0`); `None` when either is malformed.
+ */
+public func compareAppVersions(a: String, b: String) -> Int8?  {
+    return try!  FfiConverterOptionInt8.lift(try! rustCall() {
+    uniffi_aun_core_fn_func_compare_app_versions(
+        FfiConverterString.lower(a),
+        FfiConverterString.lower(b),$0
+    )
+})
+}
+/**
  * Defaults for [`UploadConfig`].
  */
 public func uploadConfigDefault() -> UploadConfig  {
@@ -10352,6 +11146,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_func_short_link_origin_for() != 63329) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_func_compare_app_versions() != 40880) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_func_upload_config_default() != 36473) {
@@ -10531,6 +11328,36 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_method_securestorage_list() != 12307) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_method_updatechecker_allowed_download_url() != 6449) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_updatechecker_apply_answer() != 49321) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_updatechecker_auto_install() != 12415) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_updatechecker_dismiss() != 2410) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_updatechecker_last_check_ms() != 25258) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_updatechecker_mark_checked() != 20198) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_updatechecker_offline_prompt_kind() != 45810) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_updatechecker_set_auto_install() != 1740) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_updatechecker_state_json() != 53170) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_updatechecker_verify_manifest() != 51005) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aun_core_checksum_method_uploadengine_add_listener() != 5924) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -10601,6 +11428,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_constructor_modelstore_new() != 3285) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_constructor_updatechecker_new() != 62479) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_constructor_uploadengine_new() != 6121) {
