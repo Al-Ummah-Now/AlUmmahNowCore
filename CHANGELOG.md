@@ -7,6 +7,8 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+## [0.4.0-rc.7] - 2026-11-24
+
 ### Breaking
 
 - `aun-api`: the profile and channel `email` is optional (`Option<String>`), as in the api-videos contract:
