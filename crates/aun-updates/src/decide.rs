@@ -80,12 +80,18 @@ impl Prompt {
 }
 
 /// `device_has_update`: what Play In-App Updates or the Microsoft Store said (None when this build
-/// has no device store). Updates `state.last_required_minimum`.
+/// has no device store). `has_root_key`: whether this build carries a root key. Updates
+/// `state.last_required_minimum`.
+///
+/// The root-key gate (wiki §4.1.1): a build without a root key can verify nothing, so any
+/// `install`, `download` or `notice` answer becomes a `notice` with no URL, manifest or tag (the app
+/// opens its own compiled-in page). A build with a root key takes `notice` as nothing at all.
 pub fn decide(
     answer: &UpdateAnswer,
     installed: &str,
     state: &mut UpdateState,
     device_has_update: Option<bool>,
+    has_root_key: bool,
 ) -> Prompt {
     if !answer.enabled {
         state.last_required_minimum = None;
@@ -93,10 +99,21 @@ pub fn decide(
     }
     let below = version::compare(installed, &answer.minimum_version) == Some(std::cmp::Ordering::Less);
     state.last_required_minimum = below.then(|| answer.minimum_version.clone());
-    let has_action = answer.action != "none";
+    let action = match (answer.action.as_str(), has_root_key) {
+        ("notice", true) => "none",
+        ("install" | "download" | "notice", false) => "notice",
+        (a @ ("store" | "install" | "download"), _) => a,
+        _ => "none",
+    };
+    let has_action = action != "none";
+    let linked = matches!(action, "install" | "download");
     // Can this build get the update now? The server knows (true/false) or the device does (null)
     let obtainable = has_action
-        && answer.latest_version.is_some()
+        && answer.latest_version.as_deref().is_some_and(|l| {
+            // Below the minimum, a release that is itself below it would not help
+            !below
+                || version::compare(l, &answer.minimum_version).is_some_and(|o| o != std::cmp::Ordering::Less)
+        })
         && match answer.available {
             Some(a) => a && device_has_update != Some(false),
             None => device_has_update == Some(true),
@@ -106,15 +123,15 @@ pub fn decide(
         version: answer.latest_version.clone(),
         notes: answer.notes.clone(),
         message: answer.message.clone(),
-        action: answer.action.clone(),
+        action: action.to_owned(),
         // A store action opens the store page; install and download use the release page
-        url: if answer.action == "store" {
+        url: if action == "store" {
             answer.store_url.clone().or_else(|| answer.url.clone())
         } else {
-            answer.url.clone()
+            answer.url.clone().filter(|_| linked)
         },
-        manifest_url: answer.manifest_url.clone(),
-        tag: answer.tag.clone(),
+        manifest_url: answer.manifest_url.clone().filter(|_| linked),
+        tag: answer.tag.clone().filter(|_| linked),
     };
     if below {
         return Prompt {

@@ -322,17 +322,17 @@ fn answer(json: &str) -> UpdateAnswer {
 fn decisions() {
     let mut st = UpdateState::default();
     let off = answer(r#"{"enabled":false,"status":"ok","minimumVersion":"9.0.0","action":"none"}"#);
-    assert_eq!(decide(&off, "1.0.0", &mut st, None).kind, PromptKind::None);
+    assert_eq!(decide(&off, "1.0.0", &mut st, None, true).kind, PromptKind::None);
 
     let rec = answer(
         r#"{"enabled":true,"status":"recommended","minimumVersion":"0.0.0","latestVersion":"1.1.0","action":"store","available":true,"notes":{"en":"New.","ar":"جديد."}}"#,
     );
-    let p = decide(&rec, "1.0.0", &mut st, None);
+    let p = decide(&rec, "1.0.0", &mut st, None, true);
     assert_eq!(p.kind, PromptKind::Notice);
     assert_eq!(p.notes.unwrap().ar, "جديد.");
     st.dismiss("1.1.0");
     assert_eq!(
-        decide(&rec, "1.0.0", &mut st, None).kind,
+        decide(&rec, "1.0.0", &mut st, None, true).kind,
         PromptKind::None,
         "closed for this version"
     );
@@ -341,12 +341,12 @@ fn decisions() {
         r#"{"enabled":true,"status":"recommended","minimumVersion":"0.0.0","latestVersion":"1.2.0","action":"store","available":null}"#,
     );
     assert_eq!(
-        decide(&play, "1.0.0", &mut st, None).kind,
+        decide(&play, "1.0.0", &mut st, None, true).kind,
         PromptKind::None,
         "the device hasn't confirmed"
     );
     assert_eq!(
-        decide(&play, "1.0.0", &mut st, Some(true)).kind,
+        decide(&play, "1.0.0", &mut st, Some(true), true).kind,
         PromptKind::Notice
     );
 
@@ -354,12 +354,12 @@ fn decisions() {
         r#"{"enabled":true,"status":"required","minimumVersion":"1.2.0","latestVersion":"1.2.0","action":"store","available":null,"message":{"en":"m","ar":"م"}}"#,
     );
     assert_eq!(
-        decide(&req, "1.0.0", &mut st, Some(false)).kind,
+        decide(&req, "1.0.0", &mut st, Some(false), true).kind,
         PromptKind::RequiredBar,
         "store has no update yet: the app keeps working"
     );
     assert_eq!(
-        decide(&req, "1.0.0", &mut st, Some(true)).kind,
+        decide(&req, "1.0.0", &mut st, Some(true), true).kind,
         PromptKind::Forced
     );
     assert_eq!(st.last_required_minimum.as_deref(), Some("1.2.0"));
@@ -374,7 +374,7 @@ fn decisions() {
         r#"{"enabled":true,"status":"recommended","minimumVersion":"0.0.0","latestVersion":"1.2.0","action":"none","available":false}"#,
     );
     assert_eq!(
-        decide(&none, "1.0.0", &mut st, None).kind,
+        decide(&none, "1.0.0", &mut st, None, true).kind,
         PromptKind::None,
         "nothing this build may get: no notice"
     );
@@ -474,14 +474,65 @@ fn store_actions_open_the_store_page() {
         r#"{"enabled":true,"status":"recommended","minimumVersion":"0.0.0","latestVersion":"1.3.0","action":"store","available":true,"storeUrl":"https://apps.apple.com/app/id1","url":null}"#,
     );
     assert_eq!(
-        decide(&a, "1.2.0", &mut st, None).url.as_deref(),
+        decide(&a, "1.2.0", &mut st, None, true).url.as_deref(),
         Some("https://apps.apple.com/app/id1")
     );
     let d = answer(
         r#"{"enabled":true,"status":"recommended","minimumVersion":"0.0.0","latestVersion":"1.3.0","action":"download","available":true,"storeUrl":null,"url":"https://github.com/Al-Ummah-Now/AlUmmahNowTools/releases/tag/v1.3.0"}"#,
     );
     assert_eq!(
-        decide(&d, "1.2.0", &mut st, None).url.as_deref(),
+        decide(&d, "1.2.0", &mut st, None, true).url.as_deref(),
         Some("https://github.com/Al-Ummah-Now/AlUmmahNowTools/releases/tag/v1.3.0")
+    );
+}
+
+#[test]
+fn the_root_key_gate() {
+    let full = |action: &str, min: &str| {
+        answer(
+            &serde_json::json!({
+                "enabled": true, "status": "recommended", "minimumVersion": min, "latestVersion": "1.1.0", "action": action,
+                "url": "https://example.com/p", "storeUrl": "https://example.com/s", "manifestUrl": "https://example.com/m",
+                "tag": "v1.1.0", "available": true
+            })
+            .to_string(),
+        )
+    };
+    let mut st = UpdateState::default();
+    // No root key: everything but a store is the notice, with no URL
+    for action in ["install", "download", "notice"] {
+        let p = decide(&full(action, "0.0.0"), "1.0.0", &mut st, None, false);
+        assert_eq!(p.kind, PromptKind::Notice, "{action}");
+        assert_eq!(p.action, "notice");
+        assert_eq!((p.url, p.manifest_url, p.tag), (None, None, None), "{action}");
+        let p = decide(&full(action, "1.1.0"), "1.0.0", &mut st, None, false);
+        assert_eq!(p.kind, PromptKind::Forced, "{action}");
+        assert_eq!((p.url, p.manifest_url, p.tag), (None, None, None), "{action}");
+    }
+    let p = decide(&full("store", "0.0.0"), "1.0.0", &mut st, None, false);
+    assert_eq!(
+        (p.kind, p.url.as_deref()),
+        (PromptKind::Notice, Some("https://example.com/s"))
+    );
+    // A root key: a notice answer is nothing, and never the forced screen
+    let p = decide(&full("notice", "0.0.0"), "1.0.0", &mut st, None, true);
+    assert_eq!((p.kind, p.url, p.tag), (PromptKind::None, None, None));
+    let p = decide(&full("notice", "1.1.0"), "1.0.0", &mut st, None, true);
+    assert_eq!(p.kind, PromptKind::RequiredBar);
+    assert_eq!((p.action.as_str(), p.url, p.manifest_url), ("none", None, None));
+    assert_eq!(
+        decide(&full("install", "0.0.0"), "1.0.0", &mut st, None, true)
+            .manifest_url
+            .as_deref(),
+        Some("https://example.com/m")
+    );
+    // An unknown action is nothing; a release below the minimum doesn't force anyone
+    assert_eq!(
+        decide(&full("run", "0.0.0"), "1.0.0", &mut st, None, true).kind,
+        PromptKind::None
+    );
+    assert_eq!(
+        decide(&full("install", "2.0.0"), "1.0.0", &mut st, None, true).kind,
+        PromptKind::RequiredBar
     );
 }

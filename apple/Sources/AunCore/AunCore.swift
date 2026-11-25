@@ -10549,7 +10549,9 @@ public struct UpdatePrompt: Equatable, Hashable {
     public var messageEn: String?
     public var messageAr: String?
     /**
-     * `store`, `install`, `download` or `none`
+     * `store`, `install`, `download`, `notice` or `none`. `notice`: say a new version is out and open
+     * the app's own compiled-in page; url, manifest_url and tag are always None. A build without root
+     * keys gets `notice` instead of `install` and `download`; a build with them never gets `notice`.
      */
     public var action: String
     public var url: String?
@@ -10564,7 +10566,9 @@ public struct UpdatePrompt: Equatable, Hashable {
     // declare one manually.
     public init(kind: UpdatePromptKind, version: String?, notesEn: String?, notesAr: String?, messageEn: String?, messageAr: String?, 
         /**
-         * `store`, `install`, `download` or `none`
+         * `store`, `install`, `download`, `notice` or `none`. `notice`: say a new version is out and open
+         * the app's own compiled-in page; url, manifest_url and tag are always None. A build without root
+         * keys gets `notice` instead of `install` and `download`; a build with them never gets `notice`.
          */action: String, url: String?, manifestUrl: String?, tag: String?, 
         /**
          * Hours until the next check (the server's `checkHours`, default 6)
