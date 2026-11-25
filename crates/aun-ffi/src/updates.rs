@@ -42,7 +42,9 @@ pub struct UpdatePrompt {
     pub notes_ar: Option<String>,
     pub message_en: Option<String>,
     pub message_ar: Option<String>,
-    /// `store`, `install`, `download` or `none`
+    /// `store`, `install`, `download`, `notice` or `none`. `notice`: say a new version is out and open
+    /// the app's own compiled-in page; url, manifest_url and tag are always None. A build without root
+    /// keys gets `notice` instead of `install` and `download`; a build with them never gets `notice`.
     pub action: String,
     pub url: Option<String>,
     pub manifest_url: Option<String>,
@@ -168,7 +170,13 @@ impl UpdateChecker {
             // A key list that fails is ignored (the one already trusted stays); the server reports bad lists
             let _ = state.accept_key_list(list.as_bytes(), sig, &self.root_keys, &self.repo);
         }
-        let prompt = decide::decide(&answer, &self.installed, &mut state, device_has_update);
+        let prompt = decide::decide(
+            &answer,
+            &self.installed,
+            &mut state,
+            device_has_update,
+            !self.root_keys.is_empty(),
+        );
         Ok(UpdatePrompt {
             kind: prompt.kind.into(),
             version: prompt.version,
@@ -192,6 +200,13 @@ impl UpdateChecker {
     /// Checks a downloaded `app-release.json` and its `.sig` for the tag the API named. On success
     /// the replay floor rises; nothing is trusted when `refused` is set.
     pub fn verify_manifest(&self, manifest: Vec<u8>, signature: String, tag: String) -> ManifestCheck {
+        if self.root_keys.is_empty() {
+            // Nothing can be trusted without a root key, whatever a stored state claims
+            return ManifestCheck {
+                release: None,
+                refused: Some("unknown_key".to_owned()),
+            };
+        }
         let mut state = self.lock();
         let channels: &[&str] = if self.beta {
             &["stable", "beta"]
@@ -243,7 +258,7 @@ impl UpdateChecker {
 
     /// Whether a download URL or redirect hop is allowed for this repo (check every hop).
     pub fn allowed_download_url(&self, url: String) -> bool {
-        hosts::allowed_download_url(&url, &self.repo)
+        !self.root_keys.is_empty() && hosts::allowed_download_url(&url, &self.repo)
     }
 
     /// The user closed the notice for this version.

@@ -11,6 +11,13 @@ FFI; such changes are listed under **Breaking**.
 
 - `aun-api`: the profile and channel `email` is optional (`Option<String>`), as in the api-videos contract:
   the API takes a profile's email from the signed-in account, and channels no longer return one.
+- `aun-updates`: `decide` takes `has_root_key` (Rust only; the FFI is unchanged).
+
+### Changed
+
+- App updates (`AUN-APP-UPDATES`): the root-key gate. A build without root keys gets `action: notice` with no URL,
+  manifest or tag instead of `install` and `download`, verifies no manifest and allows no download URL. A build with
+  root keys takes a `notice` answer as nothing. Below the minimum, a release that is itself below it forces no one.
 
 ## [0.4.0-rc.6] - 2026-11-24
 

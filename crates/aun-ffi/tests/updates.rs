@@ -103,3 +103,48 @@ fn a_bad_bundled_key_list_is_a_build_error() {
     );
     assert!(err.is_err());
 }
+
+#[test]
+fn without_a_root_key_nothing_is_linked_or_verified() {
+    let v = vector();
+    // A state that already trusts the release key doesn't help a build with no root key
+    let trusted = UpdateChecker::new(
+        "AlUmmahNowTools".into(),
+        vec![s(&v, "rootPublicKey")],
+        "2026.11.22".into(),
+        false,
+        None,
+        Some(s(&v, "keyList")),
+        Some(s(&v, "keyListSig")),
+    )
+    .unwrap();
+    let checker = UpdateChecker::new(
+        "AlUmmahNowTools".into(),
+        Vec::new(),
+        "2026.11.22".into(),
+        false,
+        Some(trusted.state_json()),
+        None,
+        None,
+    )
+    .unwrap();
+    let answer = serde_json::json!({ "update": {
+        "enabled": true, "status": "recommended", "minimumVersion": "0.0.0", "latestVersion": "2026.11.23",
+        "action": "install", "available": true, "url": "https://example.com/p",
+        "manifestUrl": "https://example.com/m", "tag": "v2026.11.23",
+        "keys": { "list": s(&v, "keyList"), "sig": s(&v, "keyListSig") }
+    }});
+    let p = checker.apply_answer(answer.to_string(), None).unwrap();
+    assert_eq!(p.kind, UpdatePromptKind::Notice);
+    assert_eq!(p.action, "notice");
+    assert_eq!((p.url, p.manifest_url, p.tag), (None, None, None));
+    let check = checker.verify_manifest(
+        s(&v, "manifest").into_bytes(),
+        s(&v, "manifestSig"),
+        "v2026.11.23".into(),
+    );
+    assert_eq!(check.refused.as_deref(), Some("unknown_key"));
+    assert!(!checker.allowed_download_url(
+        "https://github.com/Al-Ummah-Now/AlUmmahNowTools/releases/download/v1/x".into()
+    ));
+}
