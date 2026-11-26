@@ -3,9 +3,9 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::AunError;
 use crate::api::ApiClient;
 use crate::platform::{Connectivity, ForeignConnectivity};
+use crate::{AunError, Visibility};
 
 /// The runtime upload workers run on (they outlive any single FFI call).
 fn runtime() -> Result<&'static tokio::runtime::Runtime, AunError> {
@@ -54,6 +54,7 @@ pub struct UploadRequest {
     /// `None`: guessed from the file extension.
     pub mime_type: Option<String>,
     pub channel_id: Option<String>,
+    /// Legacy visibility used when `visibility` is absent.
     pub is_public: Option<bool>,
     /// Comma-separated.
     pub tags: Option<String>,
@@ -63,6 +64,9 @@ pub struct UploadRequest {
     pub description_localized: HashMap<String, String>,
     /// Higher uploads first.
     pub priority: i32,
+    /// Takes precedence over `is_public`.
+    #[uniffi(default = None)]
+    pub visibility: Option<Visibility>,
 }
 
 impl UploadRequest {
@@ -83,6 +87,7 @@ impl UploadRequest {
             mime_type,
             channel_id: self.channel_id,
             is_public: self.is_public,
+            visibility: self.visibility.map(Into::into),
             tags: self.tags,
             category: self.category,
             title_localized: self.title_localized.into_iter().collect(),
@@ -386,5 +391,45 @@ impl UploadEngine {
         Err(AunError::Unsupported {
             detail: "folder watching is a desktop feature".into(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uniffi::{Lift, Lower};
+
+    #[test]
+    fn upload_visibility_survives_the_ffi_record_and_reaches_core() {
+        for value in [
+            None,
+            Some(Visibility::Public),
+            Some(Visibility::Unlisted),
+            Some(Visibility::Private),
+        ] {
+            let request = UploadRequest {
+                file_path: "clip.mp4".into(),
+                title: "Title".into(),
+                description: None,
+                mime_type: None,
+                channel_id: None,
+                is_public: Some(true),
+                tags: None,
+                category: None,
+                title_localized: HashMap::new(),
+                description_localized: HashMap::new(),
+                priority: 0,
+                visibility: value,
+            };
+            let mut bytes = Vec::new();
+            <UploadRequest as Lower<crate::UniFfiTag>>::write(request, &mut bytes);
+            let decoded = <UploadRequest as Lift<crate::UniFfiTag>>::try_read(&mut bytes.as_slice());
+            let core = decoded.ok().and_then(|request| request.into_core().ok());
+            assert_eq!(
+                core.as_ref().and_then(|request| request.visibility),
+                value.map(Into::into)
+            );
+            assert_eq!(core.and_then(|request| request.is_public), Some(true));
+        }
     }
 }

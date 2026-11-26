@@ -717,6 +717,29 @@ public protocol ApiClientProtocol: AnyObject, Sendable {
      */
     func userFeatures(channelId: String?) async throws  -> [String: Bool]
     
+    func playlistAddVideo(id: String, videoId: String, channelId: String?) async throws  -> Playlist
+    
+    /**
+     * Omit `channel_id` to create a personal playlist.
+     */
+    func playlistCreate(channelId: String?, metadata: PlaylistMetadata) async throws  -> Playlist
+    
+    func playlistDelete(id: String, channelId: String?) async throws  -> Bool
+    
+    /**
+     * Gets a playlist by ID, including an unlisted playlist shared by its link.
+     */
+    func playlistFetch(id: String, channelId: String?) async throws  -> Playlist
+    
+    func playlistRemoveVideo(id: String, videoId: String, channelId: String?) async throws  -> Playlist
+    
+    /**
+     * Supply the active channel when editing as a channel manager.
+     */
+    func playlistUpdate(id: String, channelId: String?, metadata: PlaylistMetadata) async throws  -> Playlist
+    
+    func playlistsList(query: PlaylistQuery) async throws  -> PlaylistPage
+    
     /**
      * `GET /api/search/suggestions`, made once (no retries). Blank text returns an empty list
      * without a request. Throws `RateLimited` on 429.
@@ -728,6 +751,21 @@ public protocol ApiClientProtocol: AnyObject, Sendable {
      * page. Continuation cursors are supported for blank text. Throws `RateLimited` on 429.
      */
     func searchSuggestionsPage(query: SuggestionQuery, cursor: UInt32?) async throws  -> SearchSuggestionsPage
+    
+    /**
+     * Changes visibility without editing the video's other metadata.
+     */
+    func videoUpdateVisibility(id: String, channelId: String?, visibility: Visibility) async throws  -> Visibility
+    
+    /**
+     * Reads a video's visibility by ID, including when opened directly by its link.
+     */
+    func videoVisibility(id: String, channelId: String?) async throws  -> Visibility
+    
+    /**
+     * Changes visibility for multiple videos, returning each video's outcome.
+     */
+    func videosBulkUpdateVisibility(ids: [String], channelId: String?, visibility: Visibility, operationId: String?) async throws  -> BulkVideoVisibilityUpdate
     
 }
 /**
@@ -1096,6 +1134,134 @@ open func userFeatures(channelId: String?)async throws  -> [String: Bool]  {
         )
 }
     
+open func playlistAddVideo(id: String, videoId: String, channelId: String?)async throws  -> Playlist  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_playlist_add_video(
+                    self.uniffiCloneHandle(),
+                    FfiConverterString.lower(id),FfiConverterString.lower(videoId),FfiConverterOptionString.lower(channelId)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypePlaylist_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+    /**
+     * Omit `channel_id` to create a personal playlist.
+     */
+open func playlistCreate(channelId: String?, metadata: PlaylistMetadata)async throws  -> Playlist  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_playlist_create(
+                    self.uniffiCloneHandle(),
+                    FfiConverterOptionString.lower(channelId),FfiConverterTypePlaylistMetadata_lower(metadata)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypePlaylist_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+open func playlistDelete(id: String, channelId: String?)async throws  -> Bool  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_playlist_delete(
+                    self.uniffiCloneHandle(),
+                    FfiConverterString.lower(id),FfiConverterOptionString.lower(channelId)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_i8,
+            completeFunc: ffi_aun_core_rust_future_complete_i8,
+            freeFunc: ffi_aun_core_rust_future_free_i8,
+            liftFunc: FfiConverterBool.lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+    /**
+     * Gets a playlist by ID, including an unlisted playlist shared by its link.
+     */
+open func playlistFetch(id: String, channelId: String?)async throws  -> Playlist  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_playlist_fetch(
+                    self.uniffiCloneHandle(),
+                    FfiConverterString.lower(id),FfiConverterOptionString.lower(channelId)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypePlaylist_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+open func playlistRemoveVideo(id: String, videoId: String, channelId: String?)async throws  -> Playlist  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_playlist_remove_video(
+                    self.uniffiCloneHandle(),
+                    FfiConverterString.lower(id),FfiConverterString.lower(videoId),FfiConverterOptionString.lower(channelId)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypePlaylist_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+    /**
+     * Supply the active channel when editing as a channel manager.
+     */
+open func playlistUpdate(id: String, channelId: String?, metadata: PlaylistMetadata)async throws  -> Playlist  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_playlist_update(
+                    self.uniffiCloneHandle(),
+                    FfiConverterString.lower(id),FfiConverterOptionString.lower(channelId),FfiConverterTypePlaylistMetadata_lower(metadata)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypePlaylist_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+open func playlistsList(query: PlaylistQuery)async throws  -> PlaylistPage  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_playlists_list(
+                    self.uniffiCloneHandle(),
+                    FfiConverterTypePlaylistQuery_lower(query)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypePlaylistPage_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
     /**
      * `GET /api/search/suggestions`, made once (no retries). Blank text returns an empty list
      * without a request. Throws `RateLimited` on 429.
@@ -1134,6 +1300,66 @@ open func searchSuggestionsPage(query: SuggestionQuery, cursor: UInt32?)async th
             completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeSearchSuggestionsPage_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+    /**
+     * Changes visibility without editing the video's other metadata.
+     */
+open func videoUpdateVisibility(id: String, channelId: String?, visibility: Visibility)async throws  -> Visibility  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_video_update_visibility(
+                    self.uniffiCloneHandle(),
+                    FfiConverterString.lower(id),FfiConverterOptionString.lower(channelId),FfiConverterTypeVisibility_lower(visibility)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeVisibility_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+    /**
+     * Reads a video's visibility by ID, including when opened directly by its link.
+     */
+open func videoVisibility(id: String, channelId: String?)async throws  -> Visibility  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_video_visibility(
+                    self.uniffiCloneHandle(),
+                    FfiConverterString.lower(id),FfiConverterOptionString.lower(channelId)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeVisibility_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+    /**
+     * Changes visibility for multiple videos, returning each video's outcome.
+     */
+open func videosBulkUpdateVisibility(ids: [String], channelId: String?, visibility: Visibility, operationId: String?)async throws  -> BulkVideoVisibilityUpdate  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_videos_bulk_update_visibility(
+                    self.uniffiCloneHandle(),
+                    FfiConverterSequenceString.lower(ids),FfiConverterOptionString.lower(channelId),FfiConverterTypeVisibility_lower(visibility),FfiConverterOptionString.lower(operationId)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeBulkVideoVisibilityUpdate_lift,
             errorHandler: FfiConverterTypeAunError_lift
         )
 }
@@ -6410,6 +6636,64 @@ public func FfiConverterTypeAuthConfig_lower(_ value: AuthConfig) -> RustBuffer 
 }
 
 
+public struct BulkVideoVisibilityUpdate: Equatable, Hashable {
+    public var success: Bool
+    public var operationId: String?
+    public var results: [VideoVisibilityUpdate]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(success: Bool, operationId: String?, results: [VideoVisibilityUpdate]) {
+        self.success = success
+        self.operationId = operationId
+        self.results = results
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension BulkVideoVisibilityUpdate: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBulkVideoVisibilityUpdate: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BulkVideoVisibilityUpdate {
+        return
+            try BulkVideoVisibilityUpdate(
+                success: FfiConverterBool.read(from: &buf), 
+                operationId: FfiConverterOptionString.read(from: &buf), 
+                results: FfiConverterSequenceTypeVideoVisibilityUpdate.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BulkVideoVisibilityUpdate, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.success, into: &buf)
+        FfiConverterOptionString.write(value.operationId, into: &buf)
+        FfiConverterSequenceTypeVideoVisibilityUpdate.write(value.results, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBulkVideoVisibilityUpdate_lift(_ buf: RustBuffer) throws -> BulkVideoVisibilityUpdate {
+    return try FfiConverterTypeBulkVideoVisibilityUpdate.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBulkVideoVisibilityUpdate_lower(_ value: BulkVideoVisibilityUpdate) -> RustBuffer {
+    return FfiConverterTypeBulkVideoVisibilityUpdate.lower(value)
+}
+
+
 /**
  * One upcoming online event from `GET /api/events`.
  */
@@ -9064,6 +9348,323 @@ public func FfiConverterTypePlayerSnapshot_lower(_ value: PlayerSnapshot) -> Rus
 }
 
 
+public struct Playlist: Equatable, Hashable {
+    public var id: String
+    public var title: String
+    public var description: String?
+    public var titleLocalized: [String: String]?
+    public var descriptionLocalized: [String: String]?
+    public var thumbnailUrl: String?
+    public var userId: String
+    /**
+     * Empty for a personal playlist.
+     */
+    public var channelId: String
+    public var videos: [String]
+    public var visibility: Visibility
+    public var isUnlisted: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, title: String, description: String?, titleLocalized: [String: String]?, descriptionLocalized: [String: String]?, thumbnailUrl: String?, userId: String, 
+        /**
+         * Empty for a personal playlist.
+         */channelId: String, videos: [String], visibility: Visibility, isUnlisted: Bool) {
+        self.id = id
+        self.title = title
+        self.description = description
+        self.titleLocalized = titleLocalized
+        self.descriptionLocalized = descriptionLocalized
+        self.thumbnailUrl = thumbnailUrl
+        self.userId = userId
+        self.channelId = channelId
+        self.videos = videos
+        self.visibility = visibility
+        self.isUnlisted = isUnlisted
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension Playlist: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlaylist: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Playlist {
+        return
+            try Playlist(
+                id: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                description: FfiConverterOptionString.read(from: &buf), 
+                titleLocalized: FfiConverterOptionDictionaryStringString.read(from: &buf), 
+                descriptionLocalized: FfiConverterOptionDictionaryStringString.read(from: &buf), 
+                thumbnailUrl: FfiConverterOptionString.read(from: &buf), 
+                userId: FfiConverterString.read(from: &buf), 
+                channelId: FfiConverterString.read(from: &buf), 
+                videos: FfiConverterSequenceString.read(from: &buf), 
+                visibility: FfiConverterTypeVisibility.read(from: &buf), 
+                isUnlisted: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: Playlist, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.description, into: &buf)
+        FfiConverterOptionDictionaryStringString.write(value.titleLocalized, into: &buf)
+        FfiConverterOptionDictionaryStringString.write(value.descriptionLocalized, into: &buf)
+        FfiConverterOptionString.write(value.thumbnailUrl, into: &buf)
+        FfiConverterString.write(value.userId, into: &buf)
+        FfiConverterString.write(value.channelId, into: &buf)
+        FfiConverterSequenceString.write(value.videos, into: &buf)
+        FfiConverterTypeVisibility.write(value.visibility, into: &buf)
+        FfiConverterBool.write(value.isUnlisted, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlaylist_lift(_ buf: RustBuffer) throws -> Playlist {
+    return try FfiConverterTypePlaylist.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlaylist_lower(_ value: Playlist) -> RustBuffer {
+    return FfiConverterTypePlaylist.lower(value)
+}
+
+
+/**
+ * Metadata to set on create or update. Updates leave omitted properties alone.
+ */
+public struct PlaylistMetadata: Equatable, Hashable {
+    public var title: String?
+    public var description: String?
+    public var titleLocalized: [String: String]?
+    public var descriptionLocalized: [String: String]?
+    public var thumbnailUrl: String?
+    public var visibility: Visibility?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(title: String? = nil, description: String? = nil, titleLocalized: [String: String]? = nil, descriptionLocalized: [String: String]? = nil, thumbnailUrl: String? = nil, visibility: Visibility? = nil) {
+        self.title = title
+        self.description = description
+        self.titleLocalized = titleLocalized
+        self.descriptionLocalized = descriptionLocalized
+        self.thumbnailUrl = thumbnailUrl
+        self.visibility = visibility
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PlaylistMetadata: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlaylistMetadata: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlaylistMetadata {
+        return
+            try PlaylistMetadata(
+                title: FfiConverterOptionString.read(from: &buf), 
+                description: FfiConverterOptionString.read(from: &buf), 
+                titleLocalized: FfiConverterOptionDictionaryStringString.read(from: &buf), 
+                descriptionLocalized: FfiConverterOptionDictionaryStringString.read(from: &buf), 
+                thumbnailUrl: FfiConverterOptionString.read(from: &buf), 
+                visibility: FfiConverterOptionTypeVisibility.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PlaylistMetadata, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.description, into: &buf)
+        FfiConverterOptionDictionaryStringString.write(value.titleLocalized, into: &buf)
+        FfiConverterOptionDictionaryStringString.write(value.descriptionLocalized, into: &buf)
+        FfiConverterOptionString.write(value.thumbnailUrl, into: &buf)
+        FfiConverterOptionTypeVisibility.write(value.visibility, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlaylistMetadata_lift(_ buf: RustBuffer) throws -> PlaylistMetadata {
+    return try FfiConverterTypePlaylistMetadata.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlaylistMetadata_lower(_ value: PlaylistMetadata) -> RustBuffer {
+    return FfiConverterTypePlaylistMetadata.lower(value)
+}
+
+
+public struct PlaylistPage: Equatable, Hashable {
+    public var data: [Playlist]
+    /**
+     * Empty after the last page.
+     */
+    public var cursor: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(data: [Playlist], 
+        /**
+         * Empty after the last page.
+         */cursor: String) {
+        self.data = data
+        self.cursor = cursor
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PlaylistPage: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlaylistPage: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlaylistPage {
+        return
+            try PlaylistPage(
+                data: FfiConverterSequenceTypePlaylist.read(from: &buf), 
+                cursor: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PlaylistPage, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypePlaylist.write(value.data, into: &buf)
+        FfiConverterString.write(value.cursor, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlaylistPage_lift(_ buf: RustBuffer) throws -> PlaylistPage {
+    return try FfiConverterTypePlaylistPage.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlaylistPage_lower(_ value: PlaylistPage) -> RustBuffer {
+    return FfiConverterTypePlaylistPage.lower(value)
+}
+
+
+public struct PlaylistQuery: Equatable, Hashable {
+    public var limit: UInt32?
+    public var cursor: String?
+    /**
+     * Only return playlists that belong to this channel.
+     */
+    public var channelId: String?
+    /**
+     * List the caller's personal playlists, including private and unlisted ones.
+     */
+    public var mine: Bool
+    /**
+     * Name search for personal or channel playlists.
+     */
+    public var q: String?
+    public var activeChannelId: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(limit: UInt32? = nil, cursor: String? = nil, 
+        /**
+         * Only return playlists that belong to this channel.
+         */channelId: String? = nil, 
+        /**
+         * List the caller's personal playlists, including private and unlisted ones.
+         */mine: Bool = false, 
+        /**
+         * Name search for personal or channel playlists.
+         */q: String? = nil, activeChannelId: String? = nil) {
+        self.limit = limit
+        self.cursor = cursor
+        self.channelId = channelId
+        self.mine = mine
+        self.q = q
+        self.activeChannelId = activeChannelId
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension PlaylistQuery: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlaylistQuery: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlaylistQuery {
+        return
+            try PlaylistQuery(
+                limit: FfiConverterOptionUInt32.read(from: &buf), 
+                cursor: FfiConverterOptionString.read(from: &buf), 
+                channelId: FfiConverterOptionString.read(from: &buf), 
+                mine: FfiConverterBool.read(from: &buf), 
+                q: FfiConverterOptionString.read(from: &buf), 
+                activeChannelId: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PlaylistQuery, into buf: inout [UInt8]) {
+        FfiConverterOptionUInt32.write(value.limit, into: &buf)
+        FfiConverterOptionString.write(value.cursor, into: &buf)
+        FfiConverterOptionString.write(value.channelId, into: &buf)
+        FfiConverterBool.write(value.mine, into: &buf)
+        FfiConverterOptionString.write(value.q, into: &buf)
+        FfiConverterOptionString.write(value.activeChannelId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlaylistQuery_lift(_ buf: RustBuffer) throws -> PlaylistQuery {
+    return try FfiConverterTypePlaylistQuery.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlaylistQuery_lower(_ value: PlaylistQuery) -> RustBuffer {
+    return FfiConverterTypePlaylistQuery.lower(value)
+}
+
+
 /**
  * Local-day prayer quiet interval (`0..=1439` minutes from midnight).
  */
@@ -11064,6 +11665,9 @@ public struct UploadRequest: Equatable, Hashable {
      */
     public var mimeType: String?
     public var channelId: String?
+    /**
+     * Legacy visibility used when `visibility` is absent.
+     */
     public var isPublic: Bool?
     /**
      * Comma-separated.
@@ -11079,13 +11683,20 @@ public struct UploadRequest: Equatable, Hashable {
      * Higher uploads first.
      */
     public var priority: Int32
+    /**
+     * Takes precedence over `is_public`.
+     */
+    public var visibility: Visibility?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(filePath: String, title: String, description: String?, 
         /**
          * `None`: guessed from the file extension.
-         */mimeType: String?, channelId: String?, isPublic: Bool?, 
+         */mimeType: String?, channelId: String?, 
+        /**
+         * Legacy visibility used when `visibility` is absent.
+         */isPublic: Bool?, 
         /**
          * Comma-separated.
          */tags: String?, category: String?, 
@@ -11094,7 +11705,10 @@ public struct UploadRequest: Equatable, Hashable {
          */titleLocalized: [String: String], descriptionLocalized: [String: String], 
         /**
          * Higher uploads first.
-         */priority: Int32) {
+         */priority: Int32, 
+        /**
+         * Takes precedence over `is_public`.
+         */visibility: Visibility? = nil) {
         self.filePath = filePath
         self.title = title
         self.description = description
@@ -11106,6 +11720,7 @@ public struct UploadRequest: Equatable, Hashable {
         self.titleLocalized = titleLocalized
         self.descriptionLocalized = descriptionLocalized
         self.priority = priority
+        self.visibility = visibility
     }
 
     
@@ -11134,7 +11749,8 @@ public struct FfiConverterTypeUploadRequest: FfiConverterRustBuffer {
                 category: FfiConverterOptionString.read(from: &buf), 
                 titleLocalized: FfiConverterDictionaryStringString.read(from: &buf), 
                 descriptionLocalized: FfiConverterDictionaryStringString.read(from: &buf), 
-                priority: FfiConverterInt32.read(from: &buf)
+                priority: FfiConverterInt32.read(from: &buf), 
+                visibility: FfiConverterOptionTypeVisibility.read(from: &buf)
         )
     }
 
@@ -11150,6 +11766,7 @@ public struct FfiConverterTypeUploadRequest: FfiConverterRustBuffer {
         FfiConverterDictionaryStringString.write(value.titleLocalized, into: &buf)
         FfiConverterDictionaryStringString.write(value.descriptionLocalized, into: &buf)
         FfiConverterInt32.write(value.priority, into: &buf)
+        FfiConverterOptionTypeVisibility.write(value.visibility, into: &buf)
     }
 }
 
@@ -11236,6 +11853,76 @@ public func FfiConverterTypeVerifiedRelease_lift(_ buf: RustBuffer) throws -> Ve
 #endif
 public func FfiConverterTypeVerifiedRelease_lower(_ value: VerifiedRelease) -> RustBuffer {
     return FfiConverterTypeVerifiedRelease.lower(value)
+}
+
+
+public struct VideoVisibilityUpdate: Equatable, Hashable {
+    public var videoId: String
+    public var success: Bool
+    public var changed: Bool?
+    public var replayed: Bool?
+    public var code: String?
+    public var error: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(videoId: String, success: Bool, changed: Bool?, replayed: Bool?, code: String?, error: String?) {
+        self.videoId = videoId
+        self.success = success
+        self.changed = changed
+        self.replayed = replayed
+        self.code = code
+        self.error = error
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension VideoVisibilityUpdate: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeVideoVisibilityUpdate: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> VideoVisibilityUpdate {
+        return
+            try VideoVisibilityUpdate(
+                videoId: FfiConverterString.read(from: &buf), 
+                success: FfiConverterBool.read(from: &buf), 
+                changed: FfiConverterOptionBool.read(from: &buf), 
+                replayed: FfiConverterOptionBool.read(from: &buf), 
+                code: FfiConverterOptionString.read(from: &buf), 
+                error: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: VideoVisibilityUpdate, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.videoId, into: &buf)
+        FfiConverterBool.write(value.success, into: &buf)
+        FfiConverterOptionBool.write(value.changed, into: &buf)
+        FfiConverterOptionBool.write(value.replayed, into: &buf)
+        FfiConverterOptionString.write(value.code, into: &buf)
+        FfiConverterOptionString.write(value.error, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVideoVisibilityUpdate_lift(_ buf: RustBuffer) throws -> VideoVisibilityUpdate {
+    return try FfiConverterTypeVideoVisibilityUpdate.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVideoVisibilityUpdate_lower(_ value: VideoVisibilityUpdate) -> RustBuffer {
+    return FfiConverterTypeVideoVisibilityUpdate.lower(value)
 }
 
 
@@ -13810,6 +14497,83 @@ public func FfiConverterTypeUploadState_lower(_ value: UploadState) -> RustBuffe
 }
 
 
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Whether a video or playlist is listed, opens by link, or is private.
+ */
+
+public enum Visibility: Equatable, Hashable {
+    
+    case `public`
+    case unlisted
+    case `private`
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension Visibility: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeVisibility: FfiConverterRustBuffer {
+    typealias SwiftType = Visibility
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Visibility {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .`public`
+        
+        case 2: return .unlisted
+        
+        case 3: return .`private`
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: Visibility, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .`public`:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .unlisted:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .`private`:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVisibility_lift(_ buf: RustBuffer) throws -> Visibility {
+    return try FfiConverterTypeVisibility.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVisibility_lower(_ value: Visibility) -> RustBuffer {
+    return FfiConverterTypeVisibility.lower(value)
+}
+
+
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
@@ -14309,6 +15073,54 @@ fileprivate struct FfiConverterOptionTypeShortLinkTarget: FfiConverterRustBuffer
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeShortLinkTarget.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeVisibility: FfiConverterRustBuffer {
+    typealias SwiftType = Visibility?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeVisibility.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeVisibility.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionDictionaryStringString: FfiConverterRustBuffer {
+    typealias SwiftType = [String: String]?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterDictionaryStringString.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterDictionaryStringString.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -14892,6 +15704,31 @@ fileprivate struct FfiConverterSequenceTypePlayerMediaItem: FfiConverterRustBuff
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypePlaylist: FfiConverterRustBuffer {
+    typealias SwiftType = [Playlist]
+
+    public static func write(_ value: [Playlist], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypePlaylist.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Playlist] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [Playlist]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypePlaylist.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypePrayerQuietWindow: FfiConverterRustBuffer {
     typealias SwiftType = [PrayerQuietWindow]
 
@@ -15284,6 +16121,31 @@ fileprivate struct FfiConverterSequenceTypeUploadRequest: FfiConverterRustBuffer
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeUploadRequest.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeVideoVisibilityUpdate: FfiConverterRustBuffer {
+    typealias SwiftType = [VideoVisibilityUpdate]
+
+    public static func write(_ value: [VideoVisibilityUpdate], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeVideoVisibilityUpdate.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [VideoVisibilityUpdate] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [VideoVisibilityUpdate]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeVideoVisibilityUpdate.read(from: &buf))
         }
         return seq
     }
@@ -16367,10 +17229,40 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_method_apiclient_user_features() != 24924) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_method_apiclient_playlist_add_video() != 31267) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_playlist_create() != 17489) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_playlist_delete() != 63858) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_playlist_fetch() != 24415) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_playlist_remove_video() != 54967) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_playlist_update() != 31964) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_playlists_list() != 62680) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aun_core_checksum_method_apiclient_search_suggestions() != 46241) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_apiclient_search_suggestions_page() != 28498) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_video_update_visibility() != 63692) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_video_visibility() != 9412) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_videos_bulk_update_visibility() != 18757) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_offlinequeue_enqueue() != 34998) {

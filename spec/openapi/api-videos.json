@@ -9461,6 +9461,10 @@
                               "isPublic": {
                                 "type": "boolean"
                               },
+                              "isUnlisted": {
+                                "type": "boolean",
+                                "description": "Link-only: opens for anyone with the link, never listed"
+                              },
                               "contentUrl": {
                                 "type": "string",
                                 "description": "Stable public MP4 (480p) for search engines; public R2 videos only (D-SEO-11)"
@@ -10575,6 +10579,10 @@
                           },
                           "isPublic": {
                             "type": "boolean"
+                          },
+                          "isUnlisted": {
+                            "type": "boolean",
+                            "description": "Link-only: opens for anyone with the link, never listed"
                           },
                           "contentUrl": {
                             "type": "string",
@@ -12439,6 +12447,14 @@
                           "isUnlisted": {
                             "type": "boolean"
                           },
+                          "visibility": {
+                            "type": "string",
+                            "enum": [
+                              "public",
+                              "unlisted",
+                              "private"
+                            ]
+                          },
                           "sortMode": {
                             "type": "string",
                             "enum": [
@@ -12842,6 +12858,10 @@
                           },
                           "isPublic": {
                             "type": "boolean"
+                          },
+                          "isUnlisted": {
+                            "type": "boolean",
+                            "description": "Link-only: opens for anyone with the link, never listed"
                           },
                           "contentUrl": {
                             "type": "string",
@@ -14410,6 +14430,10 @@
                           },
                           "isPublic": {
                             "type": "boolean"
+                          },
+                          "isUnlisted": {
+                            "type": "boolean",
+                            "description": "Link-only: opens for anyone with the link, never listed"
                           },
                           "contentUrl": {
                             "type": "string",
@@ -27839,6 +27863,14 @@
                           "isUnlisted": {
                             "type": "boolean"
                           },
+                          "visibility": {
+                            "type": "string",
+                            "enum": [
+                              "public",
+                              "unlisted",
+                              "private"
+                            ]
+                          },
                           "sortMode": {
                             "type": "string",
                             "enum": [
@@ -28726,6 +28758,14 @@
                     },
                     "isUnlisted": {
                       "type": "boolean"
+                    },
+                    "visibility": {
+                      "type": "string",
+                      "enum": [
+                        "public",
+                        "unlisted",
+                        "private"
+                      ]
                     },
                     "sortMode": {
                       "type": "string",
@@ -40163,6 +40203,10 @@
                           "isPublic": {
                             "type": "boolean"
                           },
+                          "isUnlisted": {
+                            "type": "boolean",
+                            "description": "Link-only: opens for anyone with the link, never listed"
+                          },
                           "contentUrl": {
                             "type": "string",
                             "description": "Stable public MP4 (480p) for search engines; public R2 videos only (D-SEO-11)"
@@ -40841,6 +40885,10 @@
                             },
                             "isPublic": {
                               "type": "boolean"
+                            },
+                            "isUnlisted": {
+                              "type": "boolean",
+                              "description": "Link-only: opens for anyone with the link, never listed"
                             },
                             "contentUrl": {
                               "type": "string",
@@ -43750,6 +43798,10 @@
                           },
                           "isPublic": {
                             "type": "boolean"
+                          },
+                          "isUnlisted": {
+                            "type": "boolean",
+                            "description": "Link-only: opens for anyone with the link, never listed"
                           },
                           "contentUrl": {
                             "type": "string",
@@ -47676,6 +47728,10 @@
                     "isPublic": {
                       "type": "boolean"
                     },
+                    "isUnlisted": {
+                      "type": "boolean",
+                      "description": "Link-only: opens for anyone with the link, never listed"
+                    },
                     "contentUrl": {
                       "type": "string",
                       "description": "Stable public MP4 (480p) for search engines; public R2 videos only (D-SEO-11)"
@@ -48376,6 +48432,10 @@
                             },
                             "isPublic": {
                               "type": "boolean"
+                            },
+                            "isUnlisted": {
+                              "type": "boolean",
+                              "description": "Link-only: opens for anyone with the link, never listed"
                             },
                             "contentUrl": {
                               "type": "string",

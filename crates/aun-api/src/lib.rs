@@ -6,10 +6,13 @@ pub mod client;
 pub mod events;
 pub mod generated;
 pub mod notifications;
+pub mod playlists;
 pub mod queue;
 mod tls;
+mod visibility;
 
 pub use aun_common::{Error, Result};
 pub use client::{ApiClient, ApiConfig, AuthMode, AuthProvider, Body, RawResponse, RequestSpec, RetryPolicy};
 pub use generated::*;
 pub use tls::http_client;
+pub use visibility::Visibility;

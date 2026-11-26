@@ -58,6 +58,7 @@ fn request(file: &str) -> UploadRequest {
         mime_type: "video/mp4".into(),
         channel_id: Some("ch1".into()),
         is_public: Some(true),
+        visibility: None,
         tags: None,
         category: None,
         title_localized: Default::default(),
@@ -271,6 +272,13 @@ async fn uploads_in_chunks_and_completes() {
 
     // The create request carried the session metadata the proxy needs.
     let reqs = server.received_requests().await.unwrap();
+    let initiate = reqs
+        .iter()
+        .find(|r| r.url.path() == "/api/videos/upload/initiate")
+        .unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&initiate.body).unwrap();
+    assert_eq!(body["isPublic"], true);
+    assert!(body.get("visibility").is_none());
     let create = reqs
         .iter()
         .find(|r| r.method.as_str() == "POST" && r.url.path() == "/api/videos/tus")
@@ -306,7 +314,9 @@ async fn resumes_after_restart_without_new_session() {
         let mut slow = cfg();
         slow.bandwidth_bytes_per_sec = Some(400 * KIB as u64);
         let engine = UploadEngine::open(api(&server), &store, "u1", slow).unwrap();
-        let id = engine.enqueue(request(&file)).unwrap();
+        let mut request = request(&file);
+        request.visibility = Some(aun_api::Visibility::Unlisted);
+        let id = engine.enqueue(request).unwrap();
         engine.start();
         for _ in 0..400 {
             if tus.patches.load(Ordering::SeqCst) >= 1 {
@@ -327,14 +337,15 @@ async fn resumes_after_restart_without_new_session() {
     engine.start();
     wait_for(&engine, &id, UploadState::Done).await;
     assert_eq!(*tus.bytes.lock().unwrap(), std::fs::read(&file).unwrap());
-    let heads = server
-        .received_requests()
-        .await
-        .unwrap()
+    let requests = server.received_requests().await.unwrap();
+    assert!(requests.iter().any(|request| request.method.as_str() == "HEAD"));
+    let initiate = requests
         .iter()
-        .filter(|r| r.method.as_str() == "HEAD")
-        .count();
-    assert!(heads >= 1);
+        .find(|r| r.url.path() == "/api/videos/upload/initiate")
+        .unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&initiate.body).unwrap();
+    assert_eq!(body["visibility"], "unlisted");
+    assert!(body.get("isPublic").is_none());
     engine.shutdown();
 }
 
