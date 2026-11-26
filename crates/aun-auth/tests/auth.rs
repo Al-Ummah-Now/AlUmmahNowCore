@@ -190,7 +190,7 @@ async fn silent_reauthorize_after_rejected_refresh() {
         .await
         .unwrap_err();
     assert!(
-        matches!(&e, Error::Unauthorized(d) if d.starts_with("login_required")),
+        matches!(&e, Error::Unauthorized { message, .. } if message.starts_with("login_required")),
         "{e:?}"
     );
     assert!(m.active_account().unwrap().unwrap().needs_reauth);
@@ -263,12 +263,12 @@ async fn login_rejects_wrong_state_error_and_foreign_redirect() {
         .complete_login("alummahnow://auth/callback?code=x&state=forged")
         .await
         .unwrap_err();
-    assert!(matches!(e, Error::InvalidInput(_)));
+    assert!(matches!(e, Error::InvalidInput { .. }));
     let e = m
         .complete_login(&format!("https://evil.example/cb?code=x&state={}", p.state))
         .await
         .unwrap_err();
-    assert!(matches!(e, Error::InvalidInput(_)), "{e:?}");
+    assert!(matches!(e, Error::InvalidInput { .. }), "{e:?}");
     // The attempt is single-use even after a failure.
     let p = m.begin_login().unwrap();
     let e = m
@@ -542,7 +542,7 @@ async fn device_flow_denied_expired_and_cancelled() {
     let login = m.begin_device_login().await.unwrap();
     assert!(matches!(
         m.complete_device_login(&login).await.unwrap_err(),
-        Error::Unauthorized(_)
+        Error::Unauthorized { .. }
     ));
 
     Mock::given(path("/token"))
@@ -597,15 +597,18 @@ async fn refuses_cleartext_endpoints() {
     cfg.token_endpoint = "http://auth.example.com/token".into();
     cfg.device_authorization_endpoint = Some("http://auth.example.com/device".into());
     let c = OAuthClient::new(cfg, http());
-    assert!(matches!(c.authorize(&[]), Err(Error::InvalidInput(_))));
-    assert!(matches!(c.refresh("rt", 0).await, Err(Error::InvalidInput(_))));
+    assert!(matches!(c.authorize(&[]), Err(Error::InvalidInput { .. })));
+    assert!(matches!(
+        c.refresh("rt", 0).await,
+        Err(Error::InvalidInput { .. })
+    ));
     assert!(matches!(
         c.device_authorization().await,
-        Err(Error::InvalidInput(_))
+        Err(Error::InvalidInput { .. })
     ));
     assert!(matches!(
         OAuthConfig::discover(&http(), "http://auth.example.com", "c", "x://cb", vec![]).await,
-        Err(Error::InvalidInput(_))
+        Err(Error::InvalidInput { .. })
     ));
     assert!(
         server.received_requests().await.unwrap().is_empty(),
@@ -714,7 +717,7 @@ async fn loopback_redirect_is_used_for_authorize_and_the_code_exchange() {
     );
     assert!(matches!(
         m.complete_login(&wrong_port).await,
-        Err(Error::InvalidInput(_))
+        Err(Error::InvalidInput { .. })
     ));
     let info = m
         .complete_login(&format!("{loopback}?code=c&state={}", p.state))
@@ -724,6 +727,6 @@ async fn loopback_redirect_is_used_for_authorize_and_the_code_exchange() {
     // Only loopback or the registered redirect may be used.
     assert!(matches!(
         m.begin_login_with_redirect(LoginPrompt::Default, Some("https://evil.example/cb")),
-        Err(Error::InvalidInput(_))
+        Err(Error::InvalidInput { .. })
     ));
 }

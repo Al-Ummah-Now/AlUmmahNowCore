@@ -349,7 +349,7 @@ impl ModelManager {
         self.catalog
             .iter()
             .find(|d| d.id == id)
-            .ok_or_else(|| Error::NotFound(format!("model {id}")))
+            .ok_or_else(|| Error::not_found(format!("model {id}")))
     }
 
     fn final_path(&self, d: &ModelDescriptor) -> PathBuf {
@@ -399,7 +399,7 @@ impl ModelManager {
     pub fn delete(&self, id: &str) -> Result<()> {
         let d = self.descriptor(id)?;
         if self.is_active(id) {
-            return Err(Error::Conflict(format!("model {id} is downloading")));
+            return Err(Error::conflict(format!("model {id} is downloading")));
         }
         remove_if_present(&self.final_path(d))?;
         remove_if_present(&self.part_path(d))
@@ -441,7 +441,7 @@ impl ModelManager {
             .unwrap_or_else(PoisonError::into_inner)
             .insert(id.to_owned())
         {
-            return Err(Error::Conflict(format!("model {id} is already downloading")));
+            return Err(Error::conflict(format!("model {id} is already downloading")));
         }
         let _guard = ActiveGuard {
             active: &self.active,

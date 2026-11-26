@@ -30,6 +30,7 @@ pub fn selftest_throw(kind: String) -> Result<(), AunError> {
             detail: "connection reset".into(),
         },
         "unauthorized" => AunError::Unauthorized {
+            code: None,
             detail: "sign in again".into(),
         },
         "rate_limited" => AunError::RateLimited {

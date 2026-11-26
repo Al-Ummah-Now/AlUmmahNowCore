@@ -173,7 +173,7 @@ pub fn plan_encode(request: &EncodeRequest, info: &MediaInfo, caps: &BackendCapa
     }
 
     if mux_inputs.is_empty() {
-        return Err(Error::InvalidInput(format!(
+        return Err(Error::invalid_input(format!(
             "{} has no track this preset can encode",
             request.source
         )));
@@ -189,7 +189,7 @@ pub fn plan_encode(request: &EncodeRequest, info: &MediaInfo, caps: &BackendCapa
 
     if let Some(thumbs) = &request.thumbnails {
         if source_video.is_none() {
-            return Err(Error::InvalidInput("thumbnails need a video track".to_owned()));
+            return Err(Error::invalid_input("thumbnails need a video track".to_owned()));
         }
         nodes.push(JobNode::new("t_decode", &[], decode_video()));
         nodes.push(JobNode::new(
@@ -383,7 +383,7 @@ mod tests {
     fn nothing_to_encode_is_invalid() {
         let source = info(vec![track(TrackKind::Video)]);
         let err = plan_encode(&request(PresetKind::AudioOnly), &source, &caps(None)).unwrap_err();
-        assert!(matches!(err, Error::InvalidInput(_)), "{err}");
+        assert!(matches!(err, Error::InvalidInput { .. }), "{err}");
     }
 
     #[test]

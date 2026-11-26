@@ -68,7 +68,7 @@ impl UploadHandoffBuilder {
             .iter()
             .find(|p| !is_image(p))
             .cloned()
-            .ok_or_else(|| Error::InvalidInput(format!("job {} produced no media file", outcome.job_id)))?;
+            .ok_or_else(|| Error::invalid_input(format!("job {} produced no media file", outcome.job_id)))?;
         Ok(Self {
             handoff: UploadHandoff {
                 output_path,
@@ -103,7 +103,7 @@ impl UploadHandoffBuilder {
     ) -> Result<Self> {
         let locale = &transcript.language;
         if locale.is_empty() || !locale.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
-            return Err(Error::InvalidInput(format!(
+            return Err(Error::invalid_input(format!(
                 "transcript has an unusable language {locale:?}"
             )));
         }
@@ -153,7 +153,7 @@ impl UploadHandoffBuilder {
     /// Finishes the record: requires a title, orders chapters and rejects duplicate start times.
     pub fn build(mut self) -> Result<UploadHandoff> {
         if self.handoff.title.values().all(|t| t.trim().is_empty()) {
-            return Err(Error::InvalidInput(
+            return Err(Error::invalid_input(
                 "an upload needs a title in at least one locale".to_owned(),
             ));
         }
@@ -164,7 +164,7 @@ impl UploadHandoffBuilder {
             .windows(2)
             .any(|w| w[0].start_ms == w[1].start_ms)
         {
-            return Err(Error::InvalidInput(
+            return Err(Error::invalid_input(
                 "two chapters start at the same time".to_owned(),
             ));
         }

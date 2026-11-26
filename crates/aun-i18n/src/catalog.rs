@@ -122,7 +122,7 @@ impl I18n {
 
     pub fn with_clock(options: I18nOptions, clock: Arc<dyn Clock>) -> Result<Arc<Self>> {
         let locale = normalize_locale(&options.locale)
-            .ok_or_else(|| Error::InvalidInput(format!("bad locale {:?}", options.locale)))?;
+            .ok_or_else(|| Error::invalid_input(format!("bad locale {:?}", options.locale)))?;
         let mut fallback = normalize_locale(&options.fallback_locale).unwrap_or_else(|| "en".into());
         let cache = options.cache_dir.as_ref().map(DiskCache::new);
         let mut remote = HashMap::new();
@@ -214,9 +214,9 @@ impl I18n {
     /// bundles take priority; built-ins make the first launch work offline.
     pub fn add_builtin_bundle(&self, locale: &str, version: &str, translations_json: &str) -> Result<()> {
         let locale =
-            normalize_locale(locale).ok_or_else(|| Error::InvalidInput(format!("bad locale {locale:?}")))?;
+            normalize_locale(locale).ok_or_else(|| Error::invalid_input(format!("bad locale {locale:?}")))?;
         let value: serde_json::Value = serde_json::from_str(translations_json)
-            .map_err(|e| Error::InvalidInput(format!("bundle JSON for {locale}: {e}")))?;
+            .map_err(|e| Error::invalid_input(format!("bundle JSON for {locale}: {e}")))?;
         let bundle = Bundle::from_json(&locale, version, &value);
         self.write().builtin.insert(locale, bundle);
         Ok(())
@@ -226,7 +226,7 @@ impl I18n {
     /// the change; when `needs_sync` is set, call [`I18n::sync`] to fetch the missing bundle.
     pub fn set_locale(&self, locale: &str) -> Result<LocaleChange> {
         let norm =
-            normalize_locale(locale).ok_or_else(|| Error::InvalidInput(format!("bad locale {locale:?}")))?;
+            normalize_locale(locale).ok_or_else(|| Error::invalid_input(format!("bad locale {locale:?}")))?;
         let change = {
             let mut st = self.write();
             st.locale = norm.clone();

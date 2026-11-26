@@ -25,6 +25,7 @@ fn json<T: serde::Serialize>(v: &T) -> Result<String, AunError> {
 
 fn from_json<T: serde::de::DeserializeOwned>(s: &str, what: &str) -> Result<T, AunError> {
     serde_json::from_str(s).map_err(|e| AunError::InvalidInput {
+        code: None,
         detail: format!("{what}: {e}"),
     })
 }

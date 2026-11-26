@@ -83,7 +83,7 @@ async fn maps_config_metadata_and_translations() {
     );
     assert_eq!(
         src.translations("xx", None).await.unwrap_err(),
-        Error::InvalidInput("Invalid locale".into())
+        Error::invalid_input("Invalid locale".into())
     );
 }
 

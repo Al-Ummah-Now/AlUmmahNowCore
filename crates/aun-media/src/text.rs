@@ -81,23 +81,23 @@ pub struct ShapedText {
 /// Shapes `text` with one font at `size` (any unit; output uses the same one).
 pub fn shape_text(text: &str, font_data: &[u8], size: f64, options: &ShapeOptions) -> Result<ShapedText> {
     if !(size > 0.0 && size.is_finite()) {
-        return Err(Error::InvalidInput("font size must be positive".to_owned()));
+        return Err(Error::invalid_input("font size must be positive".to_owned()));
     }
     if let Some(width) = options.max_width
         && !(width > 0.0 && width.is_finite())
     {
-        return Err(Error::InvalidInput("max width must be positive".to_owned()));
+        return Err(Error::invalid_input("max width must be positive".to_owned()));
     }
     if text.len() > MAX_TEXT_BYTES {
-        return Err(Error::InvalidInput(format!(
+        return Err(Error::invalid_input(format!(
             "text is longer than {MAX_TEXT_BYTES} bytes"
         )));
     }
-    let font =
-        Font::new(font_data.to_vec(), 0).ok_or_else(|| Error::InvalidInput("cannot read font".to_owned()))?;
+    let font = Font::new(font_data.to_vec(), 0)
+        .ok_or_else(|| Error::invalid_input("cannot read font".to_owned()))?;
     let upem = f64::from(font.units_per_em());
     if upem <= 0.0 {
-        return Err(Error::InvalidInput("font has no units per em".to_owned()));
+        return Err(Error::invalid_input("font has no units per em".to_owned()));
     }
     let shaper = Shaper {
         text,
@@ -106,7 +106,7 @@ pub fn shape_text(text: &str, font_data: &[u8], size: f64, options: &ShapeOption
         language: match &options.language {
             Some(tag) => Some(
                 tag.parse::<Language>()
-                    .map_err(|_| Error::InvalidInput(format!("bad language tag {tag}")))?,
+                    .map_err(|_| Error::invalid_input(format!("bad language tag {tag}")))?,
             ),
             None => None,
         },

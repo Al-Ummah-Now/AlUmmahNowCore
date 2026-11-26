@@ -145,7 +145,7 @@ impl OfflineQueue {
     ) -> Result<Self> {
         let account_id = account_id.into();
         if account_id.is_empty() {
-            return Err(Error::InvalidInput("offline queue needs an account id".into()));
+            return Err(Error::invalid_input("offline queue needs an account id".into()));
         }
         let items = store.load()?;
         Ok(Self {
@@ -212,7 +212,9 @@ impl OfflineQueue {
         let body = match req.body {
             Body::None => None,
             Body::Json(v) => Some(v),
-            Body::Multipart(_) => return Err(Error::InvalidInput("multipart writes can't be queued".into())),
+            Body::Multipart(_) => {
+                return Err(Error::invalid_input("multipart writes can't be queued".into()));
+            }
         };
         let now = self.clock.now_ms();
         let id = new_id(now);
@@ -257,7 +259,7 @@ impl OfflineQueue {
     /// concurrent calls are serialised.
     pub async fn flush(&self, client: &ApiClient) -> Result<FlushReport> {
         if client.account_id().is_some_and(|a| a != self.account_id) {
-            return Err(Error::Unauthorized(
+            return Err(Error::unauthorized(
                 "this API client is signed in as a different account than the queue".into(),
             ));
         }
@@ -287,7 +289,7 @@ impl OfflineQueue {
                     self.store.save(&items)?;
                     report.sent.push(next.id);
                 }
-                Err(e) if e.is_retryable() || matches!(e, Error::Unauthorized(_)) => {
+                Err(e) if e.is_retryable() || matches!(e, Error::Unauthorized { .. }) => {
                     let mut items = self.lock()?;
                     if let Some(item) = items.iter_mut().find(|i| i.id == next.id) {
                         item.attempts += 1;

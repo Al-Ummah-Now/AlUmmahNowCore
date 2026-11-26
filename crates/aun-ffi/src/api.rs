@@ -110,6 +110,7 @@ fn find_op(id: &str) -> Result<&'static OperationInfo, AunError> {
         .iter()
         .find(|o| o.id == id)
         .ok_or_else(|| AunError::InvalidInput {
+            code: None,
             detail: format!("unknown operation {id}"),
         })
 }
@@ -123,11 +124,13 @@ fn fill_path(template: &str, params: &HashMap<String, String>, what: &str) -> Re
             .find('}')
             .map(|e| start + e)
             .ok_or_else(|| AunError::InvalidInput {
+                code: None,
                 detail: format!("bad path template {template}"),
             })?;
         path.push_str(&rest[..start]);
         let name = &rest[start + 1..end];
         let value = params.get(name).ok_or_else(|| AunError::InvalidInput {
+            code: None,
             detail: format!("{what} needs path parameter {name}"),
         })?;
         path.push_str(&aun_api::client::encode_path(value)?);
@@ -152,6 +155,7 @@ fn finish_request(
     req.headers = headers;
     if let Some(b) = body_json {
         let v: serde_json::Value = serde_json::from_str(&b).map_err(|e| AunError::InvalidInput {
+            code: None,
             detail: format!("body is not JSON: {e}"),
         })?;
         req.body = aun_api::Body::Json(v);
@@ -204,6 +208,7 @@ pub struct PathCall {
 pub(crate) fn build_path_request(call: PathCall) -> Result<RequestSpec, AunError> {
     let t = call.path_template.as_str();
     let bad = || AunError::InvalidInput {
+        code: None,
         detail: format!("path must be an /api/ path without query or dot segments: {t:?}"),
     };
     if !t.starts_with("/api/") || t.contains(['?', '#', '\\', '%']) || t.contains("//") {
@@ -222,6 +227,7 @@ pub(crate) fn build_path_request(call: PathCall) -> Result<RequestSpec, AunError
         "DELETE" => reqwest::Method::DELETE,
         other => {
             return Err(AunError::InvalidInput {
+                code: None,
                 detail: format!("unsupported method {other}"),
             });
         }
@@ -233,6 +239,7 @@ pub(crate) fn build_path_request(call: PathCall) -> Result<RequestSpec, AunError
         )
     }) {
         return Err(AunError::InvalidInput {
+            code: None,
             detail: format!("header {h} is set by the client"),
         });
     }

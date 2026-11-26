@@ -65,10 +65,10 @@ pub struct WaveformBuilder {
 impl WaveformBuilder {
     pub fn new(config: WaveformConfig, sample_rate: u32, channels: u32) -> Result<Self> {
         if sample_rate == 0 || channels == 0 {
-            return Err(Error::InvalidInput("empty audio format".to_owned()));
+            return Err(Error::invalid_input("empty audio format".to_owned()));
         }
         if config.samples_per_bucket == 0 || config.levels == 0 || config.level_factor < 2 {
-            return Err(Error::InvalidInput(
+            return Err(Error::invalid_input(
                 "waveform needs a bucket size, a level and a factor of at least 2".to_owned(),
             ));
         }
@@ -169,7 +169,7 @@ pub fn generate_waveform(
     })?;
     builder
         .map(WaveformBuilder::finish)
-        .ok_or_else(|| Error::InvalidInput("no audio decoded".to_owned()))
+        .ok_or_else(|| Error::invalid_input("no audio decoded".to_owned()))
 }
 
 #[cfg(test)]

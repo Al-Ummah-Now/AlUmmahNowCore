@@ -58,7 +58,7 @@ pub struct SilenceDetector {
 impl SilenceDetector {
     pub fn new(config: SilenceConfig, sample_rate: u32, channels: u32) -> Result<Self> {
         if sample_rate == 0 || channels == 0 {
-            return Err(Error::InvalidInput("empty audio format".to_owned()));
+            return Err(Error::invalid_input("empty audio format".to_owned()));
         }
         let channels = channels as usize;
         let window_frames = (sample_rate as usize / 100).max(1);
@@ -140,7 +140,7 @@ pub fn detect_silence(
     })?;
     detector
         .map(SilenceDetector::finish)
-        .ok_or_else(|| Error::InvalidInput("no audio decoded".to_owned()))
+        .ok_or_else(|| Error::invalid_input("no audio decoded".to_owned()))
 }
 
 #[cfg(test)]

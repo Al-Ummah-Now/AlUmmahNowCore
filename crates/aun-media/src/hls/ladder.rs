@@ -89,7 +89,7 @@ pub fn display_size(width: u32, height: u32, rotation: i32) -> (u32, u32) {
 pub fn ladder(width: u32, height: u32, rotation: i32) -> Result<Vec<HlsRung>> {
     let (width, height) = display_size(width, height, rotation);
     if width == 0 || height == 0 {
-        return Err(Error::InvalidInput("source has no video size".to_owned()));
+        return Err(Error::invalid_input("source has no video size".to_owned()));
     }
     let portrait = height > width;
     let short = width.min(height);

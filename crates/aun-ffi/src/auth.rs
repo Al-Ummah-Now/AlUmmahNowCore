@@ -301,6 +301,17 @@ impl AuthManager {
         Ok(self.inner.access_token().await?)
     }
 
+    /// A valid access token for the given account, even when another account is active.
+    /// Set `force_refresh` to refresh after a 401. Returns `None` if the account is missing or
+    /// needs sign-in again.
+    pub async fn token_for_account(
+        &self,
+        user_id: String,
+        force_refresh: bool,
+    ) -> Result<Option<String>, AunError> {
+        Ok(self.inner.token_for_account(&user_id, force_refresh).await?)
+    }
+
     /// An API client bound to one account (`user_id`, or the active account when `None`): it
     /// keeps acting as that account after an account switch, and refreshes on 401. Create a new
     /// client after switching accounts.
@@ -316,6 +327,7 @@ impl AuthManager {
                     .active_account()?
                     .map(|a| a.user_id)
                     .ok_or_else(|| AunError::Unauthorized {
+                        code: None,
                         detail: "no signed-in account".into(),
                     })?
             }
@@ -329,5 +341,92 @@ impl AuthManager {
                 .with_auth(Arc::new(tokens))
                 .with_account(user_id),
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aun_auth::accounts::StoredAccount;
+    use aun_common::platform::MemorySecureStorage;
+    use wiremock::matchers::{body_string_contains, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn token_for_account_keeps_the_requested_account_across_refresh() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .and(body_string_contains("grant_type=refresh_token"))
+            .and(body_string_contains("refresh_token=refresh-pinned"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "refreshed-pinned", "token_type": "bearer", "expires_in": 3600
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let storage = Arc::new(MemorySecureStorage::new());
+        let store = aun_auth::AccountStore::new(storage.clone());
+        for user_id in ["active", "pinned"] {
+            store
+                .put(&StoredAccount {
+                    info: aun_auth::AccountInfo {
+                        user_id: user_id.into(),
+                        ..Default::default()
+                    },
+                    tokens: aun_auth::TokenSet {
+                        access_token: format!("access-{user_id}"),
+                        refresh_token: Some(format!("refresh-{user_id}")),
+                        id_token: None,
+                        expires_at_ms: None,
+                        scope: None,
+                    },
+                })
+                .unwrap();
+        }
+        store.set_active(Some("active")).unwrap();
+        let issuer = server.uri();
+        let oauth = aun_auth::OAuthClient::new(
+            aun_auth::OAuthConfig {
+                authorization_endpoint: format!("{issuer}/authorize"),
+                token_endpoint: format!("{issuer}/token"),
+                device_authorization_endpoint: None,
+                revocation_endpoint: None,
+                issuer,
+                client_id: "studio".into(),
+                redirect_uri: "alummahnow://auth/callback".into(),
+                scopes: vec![],
+                install_id: None,
+            },
+            http().unwrap(),
+        );
+        let auth = AuthManager {
+            inner: Arc::new(aun_auth::AuthManager::new(oauth, storage)),
+        };
+
+        assert_eq!(
+            auth.token_for_account("missing".into(), true).await.unwrap(),
+            None
+        );
+        assert_eq!(
+            auth.token_for_account("pinned".into(), false)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("access-pinned")
+        );
+        assert_eq!(
+            auth.token_for_account("pinned".into(), true)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("refreshed-pinned")
+        );
+        assert_eq!(
+            auth.access_token().await.unwrap().as_deref(),
+            Some("access-active")
+        );
+        assert_eq!(auth.active_account().unwrap().unwrap().user_id, "active");
     }
 }

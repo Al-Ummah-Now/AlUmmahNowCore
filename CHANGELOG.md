@@ -7,6 +7,23 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+### Added
+
+- `AuthManager.token_for_account(user_id, force_refresh)` is available through UniFFI for clients
+  that need a token for a specific signed-in account.
+
+### Fixed
+
+- Matching channel and playlist auto-download rules share their newest eligible episodes.
+- Uploads keep the server's failure code across restarts and clear failure metadata when retried.
+
+### Breaking
+
+- `Unauthorized`, `Forbidden`, `NotFound`, `Conflict` and `InvalidInput` errors now carry an
+  optional server `code` in Rust and UniFFI. Update native patterns and constructors that bind
+  the associated fields.
+- `UploadInfo` adds optional `lastErrorKind` and `lastErrorCode` fields.
+
 ## [0.4.0-rc.7] - 2026-11-24
 
 ### Breaking

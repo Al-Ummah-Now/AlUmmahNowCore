@@ -142,13 +142,13 @@ impl AuthManager {
                     .find(|(k, _)| k == "state")
                     .map(|(_, v)| v.into_owned())
             })
-            .ok_or_else(|| Error::InvalidInput("redirect has no state".into()))?;
+            .ok_or_else(|| Error::invalid_input("redirect has no state".into()))?;
         let pending = self
             .pending
             .lock()
             .map_err(|_| Error::Internal("poisoned".into()))?
             .remove(&state)
-            .ok_or_else(|| Error::InvalidInput("unknown or already used sign-in attempt".into()))?;
+            .ok_or_else(|| Error::invalid_input("unknown or already used sign-in attempt".into()))?;
         let tokens = self
             .oauth
             .exchange_code(&pending, redirect_url, self.clock.now_ms())
@@ -176,7 +176,7 @@ impl AuthManager {
         let mut info = identity_from_tokens(&tokens)?;
         let existing = self.store.get(&info.user_id)?;
         if existing.is_none() && self.store.list()?.len() >= MAX_ACCOUNTS {
-            return Err(Error::InvalidInput(format!(
+            return Err(Error::invalid_input(format!(
                 "at most {MAX_ACCOUNTS} accounts per device"
             )));
         }
@@ -211,7 +211,7 @@ impl AuthManager {
         let mut a = self
             .store
             .get(user_id)?
-            .ok_or_else(|| Error::NotFound(format!("account {user_id}")))?;
+            .ok_or_else(|| Error::not_found(format!("account {user_id}")))?;
         a.info.last_used_at_ms = self.clock.now_ms();
         self.store.put(&a)?;
         self.store.set_active(Some(user_id))?;
@@ -226,11 +226,11 @@ impl AuthManager {
         let id = self
             .store
             .active()?
-            .ok_or_else(|| Error::Unauthorized("no active account".into()))?;
+            .ok_or_else(|| Error::unauthorized("no active account".into()))?;
         let mut a = self
             .store
             .get(&id)?
-            .ok_or_else(|| Error::NotFound(format!("account {id}")))?;
+            .ok_or_else(|| Error::not_found(format!("account {id}")))?;
         a.info.active_channel_id = channel_id;
         self.store.put(&a)
     }
@@ -341,7 +341,7 @@ impl AuthManager {
                 }
                 Ok(Some(a.tokens.access_token))
             }
-            Err(Error::Unauthorized(_)) => self.mark_reauth(a).map(|_| None),
+            Err(Error::Unauthorized { .. }) => self.mark_reauth(a).map(|_| None),
             Err(e) => Err(e),
         }
     }

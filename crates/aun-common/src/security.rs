@@ -7,7 +7,7 @@ use crate::{Error, Result};
 /// uploads are never sent in cleartext.
 pub fn ensure_secure_url(url: &str) -> Result<()> {
     let refuse = || {
-        Error::InvalidInput(format!(
+        Error::invalid_input(format!(
             "refusing insecure URL {url:?}: use https (http is only allowed for localhost)"
         ))
     };

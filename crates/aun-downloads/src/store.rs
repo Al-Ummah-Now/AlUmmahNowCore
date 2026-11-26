@@ -583,7 +583,7 @@ impl DownloadStore {
     pub fn open(path: impl Into<PathBuf>) -> Result<Self> {
         let path = path.into();
         let lock = StoreLock::acquire(lock_path(&path)).map_err(|e| match e {
-            aun_common::Error::Conflict(msg) => DownloadError::Conflict(msg),
+            aun_common::Error::Conflict { message, .. } => DownloadError::Conflict(message),
             other => DownloadError::Storage(other.to_string()),
         })?;
 

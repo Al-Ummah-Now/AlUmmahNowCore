@@ -221,7 +221,7 @@ pub struct JobPlan {
 }
 
 fn invalid(detail: impl Into<String>) -> Error {
-    Error::InvalidInput(format!("job plan: {}", detail.into()))
+    Error::invalid_input(format!("job plan: {}", detail.into()))
 }
 
 fn valid_id(id: &str) -> bool {

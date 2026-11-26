@@ -37,7 +37,7 @@ pub struct HlsPackage {
 }
 
 fn invalid(msg: impl Into<String>) -> Error {
-    Error::InvalidInput(format!("mp4: {}", msg.into()))
+    Error::invalid_input(format!("mp4: {}", msg.into()))
 }
 
 // ---- reading -------------------------------------------------------------------------------------
@@ -557,7 +557,7 @@ pub fn package_mp4(
     cancel: &CancellationToken,
 ) -> Result<HlsPackage> {
     if segment_seconds == 0 {
-        return Err(Error::InvalidInput("segment length must be positive".to_owned()));
+        return Err(Error::invalid_input("segment length must be positive".to_owned()));
     }
     let mut file = File::open(input).map_err(|e| crate::audio::open_error(input, e))?;
     let moov = read_moov(&mut file)?;
@@ -703,7 +703,7 @@ pub fn renditions_files(root: &Path, rungs: &[String]) -> Result<Vec<PackagedFil
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
             || rung.is_empty()
         {
-            return Err(Error::InvalidInput(format!("rung name {rung}")));
+            return Err(Error::invalid_input(format!("rung name {rung}")));
         }
         let dir = root.join(rung);
         let mut names: Vec<(String, u64)> = Vec::new();
@@ -717,7 +717,7 @@ pub fn renditions_files(root: &Path, rungs: &[String]) -> Result<Vec<PackagedFil
         }
         names.sort_by(|a, b| (a.0 != "index.m3u8", &a.0).cmp(&(b.0 != "index.m3u8", &b.0)));
         if names.first().is_none_or(|(n, _)| n != "index.m3u8") {
-            return Err(Error::InvalidInput(format!("{rung} has no index.m3u8")));
+            return Err(Error::invalid_input(format!("{rung} has no index.m3u8")));
         }
         out.extend(names.into_iter().map(|(name, bytes)| PackagedFile {
             path: format!("{rung}/{name}"),

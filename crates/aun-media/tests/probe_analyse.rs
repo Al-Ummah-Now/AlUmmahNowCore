@@ -224,7 +224,7 @@ fn malformed_mp4_is_an_error_not_a_panic() {
     }
     let header_only = mp4::boxed(b"ftyp", b"isom\0\0\0\0");
     std::fs::write(&path, header_only).unwrap();
-    assert!(matches!(probe_file(&path), Err(Error::InvalidInput(_))));
+    assert!(matches!(probe_file(&path), Err(Error::InvalidInput { .. })));
 }
 
 #[test]
@@ -235,6 +235,6 @@ fn keyframes_need_mp4() {
     assert!(matches!(probe_keyframes(&path), Err(Error::Unsupported(_))));
     assert!(matches!(
         probe_file(Path::new("/nonexistent.mp4")),
-        Err(Error::NotFound(_))
+        Err(Error::NotFound { .. })
     ));
 }

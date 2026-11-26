@@ -109,7 +109,7 @@ impl SyncTransport for FakeServer {
     async fn push_progress(&self, video_id: &str, position_ms: u64, duration_ms: u64) -> Result<()> {
         self.up()?;
         if self.reject_video.lock().unwrap().as_deref() == Some(video_id) {
-            return Err(Error::NotFound("video deleted".into()));
+            return Err(Error::not_found("video deleted".into()));
         }
         self.calls
             .lock()
@@ -526,7 +526,7 @@ async fn a_second_open_of_the_same_store_is_refused_until_the_first_closes() {
         })
         .collect();
     for h in opens {
-        assert!(matches!(h.join().unwrap(), Err(Error::Conflict(_))));
+        assert!(matches!(h.join().unwrap(), Err(Error::Conflict { .. })));
     }
 
     // Different accounts (different store files) are independent.
@@ -574,6 +574,6 @@ async fn racing_opens_of_one_store_let_exactly_one_in() {
     assert!(
         results
             .iter()
-            .all(|r| r.is_ok() || matches!(r, Err(Error::Conflict(_))))
+            .all(|r| r.is_ok() || matches!(r, Err(Error::Conflict { .. })))
     );
 }

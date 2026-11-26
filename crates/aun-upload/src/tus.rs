@@ -95,10 +95,10 @@ impl TusClient {
         ensure_secure_url(url)?;
         if let TusTarget::Proxy { endpoint } = target {
             let parse = |u: &str| {
-                reqwest::Url::parse(u.trim()).map_err(|_| Error::InvalidInput(format!("bad TUS URL {u:?}")))
+                reqwest::Url::parse(u.trim()).map_err(|_| Error::invalid_input(format!("bad TUS URL {u:?}")))
             };
             if parse(endpoint)?.origin() != parse(url)?.origin() {
-                return Err(Error::InvalidInput(format!(
+                return Err(Error::invalid_input(format!(
                     "refusing TUS upload URL {url:?}: not on the endpoint's origin"
                 )));
             }
@@ -113,16 +113,16 @@ impl TusClient {
             TusTarget::Proxy { .. } => {
                 if let Some(t) = bearer {
                     let v = HeaderValue::from_str(&format!("Bearer {t}"))
-                        .map_err(|_| Error::InvalidInput("token has invalid characters".into()))?;
+                        .map_err(|_| Error::invalid_input("token has invalid characters".into()))?;
                     h.insert(reqwest::header::AUTHORIZATION, v);
                 }
             }
             TusTarget::Direct { headers, .. } => {
                 for (k, v) in headers {
                     let name = HeaderName::from_bytes(k.as_bytes())
-                        .map_err(|_| Error::InvalidInput(format!("bad header {k}")))?;
+                        .map_err(|_| Error::invalid_input(format!("bad header {k}")))?;
                     let value = HeaderValue::from_str(v)
-                        .map_err(|_| Error::InvalidInput(format!("bad header {k}")))?;
+                        .map_err(|_| Error::invalid_input(format!("bad header {k}")))?;
                     h.insert(name, value);
                 }
             }
@@ -164,7 +164,7 @@ impl TusClient {
                 code: None,
                 message: "TUS create returned no Location".into(),
             })?;
-        let base = reqwest::Url::parse(target.endpoint()).map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let base = reqwest::Url::parse(target.endpoint()).map_err(|e| Error::invalid_input(e.to_string()))?;
         let abs = base
             .join(loc)
             .map_err(|e| Error::Internal(format!("bad Location {loc}: {e}")))?;
@@ -221,7 +221,7 @@ impl TusClient {
             .map_err(net)?;
         let status = resp.status();
         if status.as_u16() == 409 {
-            return Err(Error::Conflict("TUS offset mismatch".into()));
+            return Err(Error::conflict("TUS offset mismatch".into()));
         }
         if !status.is_success() {
             return Err(status_error(status, "PATCH", retry_after(resp.headers())));
@@ -294,7 +294,7 @@ mod tests {
             .create(&proxy("http://uploads.example.com/tus"), Some("t"), 10, &meta)
             .await
             .unwrap_err();
-        assert!(matches!(err, Error::InvalidInput(_)), "{err:?}");
+        assert!(matches!(err, Error::InvalidInput { .. }), "{err:?}");
 
         let server = MockServer::start().await;
         Mock::given(method("POST"))
@@ -307,7 +307,7 @@ mod tests {
             .create(&proxy(&format!("{}/tus", server.uri())), Some("t"), 10, &meta)
             .await
             .unwrap_err();
-        assert!(matches!(err, Error::InvalidInput(_)), "{err:?}");
+        assert!(matches!(err, Error::InvalidInput { .. }), "{err:?}");
     }
 
     #[test]

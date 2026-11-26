@@ -39,14 +39,14 @@ pub(crate) fn open_format(path: &Path) -> Result<Box<dyn FormatReader>> {
             SymphoniaError::Unsupported(_) => {
                 Error::Unsupported(format!("unrecognised audio format: {}", path.display()))
             }
-            other => Error::InvalidInput(format!("cannot read {}: {other}", path.display())),
+            other => Error::invalid_input(format!("cannot read {}: {other}", path.display())),
         })?;
     Ok(probed.format)
 }
 
 pub(crate) fn open_error(path: &Path, e: std::io::Error) -> Error {
     if e.kind() == ErrorKind::NotFound {
-        Error::NotFound(path.display().to_string())
+        Error::not_found(path.display().to_string())
     } else {
         Error::Storage(format!("{}: {e}", path.display()))
     }
@@ -68,7 +68,7 @@ pub fn decode_audio(
         .tracks()
         .iter()
         .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
-        .ok_or_else(|| Error::InvalidInput(format!("no audio track in {}", path.display())))?;
+        .ok_or_else(|| Error::invalid_input(format!("no audio track in {}", path.display())))?;
     let track_id = track.id;
     let mut decoder = symphonia::default::get_codecs()
         .make(&track.codec_params, &DecoderOptions::default())
@@ -84,7 +84,7 @@ pub fn decode_audio(
             Ok(p) => p,
             Err(SymphoniaError::IoError(e)) if e.kind() == ErrorKind::UnexpectedEof => break,
             Err(SymphoniaError::ResetRequired) => break,
-            Err(e) => return Err(Error::InvalidInput(format!("demux failed: {e}"))),
+            Err(e) => return Err(Error::invalid_input(format!("demux failed: {e}"))),
         };
         if packet.track_id() != track_id {
             continue;
@@ -92,7 +92,7 @@ pub fn decode_audio(
         let decoded = match decoder.decode(&packet) {
             Ok(d) => d,
             Err(SymphoniaError::DecodeError(_)) | Err(SymphoniaError::IoError(_)) => continue,
-            Err(e) => return Err(Error::InvalidInput(format!("decode failed: {e}"))),
+            Err(e) => return Err(Error::invalid_input(format!("decode failed: {e}"))),
         };
         let spec = *decoded.spec();
         let current = AudioFormat {
@@ -114,20 +114,20 @@ pub fn decode_audio(
         buf.copy_interleaved_ref(decoded);
         on_block(current, buf.samples())?;
     }
-    detected.ok_or_else(|| Error::InvalidInput(format!("no audio decoded from {}", path.display())))
+    detected.ok_or_else(|| Error::invalid_input(format!("no audio decoded from {}", path.display())))
 }
 
 /// Writes interleaved samples as 16-bit PCM WAV. Used by the software backend and the test corpus.
 pub fn write_wav_pcm16(path: &Path, format: AudioFormat, samples: &[f32]) -> Result<()> {
     if format.channels == 0 || format.sample_rate == 0 {
-        return Err(Error::InvalidInput("empty audio format".to_owned()));
+        return Err(Error::invalid_input("empty audio format".to_owned()));
     }
     let data_len = samples
         .len()
         .checked_mul(2)
         .and_then(|n| u32::try_from(n).ok())
         .filter(|n| *n <= u32::MAX - 36)
-        .ok_or_else(|| Error::InvalidInput("audio too long for WAV".to_owned()))?;
+        .ok_or_else(|| Error::invalid_input("audio too long for WAV".to_owned()))?;
     let mut out = BufWriter::new(File::create(path).map_err(|e| open_error(path, e))?);
     let block_align = format.channels * 2;
     out.write_all(b"RIFF")?;
@@ -186,7 +186,7 @@ mod tests {
             &mut |_, _| Ok(()),
         )
         .unwrap_err();
-        assert!(matches!(err, Error::NotFound(_)));
+        assert!(matches!(err, Error::NotFound { .. }));
     }
 
     #[test]
@@ -210,6 +210,6 @@ mod tests {
         let path = dir.path().join("a.bin");
         std::fs::write(&path, b"this is not audio at all").unwrap();
         let err = decode_audio(&path, &CancellationToken::new(), &mut |_, _| Ok(())).unwrap_err();
-        assert!(matches!(err, Error::Unsupported(_) | Error::InvalidInput(_)));
+        assert!(matches!(err, Error::Unsupported(_) | Error::InvalidInput { .. }));
     }
 }

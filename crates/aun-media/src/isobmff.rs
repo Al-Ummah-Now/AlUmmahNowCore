@@ -115,7 +115,7 @@ pub(crate) fn parse_file(path: &Path) -> Result<Movie> {
     };
     parser.walk(0, size, 0, Scope::Root)?;
     if parser.movie.timescale == 0 && parser.movie.tracks.is_empty() {
-        return Err(Error::InvalidInput(format!("no moov box in {}", path.display())));
+        return Err(Error::invalid_input(format!("no moov box in {}", path.display())));
     }
     Ok(parser.movie)
 }
@@ -136,7 +136,7 @@ struct Parser {
 }
 
 fn malformed(what: &str) -> Error {
-    Error::InvalidInput(format!("malformed MP4: {what}"))
+    Error::invalid_input(format!("malformed MP4: {what}"))
 }
 
 impl Parser {

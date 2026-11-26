@@ -158,7 +158,7 @@ impl EncodeBackend for SoftwareBackend {
             .stage
             .nodes
             .last()
-            .ok_or_else(|| Error::InvalidInput("empty stage".to_owned()))?;
+            .ok_or_else(|| Error::invalid_input("empty stage".to_owned()))?;
         let output = Path::new(&task.output_path);
         match &last.op {
             NodeOp::EncodeAudio {
@@ -267,7 +267,7 @@ fn lone_input(node: &JobNode) -> Result<&str> {
     node.inputs
         .first()
         .map(String::as_str)
-        .ok_or_else(|| Error::InvalidInput(format!("{} has no input", node.id)))
+        .ok_or_else(|| Error::invalid_input(format!("{} has no input", node.id)))
 }
 
 fn clip_range(start: Option<u64>, end: Option<u64>, duration: u64) -> (u64, u64) {
@@ -409,7 +409,7 @@ impl SoftwareBackend {
                 let format = parts
                     .first()
                     .map(|p| p.format)
-                    .ok_or_else(|| Error::InvalidInput(format!("{id} has no inputs")))?;
+                    .ok_or_else(|| Error::invalid_input(format!("{id} has no inputs")))?;
                 let parts = parts.into_iter().map(|p| convert(p, format));
                 let mut samples: Vec<f32> = Vec::new();
                 if matches!(node.op, NodeOp::Concat) {
@@ -455,7 +455,7 @@ impl SoftwareBackend {
             samples.extend_from_slice(block);
             Ok(())
         })?;
-        let format = format.ok_or_else(|| Error::InvalidInput("no audio decoded".to_owned()))?;
+        let format = format.ok_or_else(|| Error::invalid_input("no audio decoded".to_owned()))?;
         let channels = format.channels as usize;
         let duration = (samples.len() / channels) as u64 * 1000 / u64::from(format.sample_rate);
         let (start, end) = clip_range(start_ms, end_ms, duration);
@@ -543,7 +543,7 @@ impl SoftwareBackend {
                     total += meta.duration_ms;
                     first.get_or_insert(meta);
                 }
-                let meta = first.ok_or_else(|| Error::InvalidInput(format!("{id} has no inputs")))?;
+                let meta = first.ok_or_else(|| Error::invalid_input(format!("{id} has no inputs")))?;
                 let overlap = match &node.op {
                     NodeOp::Transition { duration_ms, .. } => *duration_ms,
                     _ => 0,
@@ -609,7 +609,7 @@ impl SoftwareBackend {
             .tracks
             .iter()
             .position(|t| t.kind == kind)
-            .ok_or_else(|| Error::InvalidInput(format!("no {kind:?} track in {source}")))?;
+            .ok_or_else(|| Error::invalid_input(format!("no {kind:?} track in {source}")))?;
         let (mut track, payload) = refcontainer::read_payload(path, index)?;
         let (start, end) = clip_range(start_ms, end_ms, track.duration_ms);
         let byte_at = |ms: u64| match kind {
@@ -640,7 +640,7 @@ impl SoftwareBackend {
                 None => merged = Some((track, payload)),
                 Some((first, bytes)) => {
                     if first.codec != track.codec {
-                        return Err(Error::InvalidInput(
+                        return Err(Error::invalid_input(
                             "cannot concatenate different codecs".to_owned(),
                         ));
                     }
@@ -652,7 +652,7 @@ impl SoftwareBackend {
             reporter.progress((i + 1) as f64 / task.inputs.len() as f64);
         }
         let (track, payload) =
-            merged.ok_or_else(|| Error::InvalidInput("nothing to concatenate".to_owned()))?;
+            merged.ok_or_else(|| Error::invalid_input("nothing to concatenate".to_owned()))?;
         refcontainer::write(output, &[(track, payload)])
     }
 
@@ -683,7 +683,7 @@ impl SoftwareBackend {
         for (i, ts) in timestamps_ms.iter().enumerate() {
             reporter.checkpoint()?;
             if *ts > meta.duration_ms {
-                return Err(Error::InvalidInput(format!(
+                return Err(Error::invalid_input(format!(
                     "thumbnail at {ts} ms is past the end ({} ms)",
                     meta.duration_ms
                 )));
@@ -719,7 +719,7 @@ fn video_source_meta(source: &str) -> Result<VideoMeta> {
         .tracks
         .iter()
         .find(|t| t.kind == TrackKind::Video)
-        .ok_or_else(|| Error::InvalidInput(format!("no video track in {source}")))?;
+        .ok_or_else(|| Error::invalid_input(format!("no video track in {source}")))?;
     Ok(VideoMeta {
         width: track.width.unwrap_or(0),
         height: track.height.unwrap_or(0),

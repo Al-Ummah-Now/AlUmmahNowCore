@@ -434,8 +434,8 @@ impl ApiClient {
             "put_device_register",
         );
         req.auth = AuthMode::Required;
-        let body =
-            serde_json::to_value(registration).map_err(|e| aun_common::Error::InvalidInput(e.to_string()))?;
+        let body = serde_json::to_value(registration)
+            .map_err(|e| aun_common::Error::invalid_input(e.to_string()))?;
         req.body = Body::Json(body);
         let env: Envelope<RawDeviceRegisterResult> = self.execute_json(req).await?;
         Ok(env.result.unwrap_or_default().created)

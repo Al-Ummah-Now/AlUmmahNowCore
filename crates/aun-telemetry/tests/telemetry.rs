@@ -255,7 +255,7 @@ async fn flush_batches_retries_and_drops() {
     assert!(!batches[0].app.core_version.is_empty());
 
     t.track("tap", HashMap::new());
-    *sink.fail_with.lock().unwrap() = Some(Error::InvalidInput("bad batch".into()));
+    *sink.fail_with.lock().unwrap() = Some(Error::invalid_input("bad batch".into()));
     let r = t.flush().await.unwrap();
     assert_eq!(
         (r.sent, r.dropped, r.remaining),

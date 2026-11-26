@@ -133,7 +133,7 @@ async fn authenticated_operation_without_token_fails_fast() {
         .post_upload_initiate_endpoint(&Default::default(), &Default::default())
         .await
         .unwrap_err();
-    assert!(matches!(e, Error::Unauthorized(_)));
+    assert!(matches!(e, Error::Unauthorized { .. }));
     assert!(server.received_requests().await.unwrap().is_empty());
 }
 
@@ -212,7 +212,10 @@ async fn refreshes_once_on_401_and_retries_with_new_token() {
 async fn failed_refresh_surfaces_unauthorized() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({"error": "expired"})))
+        .respond_with(
+            ResponseTemplate::new(401)
+                .set_body_json(serde_json::json!({"error": "expired", "code": "token_expired"})),
+        )
         .expect(1)
         .mount(&server)
         .await;
@@ -226,7 +229,14 @@ async fn failed_refresh_surfaces_unauthorized() {
         ))
         .await
         .unwrap_err();
-    assert_eq!(e, Error::Unauthorized("expired".into()));
+    assert_eq!(
+        e,
+        Error::Unauthorized {
+            code: Some("token_expired".into()),
+            message: "expired".into(),
+        }
+    );
+    assert_eq!(auth.refreshes.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
@@ -340,7 +350,7 @@ async fn queue_stops_on_retryable_and_drops_rejected() {
 
     let report = q.flush(&client).await.unwrap();
     assert_eq!(report.rejected.len(), 1);
-    assert_eq!(report.rejected[0].1, Error::NotFound("Video not found".into()));
+    assert_eq!(report.rejected[0].1, Error::not_found("Video not found".into()));
     assert!(matches!(report.stopped_by, Some(Error::Http { status: 503, .. })));
     assert_eq!(report.remaining, 2);
     let busy = &q.pending().unwrap()[0];
@@ -385,7 +395,10 @@ async fn queue_never_replays_another_accounts_writes() {
 
     // A client bound to A can't drain B's queue.
     let client_a = ApiClient::new(config(&server)).unwrap().with_account("user-a");
-    assert!(matches!(b.flush(&client_a).await, Err(Error::Unauthorized(_))));
+    assert!(matches!(
+        b.flush(&client_a).await,
+        Err(Error::Unauthorized { .. })
+    ));
 
     // A's write is still stored until A signs out.
     assert_eq!(b.purge_account("user-a").unwrap(), 1);
@@ -397,7 +410,7 @@ async fn queue_never_replays_another_accounts_writes() {
 fn refuses_cleartext_base_url() {
     assert!(matches!(
         ApiClient::new(ApiConfig::new("http://videos.api.example.com")),
-        Err(Error::InvalidInput(_))
+        Err(Error::InvalidInput { .. })
     ));
     assert!(ApiClient::new(ApiConfig::new("http://127.0.0.1:9")).is_ok());
     assert!(ApiClient::new(ApiConfig::new("https://videos.api.example.com")).is_ok());

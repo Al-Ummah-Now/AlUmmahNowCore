@@ -313,7 +313,7 @@ impl SyncEngine {
     /// Reaching 95 % marks the video completed.
     pub fn record_position(&self, video_id: &str, position_ms: u64, duration_ms: u64) -> Result<()> {
         if video_id.is_empty() {
-            return Err(Error::InvalidInput("empty video id".into()));
+            return Err(Error::invalid_input("empty video id".into()));
         }
         let interval = self.config.position_push_interval_ms as i64;
         self.mutate(
@@ -357,7 +357,7 @@ impl SyncEngine {
     /// Marks a video watched (or not) explicitly ("Mark as watched").
     pub fn set_completed(&self, video_id: &str, completed: bool) -> Result<()> {
         if video_id.is_empty() {
-            return Err(Error::InvalidInput("empty video id".into()));
+            return Err(Error::invalid_input("empty video id".into()));
         }
         self.mutate(
             vec![SyncChange::WatchState, SyncChange::History],
@@ -523,7 +523,7 @@ impl SyncEngine {
     /// Adds a note (empty text = bookmark) at a timestamp; returns its id.
     pub fn add_note(&self, video_id: &str, position_ms: u64, text: &str) -> Result<String> {
         if video_id.is_empty() {
-            return Err(Error::InvalidInput("empty video id".into()));
+            return Err(Error::invalid_input("empty video id".into()));
         }
         let n = self.id_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let id = format!(
@@ -554,7 +554,7 @@ impl SyncEngine {
             inner.data.state.notes.get(id).is_some_and(|n| !n.removed.value)
         };
         if !exists {
-            return Err(Error::NotFound(format!("note {id}")));
+            return Err(Error::not_found(format!("note {id}")));
         }
         self.mutate(vec![SyncChange::Notes], |data, _now, stamp| {
             if let Some(n) = data.state.notes.get_mut(id) {
@@ -633,7 +633,7 @@ impl SyncEngine {
     /// Adds to / removes from Watch later.
     pub fn set_saved(&self, video_id: &str, saved: bool) -> Result<()> {
         if video_id.is_empty() {
-            return Err(Error::InvalidInput("empty video id".into()));
+            return Err(Error::invalid_input("empty video id".into()));
         }
         self.mutate(vec![SyncChange::Library], |data, now, stamp| {
             data.state
@@ -669,7 +669,7 @@ impl SyncEngine {
 
     pub fn set_liked(&self, video_id: &str, liked: bool) -> Result<()> {
         if video_id.is_empty() {
-            return Err(Error::InvalidInput("empty video id".into()));
+            return Err(Error::invalid_input("empty video id".into()));
         }
         self.mutate(vec![SyncChange::Library], |data, now, stamp| {
             data.state
@@ -887,7 +887,10 @@ impl SyncEngine {
                         inner.data.pending.remove(&key);
                     }
                 }
-                Err(e) if e.is_retryable() || matches!(e, Error::Unauthorized(_) | Error::Forbidden(_)) => {
+                Err(e)
+                    if e.is_retryable()
+                        || matches!(e, Error::Unauthorized { .. } | Error::Forbidden { .. }) =>
+                {
                     if let Some(p) = inner.data.pending.get_mut(&key) {
                         p.attempts += 1;
                     }

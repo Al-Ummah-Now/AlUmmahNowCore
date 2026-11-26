@@ -151,7 +151,7 @@ fn locale_switching_notifies_listeners() {
     let change = i18n.set_locale("tr").unwrap();
     assert!(change.needs_sync, "no Turkish bundle yet");
     assert_eq!(i18n.translate("common.save"), "Save");
-    assert!(matches!(i18n.set_locale("!!"), Err(Error::InvalidInput(_))));
+    assert!(matches!(i18n.set_locale("!!"), Err(Error::InvalidInput { .. })));
     i18n.remove_listener(id);
     i18n.set_locale("en").unwrap();
     assert_eq!(rec.changes.lock().unwrap().len(), 2);
@@ -247,7 +247,7 @@ impl TranslationSource for FakeSource {
             .unwrap()
             .push(if_none_match.map(str::to_owned));
         let b = self.bundles.lock().unwrap();
-        let (sum, json) = b.get(locale).ok_or_else(|| Error::NotFound(locale.into()))?;
+        let (sum, json) = b.get(locale).ok_or_else(|| Error::not_found(locale.into()))?;
         if if_none_match == Some(sum.as_str()) {
             return Ok(None);
         }

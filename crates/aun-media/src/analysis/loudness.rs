@@ -33,13 +33,13 @@ impl std::fmt::Debug for LoudnessMeter {
 }
 
 fn r128_err(e: ebur128::Error) -> Error {
-    Error::InvalidInput(format!("loudness meter: {e:?}"))
+    Error::invalid_input(format!("loudness meter: {e:?}"))
 }
 
 impl LoudnessMeter {
     pub fn new(sample_rate: u32, channels: u32) -> Result<Self> {
         if sample_rate == 0 || channels == 0 {
-            return Err(Error::InvalidInput("empty audio format".to_owned()));
+            return Err(Error::invalid_input("empty audio format".to_owned()));
         }
         let inner =
             EbuR128::new(channels, sample_rate, Mode::I | Mode::LRA | Mode::TRUE_PEAK).map_err(r128_err)?;
@@ -76,7 +76,7 @@ pub fn measure_loudness(path: &Path, cancel: &CancellationToken) -> Result<Loudn
         m.push(block)
     })?;
     meter
-        .ok_or_else(|| Error::InvalidInput("no audio decoded".to_owned()))?
+        .ok_or_else(|| Error::invalid_input("no audio decoded".to_owned()))?
         .finish()
 }
 
