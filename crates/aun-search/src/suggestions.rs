@@ -17,6 +17,8 @@ pub const MAX_SUGGESTIONS: u32 = 20;
 pub const DEFAULT_SUGGESTIONS: u32 = 8;
 /// Longest query sent; longer input is cut at a character boundary.
 pub const MAX_QUERY_CHARS: usize = 100;
+/// Deepest offset accepted by api-videos for an empty query.
+const MAX_INITIAL_OFFSET: u32 = 500;
 
 /// What a suggestion points at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize)]
@@ -121,6 +123,14 @@ pub fn suggestions_request(query: &SuggestionQuery) -> Result<Option<RequestSpec
     let Some(text) = prepare_query_text(&query.text) else {
         return Ok(None);
     };
+    build_suggestions_request(query, text, None).map(Some)
+}
+
+fn build_suggestions_request(
+    query: &SuggestionQuery,
+    text: String,
+    cursor: Option<u32>,
+) -> Result<RequestSpec> {
     let limit = query.limit.unwrap_or(DEFAULT_SUGGESTIONS);
     if !(1..=MAX_SUGGESTIONS).contains(&limit) {
         return Err(Error::invalid_input(format!(
@@ -135,6 +145,9 @@ pub fn suggestions_request(query: &SuggestionQuery) -> Result<Option<RequestSpec
     req.max_attempts = Some(1);
     req.query.push(("q".into(), text));
     req.query.push(("limit".into(), limit.to_string()));
+    if let Some(offset) = cursor {
+        req.query.push(("offset".into(), offset.to_string()));
+    }
     let mut kinds: Vec<&str> = query.kinds.iter().filter_map(|k| k.as_param()).collect();
     kinds.sort_unstable();
     kinds.dedup();
@@ -149,7 +162,7 @@ pub fn suggestions_request(query: &SuggestionQuery) -> Result<Option<RequestSpec
     {
         req.query.push(("channelId".into(), channel.to_owned()));
     }
-    Ok(Some(req))
+    Ok(req)
 }
 
 /// Fetches suggestions. Blank text returns an empty list without a request.
@@ -163,20 +176,69 @@ pub async fn fetch_suggestions(client: &ApiClient, query: &SuggestionQuery) -> R
     Ok(suggestions)
 }
 
+/// A page of suggestions. Pass `next_cursor` back with the same query and scope.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SearchSuggestionsPage {
+    pub items: Vec<SearchSuggestion>,
+    pub next_cursor: Option<u32>,
+    /// A full page can have a continuation. The following page may be empty.
+    pub has_more: bool,
+}
+
+/// Fetches a picker page. Blank text loads initial results scoped by the query's kinds and channel.
+/// The api-videos endpoint accepts an offset for blank queries. Typed queries use a single page.
+pub async fn fetch_suggestions_page(
+    client: &ApiClient,
+    query: &SuggestionQuery,
+    cursor: Option<u32>,
+) -> Result<SearchSuggestionsPage> {
+    let text = prepare_query_text(&query.text).unwrap_or_default();
+    let browsing = text.is_empty();
+    if let Some(offset) = cursor
+        && (!browsing || offset > MAX_INITIAL_OFFSET)
+    {
+        return Err(Error::invalid_input(format!(
+            "suggestion cursor requires a blank query and an offset of at most {MAX_INITIAL_OFFSET}"
+        )));
+    }
+    let req = build_suggestions_request(query, text, cursor)?;
+    let raw = client.execute(req).await?;
+    let rows = suggestion_rows(&raw.body)?;
+    let limit = query.limit.unwrap_or(DEFAULT_SUGGESTIONS);
+    // Count server rows before filtering so a malformed row cannot end browsing early.
+    let next_cursor = (browsing && rows.len() >= limit as usize)
+        .then(|| cursor.unwrap_or_default() + limit)
+        .filter(|&next| next <= MAX_INITIAL_OFFSET);
+    let items = decode_rows(rows);
+    tracing::debug!(count = items.len(), "search suggestions page");
+    Ok(SearchSuggestionsPage {
+        items,
+        next_cursor,
+        has_more: next_cursor.is_some(),
+    })
+}
+
 /// Decodes the response body. Items that do not parse are skipped (and logged) so one bad row from
 /// a newer server never empties the list.
 pub fn decode_suggestions(body: &str) -> Result<Vec<SearchSuggestion>> {
+    Ok(decode_rows(suggestion_rows(body)?))
+}
+
+fn suggestion_rows(body: &str) -> Result<Vec<serde_json::Value>> {
     let value: serde_json::Value =
         serde_json::from_str(body).map_err(|e| Error::Internal(format!("decoding suggestions: {e}")))?;
-    let items = match value {
-        serde_json::Value::Array(items) => items,
+    match value {
+        serde_json::Value::Array(items) => Ok(items),
         serde_json::Value::Object(mut o) => match o.remove("data") {
-            Some(serde_json::Value::Array(items)) => items,
-            _ => return Err(Error::Internal("suggestions response is not a list".into())),
+            Some(serde_json::Value::Array(items)) => Ok(items),
+            _ => Err(Error::Internal("suggestions response is not a list".into())),
         },
-        _ => return Err(Error::Internal("suggestions response is not a list".into())),
-    };
-    Ok(items
+        _ => Err(Error::Internal("suggestions response is not a list".into())),
+    }
+}
+
+fn decode_rows(items: Vec<serde_json::Value>) -> Vec<SearchSuggestion> {
+    items
         .into_iter()
         .filter_map(|item| match serde_json::from_value::<SearchSuggestion>(item) {
             Ok(s) if !s.text.trim().is_empty() => Some(s),
@@ -186,7 +248,7 @@ pub fn decode_suggestions(body: &str) -> Result<Vec<SearchSuggestion>> {
                 None
             }
         })
-        .collect())
+        .collect()
 }
 
 /// Suggestions of one kind, in server order.

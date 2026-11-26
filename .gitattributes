@@ -1,0 +1,2 @@
+# CI compares this committed file byte-for-byte against UniFFI's generated Swift.
+apple/Sources/AunCore/AunCore.swift whitespace=-blank-at-eol

@@ -8,7 +8,9 @@ use aun_common::platform::{Clock, SecureStorage, SystemClock};
 use aun_common::{Error, Result};
 use tokio_util::sync::CancellationToken;
 
-use crate::accounts::{AccountInfo, AccountStore, MAX_ACCOUNTS, StoredAccount, identity_from_tokens};
+use crate::accounts::{
+    AccountInfo, AccountStore, MAX_ACCOUNTS, StoredAccount, identity_from_tokens, verify_auth_time,
+};
 use crate::oauth::{
     DeviceAuthorization, LoginPrompt, OAuthClient, PendingAuthorization, TokenSet, poll_until_granted,
 };
@@ -52,11 +54,21 @@ impl DeviceLogin {
     }
 }
 
+struct StepUp {
+    max_age_seconds: u64,
+    account_id: Option<String>,
+}
+
+struct LoginAttempt {
+    authorization: PendingAuthorization,
+    step_up: Option<StepUp>,
+}
+
 pub struct AuthManager {
     oauth: OAuthClient,
     store: AccountStore,
     clock: Arc<dyn Clock>,
-    pending: Mutex<HashMap<String, PendingAuthorization>>,
+    pending: Mutex<HashMap<String, LoginAttempt>>,
     /// Serialises refreshes so concurrent API calls trigger one token request (rotation-safe).
     refresh_lock: tokio::sync::Mutex<()>,
     /// Orders sign-out against writing refreshed tokens back, so a refresh that was in flight
@@ -124,12 +136,28 @@ impl AuthManager {
         prompt: LoginPrompt,
         redirect_uri: Option<&str>,
     ) -> Result<PendingAuthorization> {
-        let extra: Vec<(&str, &str)> = prompt.as_param().map(|p| ("prompt", p)).into_iter().collect();
+        let step_up = if let LoginPrompt::StepUp { max_age_seconds } = prompt {
+            Some(StepUp {
+                max_age_seconds,
+                account_id: self.store.active()?,
+            })
+        } else {
+            None
+        };
+        let max_age = step_up.as_ref().map(|step| step.max_age_seconds.to_string());
+        let mut extra: Vec<_> = prompt.as_param().map(|p| ("prompt", p)).into_iter().collect();
+        extra.extend(max_age.as_deref().map(|age| ("max_age", age)));
         let p = self.oauth.authorize_with_redirect(&extra, redirect_uri)?;
         self.pending
             .lock()
             .map_err(|_| Error::Internal("poisoned".into()))?
-            .insert(p.state.clone(), p.clone());
+            .insert(
+                p.state.clone(),
+                LoginAttempt {
+                    authorization: p.clone(),
+                    step_up,
+                },
+            );
         Ok(p)
     }
 
@@ -151,9 +179,18 @@ impl AuthManager {
             .ok_or_else(|| Error::invalid_input("unknown or already used sign-in attempt".into()))?;
         let tokens = self
             .oauth
-            .exchange_code(&pending, redirect_url, self.clock.now_ms())
+            .exchange_code(&pending.authorization, redirect_url, self.clock.now_ms())
             .await?;
-        self.add_account(tokens)
+        let info = if let Some(step_up) = pending.step_up {
+            // Let an in-flight refresh finish before replacing this account's tokens.
+            let _guard = self.refresh_lock.lock().await;
+            verify_auth_time(&tokens, self.clock.now_ms(), step_up.max_age_seconds)?;
+            self.save_account(tokens, step_up.account_id.as_deref())?
+        } else {
+            self.save_account(tokens, None)?
+        };
+        self.emit_sign_in(&info);
+        Ok(info)
     }
 
     /// Starts a device-code sign-in: show `user_code` and a QR of `verification_uri_complete`.
@@ -168,13 +205,28 @@ impl AuthManager {
     pub async fn complete_device_login(&self, login: &DeviceLogin) -> Result<AccountInfo> {
         let tokens =
             poll_until_granted(&self.oauth, &login.authorization, &*self.clock, &login.cancel).await?;
-        self.add_account(tokens)
+        let info = self.save_account(tokens, None)?;
+        self.emit_sign_in(&info);
+        Ok(info)
     }
 
-    fn add_account(&self, tokens: TokenSet) -> Result<AccountInfo> {
+    fn save_account(&self, tokens: TokenSet, step_up_for: Option<&str>) -> Result<AccountInfo> {
         let now = self.clock.now_ms();
         let mut info = identity_from_tokens(&tokens)?;
+        let _guard = self
+            .store_lock
+            .lock()
+            .map_err(|_| Error::Internal("auth lock poisoned".into()))?;
         let existing = self.store.get(&info.user_id)?;
+        if let Some(expected) = step_up_for
+            && (expected != info.user_id
+                || existing.is_none()
+                || self.store.active()?.as_deref() != Some(expected))
+        {
+            return Err(Error::unauthorized(
+                "step-up account does not match the active sign-in".into(),
+            ));
+        }
         if existing.is_none() && self.store.list()?.len() >= MAX_ACCOUNTS {
             return Err(Error::invalid_input(format!(
                 "at most {MAX_ACCOUNTS} accounts per device"
@@ -189,11 +241,14 @@ impl AuthManager {
             tokens,
         })?;
         self.store.set_active(Some(&info.user_id))?;
+        Ok(info)
+    }
+
+    fn emit_sign_in(&self, info: &AccountInfo) {
         self.emit(AuthEvent::SignedIn(info.clone()));
         self.emit(AuthEvent::ActiveChanged {
             user_id: Some(info.user_id.clone()),
         });
-        Ok(info)
     }
 
     pub fn accounts(&self) -> Result<Vec<AccountInfo>> {

@@ -248,12 +248,14 @@ impl TranslationSource for FakeSource {
             .push(if_none_match.map(str::to_owned));
         let b = self.bundles.lock().unwrap();
         let (sum, json) = b.get(locale).ok_or_else(|| Error::not_found(locale.into()))?;
-        if if_none_match == Some(sum.as_str()) {
+        let etag = format!("W/\"etag-{sum}\"");
+        if if_none_match == Some(etag.as_str()) {
             return Ok(None);
         }
         self.fetches.fetch_add(1, Ordering::SeqCst);
         Ok(Some(RemoteBundle {
             locale: locale.into(),
+            etag: Some(etag),
             version: sum.clone(),
             updated_at: "2026-11-01T00:00:00Z".into(),
             translations: json.clone(),
@@ -288,7 +290,7 @@ async fn sync_downloads_caches_and_revalidates() {
     assert_eq!(report.unchanged, vec!["ar", "en"]);
     assert_eq!(source.fetches.load(Ordering::SeqCst), 2);
 
-    // Server changes Arabic: only Arabic is refetched, with the old checksum as If-None-Match.
+    // Server changes Arabic: only Arabic is refetched, with the old ETag as If-None-Match.
     source.bundles.lock().unwrap().insert(
         "ar".into(),
         (
@@ -307,7 +309,7 @@ async fn sync_downloads_caches_and_revalidates() {
             .cloned()
             .flatten()
             .as_deref(),
-        Some("sum-ar-1")
+        Some("W/\"etag-sum-ar-1\"")
     );
     assert_eq!(i18n.translate("common.save"), "حفظ الآن");
 

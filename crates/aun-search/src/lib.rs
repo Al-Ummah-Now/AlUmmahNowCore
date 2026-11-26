@@ -19,7 +19,7 @@ pub use normalize::{
 };
 pub use recent::{DEFAULT_RECENT_CAPACITY, add_recent_search, filter_recent_searches, remove_recent_search};
 pub use suggestions::{
-    DEFAULT_SUGGESTIONS, MAX_QUERY_CHARS, MAX_SUGGESTIONS, SearchSuggestion, SuggestionGroup, SuggestionKind,
-    SuggestionQuery, decode_suggestions, fetch_suggestions, group_suggestions, prepare_query_text,
-    suggestions_request,
+    DEFAULT_SUGGESTIONS, MAX_QUERY_CHARS, MAX_SUGGESTIONS, SearchSuggestion, SearchSuggestionsPage,
+    SuggestionGroup, SuggestionKind, SuggestionQuery, decode_suggestions, fetch_suggestions,
+    fetch_suggestions_page, group_suggestions, prepare_query_text, suggestions_request,
 };

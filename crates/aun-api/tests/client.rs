@@ -473,3 +473,55 @@ async fn reqwest_client_get(c: &ApiConfig, p: &str) -> u16 {
         .status()
         .as_u16()
 }
+
+#[tokio::test]
+async fn raw_responses_include_headers_on_success_and_not_modified() {
+    let server = MockServer::start().await;
+    let etag = r#"W/"v1""#;
+    Mock::given(method("GET"))
+        .and(path("/api/i18n/translations/en"))
+        .and(header("if-none-match", etag))
+        .respond_with(ResponseTemplate::new(304).insert_header("ETag", etag))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/i18n/translations/en"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string("{}")
+                .insert_header("ETag", etag)
+                .insert_header("Cache-Control", "max-age=60")
+                .append_header("Vary", "Accept-Language")
+                .append_header("Vary", "Accept-Encoding"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = ApiClient::new(config(&server)).unwrap();
+    let mut request = aun_api::GetGetTranslationsEndpointParams {
+        locale: "en".into(),
+        header_if_none_match: None,
+    };
+    let raw = client
+        .execute(requests::get_get_translations_endpoint(&request).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(raw.status, 200);
+    assert_eq!(raw.body, "{}");
+    assert_eq!(raw.header("eTaG"), Some(etag));
+    assert_eq!(raw.header("Cache-Control"), Some("max-age=60"));
+    assert_eq!(raw.header("Last-Modified"), None);
+    let vary: Vec<_> = raw.headers.iter().filter(|(name, _)| name == "vary").collect();
+    assert_eq!(vary.len(), 2);
+
+    request.header_if_none_match = Some(etag.into());
+    let raw = client
+        .execute(requests::get_get_translations_endpoint(&request).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(raw.status, 304);
+    assert!(raw.body.is_empty());
+    assert_eq!(raw.header("ETag"), Some(etag));
+}

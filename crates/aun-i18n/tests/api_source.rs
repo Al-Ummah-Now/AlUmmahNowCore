@@ -16,6 +16,7 @@ fn source(server: &MockServer) -> ApiTranslationSource {
 #[tokio::test]
 async fn maps_config_metadata_and_translations() {
     let server = MockServer::start().await;
+    let etag = r#"W/"bundle-ar""#;
     Mock::given(method("GET"))
         .and(path("/api/i18n/config"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -42,17 +43,22 @@ async fn maps_config_metadata_and_translations() {
         .await;
     Mock::given(method("GET"))
         .and(path("/api/i18n/translations/ar"))
-        .and(header("if-none-match", "\"a1\""))
+        .and(header("if-none-match", etag))
         .respond_with(ResponseTemplate::new(304))
+        .expect(1)
         .mount(&server)
         .await;
     Mock::given(method("GET"))
         .and(path("/api/i18n/translations/ar"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "success": true,
-            "result": {"locale": "ar", "version": "3", "updatedAt": "2026-11-01T00:00:00Z",
-                       "translations": {"common": {"save": "حفظ"}}}
-        })))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("ETag", etag)
+                .set_body_json(serde_json::json!({
+                    "success": true,
+                    "result": {"locale": "ar", "version": "3", "updatedAt": "2026-11-01T00:00:00Z",
+                               "translations": {"common": {"save": "حفظ"}}}
+                })),
+        )
         .mount(&server)
         .await;
     Mock::given(method("GET"))
@@ -77,8 +83,9 @@ async fn maps_config_metadata_and_translations() {
 
     let b = src.translations("ar", None).await.unwrap().unwrap();
     assert_eq!(b.translations["common"]["save"], "حفظ");
+    assert_eq!(b.etag.as_deref(), Some(etag));
     assert!(
-        src.translations("ar", Some("a1")).await.unwrap().is_none(),
+        src.translations("ar", b.etag.as_deref()).await.unwrap().is_none(),
         "304 → not modified"
     );
     assert_eq!(
@@ -90,6 +97,7 @@ async fn maps_config_metadata_and_translations() {
 #[tokio::test]
 async fn i18n_sync_over_http() {
     let server = MockServer::start().await;
+    let etag = r#""bundle-en""#;
     Mock::given(method("GET"))
         .and(path("/api/i18n/config"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -106,11 +114,27 @@ async fn i18n_sync_over_http() {
             "result": {"version": "1", "locales": ["en"], "defaultLocale": "en", "updatedAt": "x",
                        "checksums": {"en": "c"}, "sections": []}
         })))
+        .up_to_n_times(2)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/i18n/metadata"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "result": {"version": "2", "locales": ["en"], "checksums": {"en": "c2"}}
+        })))
+        .expect(1)
         .mount(&server)
         .await;
     Mock::given(method("GET"))
         .and(path("/api/i18n/translations/en"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+        .and(header("if-none-match", etag))
+        .respond_with(ResponseTemplate::new(304))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/i18n/translations/en"))
+        .respond_with(ResponseTemplate::new(200).insert_header("ETag", etag).set_body_json(serde_json::json!({
             "success": true,
             "result": {"locale": "en", "version": "1", "updatedAt": "x",
                        "translations": {"videos": {"count_one": "{{count}} video", "count_other": "{{count}} videos"}}}
@@ -119,11 +143,22 @@ async fn i18n_sync_over_http() {
         .mount(&server)
         .await;
 
-    let i18n = aun_i18n::I18n::new(aun_i18n::I18nOptions::default()).unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let options = aun_i18n::I18nOptions {
+        cache_dir: Some(cache.path().to_str().unwrap().to_owned()),
+        ..Default::default()
+    };
+    let i18n = aun_i18n::I18n::new(options.clone()).unwrap();
     i18n.set_source(std::sync::Arc::new(source(&server)));
     let r = i18n.sync().await.unwrap();
     assert_eq!(r.updated, vec!["en"]);
-    i18n.sync().await.unwrap();
+    assert_eq!(i18n.sync().await.unwrap().unchanged, vec!["en"]);
+    drop(i18n);
+
+    // The checksum changes after restart. A 304 for the persisted ETag keeps the cached bundle.
+    let i18n = aun_i18n::I18n::new(options).unwrap();
+    i18n.set_source(std::sync::Arc::new(source(&server)));
+    assert_eq!(i18n.sync().await.unwrap().unchanged, vec!["en"]);
     let mut args = std::collections::HashMap::new();
     args.insert("count".to_owned(), aun_i18n::FormatArg::Int(3));
     assert_eq!(i18n.format("videos.count", &args), "3 videos");

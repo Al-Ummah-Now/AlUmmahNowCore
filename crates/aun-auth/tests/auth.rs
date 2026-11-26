@@ -12,9 +12,13 @@ use wiremock::matchers::{body_string_contains, method, path};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
 fn jwt(sub: &str, email: &str) -> String {
+    jwt_with_claims(
+        serde_json::json!({"sub": format!("user:{sub}"), "properties": {"id": sub, "email": email}}),
+    )
+}
+
+fn jwt_with_claims(payload: serde_json::Value) -> String {
     let e = |v: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(v);
-    let payload =
-        serde_json::json!({"sub": format!("user:{sub}"), "properties": {"id": sub, "email": email}});
     format!(
         "{}.{}.sig",
         e(br#"{"alg":"ES256"}"#),
@@ -729,4 +733,128 @@ async fn loopback_redirect_is_used_for_authorize_and_the_code_exchange() {
         m.begin_login_with_redirect(LoginPrompt::Default, Some("https://evil.example/cb")),
         Err(Error::InvalidInput { .. })
     ));
+}
+
+#[tokio::test]
+async fn step_up_verifies_auth_time_before_replacing_tokens() {
+    use serde_json::json;
+
+    let server = MockServer::start().await;
+    let clock = Arc::new(ManualClock::new(2_000_500));
+    let m = manager(&server, clock.clone());
+    sign_in(&m, &server, "u1").await;
+    m.set_active_channel(Some("ch1".into())).unwrap();
+    let original = m.active_account().unwrap().unwrap();
+    let events = Arc::new(Events::default());
+    m.add_listener(events.clone());
+    let loopback = "http://127.0.0.1:53111/auth/callback";
+    let prompt = LoginPrompt::StepUp { max_age_seconds: 900 };
+
+    for (code, id_token) in [
+        ("stale", jwt_with_claims(json!({"sub": "u1", "auth_time": 1099}))),
+        ("future", jwt_with_claims(json!({"sub": "u1", "auth_time": 2001}))),
+        ("missing", jwt_with_claims(json!({"sub": "u1", "iat": 2000}))),
+        ("negative", jwt_with_claims(json!({"sub": "u1", "auth_time": -1}))),
+        (
+            "string",
+            jwt_with_claims(json!({"sub": "u1", "auth_time": "2000"})),
+        ),
+        ("malformed", "not-a-jwt".into()),
+        (
+            "wrong-user",
+            jwt_with_claims(json!({"sub": "u2", "auth_time": 2000})),
+        ),
+    ] {
+        let attempt = m.begin_login_with_redirect(prompt, Some(loopback)).unwrap();
+        // Even a fresh access token cannot override an invalid ID token's freshness claim.
+        let access = jwt_with_claims(json!({"sub": "u1", "auth_time": 2000}));
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .and(body_string_contains(format!("code={code}")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id_token": id_token, "access_token": access, "expires_in": 3600,
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let redirect = format!("{loopback}?code={code}&state={}", attempt.state);
+        assert!(
+            matches!(m.complete_login(&redirect).await, Err(Error::Unauthorized { .. })),
+            "{code}"
+        );
+        assert!(matches!(
+            m.complete_login(&redirect).await,
+            Err(Error::InvalidInput { .. })
+        ));
+        assert_eq!(m.active_account().unwrap().as_ref(), Some(&original));
+        assert_eq!(m.access_token().await.unwrap().as_deref(), Some("at-u1"));
+        assert!(events.0.lock().unwrap().is_empty());
+    }
+
+    let attempt = m.begin_login_with_redirect(prompt, Some(loopback)).unwrap();
+    let url = reqwest::Url::parse(&attempt.url).unwrap();
+    let q: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
+    assert_eq!(q["prompt"], "login");
+    assert_eq!(q["max_age"], "900");
+    assert_eq!(q["redirect_uri"], loopback);
+    assert_eq!(q["state"], attempt.state);
+    assert_eq!(q["code_challenge"], aun_auth::pkce::s256(&attempt.pkce.verifier));
+    Mock::given(method("POST"))
+        .and(path("/token"))
+        .and(body_string_contains("code=fresh"))
+        .and(body_string_contains(
+            "redirect_uri=http%3A%2F%2F127.0.0.1%3A53111%2Fauth%2Fcallback",
+        ))
+        .and(body_string_contains(format!(
+            "code_verifier={}",
+            attempt.pkce.verifier
+        )))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id_token": jwt_with_claims(json!({"sub": "u1", "auth_time": 1100})),
+            "access_token": "new-access", "refresh_token": "new-refresh", "expires_in": 3600,
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let info = m
+        .complete_login(&format!("{loopback}?code=fresh&state={}", attempt.state))
+        .await
+        .unwrap();
+    assert_eq!(info.user_id, "u1");
+    assert_eq!(info.active_channel_id.as_deref(), Some("ch1"));
+    assert_eq!(m.access_token().await.unwrap().as_deref(), Some("new-access"));
+    assert!(matches!(
+        events.0.lock().unwrap().first(),
+        Some(AuthEvent::SignedIn(_))
+    ));
+}
+
+#[tokio::test]
+async fn step_up_reads_the_openauth_access_token_when_there_is_no_id_token() {
+    let server = MockServer::start().await;
+    let clock = Arc::new(ManualClock::new(999_000));
+    let m = manager(&server, clock.clone());
+    let attempt = m
+        .begin_login_with_prompt(LoginPrompt::StepUp { max_age_seconds: 0 })
+        .unwrap();
+    assert!(attempt.url.contains("max_age=0"));
+    let access = jwt_with_claims(serde_json::json!({"sub": "u1", "auth_time": 1000}));
+    Mock::given(method("POST"))
+        .and(path("/token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "access_token": access, "expires_in": 3600,
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    clock.advance(1_999);
+    let info = m
+        .complete_login(&format!(
+            "alummahnow://auth/callback?code=c&state={}",
+            attempt.state
+        ))
+        .await
+        .unwrap();
+    assert_eq!(info.user_id, "u1");
+    assert_eq!(m.access_token().await.unwrap().as_deref(), Some(access.as_str()));
 }

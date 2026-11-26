@@ -60,12 +60,35 @@ impl aun_api::AuthProvider for ForeignTokens {
     }
 }
 
-/// A response body from [`ApiClient::request`].
+/// A response header. Repeated fields appear as separate entries.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ResponseHeader {
+    pub name: String,
+    pub value: String,
+}
+
+/// A raw response from [`ApiClient::request`] or [`ApiClient::request_path`].
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct ApiResponse {
     pub status: u16,
     /// Raw body (JSON for almost every operation).
     pub body: String,
+    /// UTF-8 response headers with lowercase names.
+    pub headers: Vec<ResponseHeader>,
+}
+
+impl From<aun_api::RawResponse> for ApiResponse {
+    fn from(raw: aun_api::RawResponse) -> Self {
+        Self {
+            status: raw.status,
+            body: raw.body,
+            headers: raw
+                .headers
+                .into_iter()
+                .map(|(name, value)| ResponseHeader { name, value })
+                .collect(),
+        }
+    }
 }
 
 /// A call to one OpenAPI operation.
@@ -288,23 +311,17 @@ impl ApiClient {
         Ok(Arc::new(Self { inner }))
     }
 
-    /// Calls any operation by id. Throws `AunError` for non-2xx responses.
+    /// Calls any operation by id. Returns 2xx and 304 responses.
     pub async fn request(&self, call: ApiCall) -> Result<ApiResponse, AunError> {
         let raw = self.inner.execute(build_request(call)?).await?;
-        Ok(ApiResponse {
-            status: raw.status,
-            body: raw.body,
-        })
+        Ok(raw.into())
     }
 
     /// Calls an `/api/` path that is not in the pinned OpenAPI document (same auth, refresh on
-    /// 401, retries and errors as [`Self::request`]). Throws `AunError` for non-2xx responses.
+    /// 401, retries and errors as [`Self::request`]). Returns 2xx and 304 responses.
     pub async fn request_path(&self, call: PathCall) -> Result<ApiResponse, AunError> {
         let raw = self.inner.execute(build_path_request(call)?).await?;
-        Ok(ApiResponse {
-            status: raw.status,
-            body: raw.body,
-        })
+        Ok(raw.into())
     }
 }
 

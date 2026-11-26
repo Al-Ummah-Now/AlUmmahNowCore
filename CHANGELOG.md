@@ -7,6 +7,31 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+### Added
+
+- `LoginPrompt::StepUp { max_age_seconds }` in Rust and UniFFI sends `prompt=login` and `max_age`.
+  Completion requires a fresh `auth_time` before saving tokens. When an account is already active,
+  the callback must be for that account.
+- `search_suggestions_page(query, cursor)` over UniFFI (`fetch_suggestions_page` in Rust) loads scoped
+  results when a picker opens with blank text. Pass `next_cursor` back with the same query and scope
+  while `has_more` is true. Typed queries use one page. The list-returning API still skips blank text.
+
+### Fixed
+
+- Raw API requests return HTTP 304 successfully and expose response headers. Translation sync saves
+  the bundle's ETag and sends it back as `If-None-Match`. Metadata checksums still determine when
+  a bundle needs revalidation. Existing on-disk caches load without an ETag.
+
+### Breaking
+
+- Rust `RawResponse`, `RemoteBundle` and `CachedBundle` struct literals must specify the new
+  `headers` or `etag` field. UniFFI `ApiResponse` constructors now take `headers`.
+- Custom implementations of the generated `ApiClient` interface need to implement the new
+  `search_suggestions_page` method.
+- `LoginPrompt` adds a payload-bearing `StepUp` case. Update exhaustive matches and regenerate
+  native bindings. C# uses a record hierarchy, so use `new LoginPrompt.Login()` or
+  `new LoginPrompt.Default()` for the existing cases.
+
 ## [0.4.0-rc.8] - 2026-11-26
 
 ### Added

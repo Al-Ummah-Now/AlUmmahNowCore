@@ -59,6 +59,9 @@ class SmokeTest {
             memoryStorage(),
         )
         assertTrue(auth.beginLogin().url.contains("code_challenge_method=S256"))
+        val stepUp = auth.beginLoginWithPrompt(LoginPrompt.StepUp(900uL))
+        assertTrue(stepUp.url.contains("prompt=login"))
+        assertTrue(stepUp.url.contains("max_age=900"))
         assertTrue(auth.accounts().isEmpty())
         assertNull(auth.accessToken())
         assertNull(auth.tokenForAccount(userId = "missing", forceRefresh = true))
