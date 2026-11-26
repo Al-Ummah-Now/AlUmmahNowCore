@@ -143,5 +143,6 @@ final class SmokeTests: XCTestCase {
                              verified: true, count: nil, metadataJson: nil, opensItem: true),
         ])
         XCTAssertEqual(groups.first?.kind, .channel)
+        XCTAssertEqual(localizedPlaylistText(base: "Lessons", localized: ["ar": " دروس "], locale: "ar-SA"), "دروس")
     }
 }

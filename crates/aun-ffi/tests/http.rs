@@ -117,12 +117,15 @@ async fn personal_playlists_use_mine_and_omit_the_active_channel_header() {
     let server = MockServer::start().await;
     let unlisted = json!({
         "id": "p1", "title": "دروس", "userId": "u1", "channelId": "",
+        "titleLocalized": {"ar": "دروس"}, "descriptionLocalized": {"en": "Notes"},
         "isPublic": false, "isUnlisted": true, "visibility": "unlisted", "videos": []
     });
     let private = json!({
         "id": "p1", "title": "دروس", "userId": "u1", "channelId": "",
         "isPublic": false
     });
+    let mut updated_playlist = private.clone();
+    updated_playlist["descriptionLocalized"] = json!({"en": "Notes"});
     let public = json!({
         "id": "p2", "title": "Public", "userId": "u1", "channelId": "ch1"
     });
@@ -130,7 +133,9 @@ async fn personal_playlists_use_mine_and_omit_the_active_channel_header() {
     Mock::given(method("POST"))
         .and(path("/api/playlists"))
         .and(auth())
-        .and(body_json(json!({"title": "دروس", "visibility": "unlisted"})))
+        .and(body_json(json!({
+            "titleLocalized": {"ar": "دروس"}, "descriptionLocalized": {"en": "Notes"}, "visibility": "unlisted"
+        })))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"result": {"playlist": unlisted}})))
         .expect(1)
         .mount(&server)
@@ -157,8 +162,10 @@ async fn personal_playlists_use_mine_and_omit_the_active_channel_header() {
     Mock::given(method("PATCH"))
         .and(path("/api/playlists/p1"))
         .and(auth())
-        .and(body_json(json!({"visibility": "private"})))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"result": {"playlist": private}})))
+        .and(body_json(json!({"visibility": "private", "titleLocalized": {}})))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"result": {"playlist": updated_playlist}})),
+        )
         .expect(1)
         .mount(&server)
         .await;
@@ -210,7 +217,8 @@ async fn personal_playlists_use_mine_and_omit_the_active_channel_header() {
         .playlist_create(
             None,
             PlaylistMetadata {
-                title: Some("دروس".into()),
+                title_localized: Some([("ar".into(), "دروس".into())].into()),
+                description_localized: Some([("en".into(), "Notes".into())].into()),
                 visibility: Some(Visibility::Unlisted),
                 ..Default::default()
             },
@@ -219,6 +227,12 @@ async fn personal_playlists_use_mine_and_omit_the_active_channel_header() {
         .unwrap();
     assert_eq!(created.channel_id, "");
     assert_eq!(created.visibility, Visibility::Unlisted);
+    assert_eq!(created.title_localized.as_ref().unwrap()["ar"], "دروس");
+    assert_eq!(created.description_localized.as_ref().unwrap()["en"], "Notes");
+    assert_eq!(
+        aun_core::localized_playlist_text(created.title.into(), created.title_localized, "ar-EG".into()),
+        "دروس"
+    );
 
     let page = client
         .playlists_list(PlaylistQuery {
@@ -241,6 +255,7 @@ async fn personal_playlists_use_mine_and_omit_the_active_channel_header() {
             "p1".into(),
             None,
             PlaylistMetadata {
+                title_localized: Some(Default::default()),
                 visibility: Some(Visibility::Private),
                 ..Default::default()
             },
@@ -249,6 +264,8 @@ async fn personal_playlists_use_mine_and_omit_the_active_channel_header() {
         .unwrap();
     assert_eq!(updated.visibility, Visibility::Private);
     assert!(!updated.is_unlisted);
+    assert!(updated.title_localized.is_none());
+    assert_eq!(updated.description_localized.unwrap()["en"], "Notes");
     assert_eq!(
         client
             .playlist_add_video("p1".into(), "v1".into(), None)

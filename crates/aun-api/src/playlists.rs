@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     ApiClient, AuthMode, DeletePlaylistDeleteParams, DeletePlaylistDeleteResponse,
@@ -11,13 +11,36 @@ use crate::{
     PostPlaylistCreateParams, RequestSpec, Result, Visibility, requests,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+/// Picks the translation for a language or locale tag, then the original text or an empty string.
+pub fn localized_playlist_text<'a>(
+    base: Option<&'a str>,
+    localized: Option<&'a BTreeMap<String, String>>,
+    locale: &str,
+) -> &'a str {
+    let language = locale
+        .trim()
+        .split(['-', '_'])
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    localized
+        .and_then(|map| map.get(&language))
+        // ECMAScript trim also accepts a BOM and excludes NEL.
+        .map(|text| text.trim_matches(|c: char| (c.is_whitespace() && c != '\u{0085}') || c == '\u{feff}'))
+        .filter(|text| !text.is_empty())
+        .or(base)
+        .unwrap_or_default()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Playlist {
     pub id: String,
     pub title: String,
     pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub title_localized: Option<BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description_localized: Option<BTreeMap<String, String>>,
     pub thumbnail_url: Option<String>,
     pub user_id: String,
@@ -54,7 +77,8 @@ pub struct PlaylistQuery {
     pub active_channel_id: Option<String>,
 }
 
-/// Metadata to set on create or update. Updates leave omitted properties alone.
+/// Metadata to set on create or update. Updates leave omitted maps alone and clear maps sent as empty.
+/// On create, a non-empty English or Arabic name can supply the title.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PlaylistMetadata {
     pub title: Option<String>,

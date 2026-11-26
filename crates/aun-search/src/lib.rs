@@ -10,6 +10,7 @@
 //! primitives; cancelling the call drops the in-flight HTTP request.
 
 pub mod normalize;
+pub mod playlists;
 pub mod recent;
 pub mod suggestions;
 
@@ -17,6 +18,7 @@ pub use normalize::{
     Utf16Range, highlight_ranges, matches_query, normalize_arabic, normalize_search_text,
     strip_arabic_article, tokenize_search_text,
 };
+pub use playlists::{SearchPlaylist, decode_search_playlists};
 pub use recent::{DEFAULT_RECENT_CAPACITY, add_recent_search, filter_recent_searches, remove_recent_search};
 pub use suggestions::{
     DEFAULT_SUGGESTIONS, MAX_QUERY_CHARS, MAX_SUGGESTIONS, SearchSuggestion, SearchSuggestionsPage,

@@ -81,7 +81,8 @@ pub struct PlaylistPage {
     pub cursor: String,
 }
 
-/// Metadata to set on create or update. Updates leave omitted properties alone.
+/// Metadata to set on create or update. Updates leave omitted maps alone and clear maps sent as empty.
+/// On create, a non-empty English or Arabic name can supply the title.
 #[derive(Debug, Clone, Default, uniffi::Record)]
 pub struct PlaylistMetadata {
     #[uniffi(default = None)]
@@ -182,4 +183,15 @@ impl ApiClient {
             .await?
             .into())
     }
+}
+
+/// Picks the translation for a language or locale tag, then the original text or an empty string.
+#[uniffi::export]
+pub fn localized_playlist_text(
+    base: Option<String>,
+    localized: Option<HashMap<String, String>>,
+    locale: String,
+) -> String {
+    let localized = localized.map(|map| map.into_iter().collect());
+    core::localized_playlist_text(base.as_deref(), localized.as_ref(), &locale).into()
 }
