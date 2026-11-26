@@ -7,6 +7,32 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+### Changed
+
+- Refreshed the pinned api-videos OpenAPI contract from v1.0.0 to v1.4.0, covering 261 paths
+  (up from 132) and 344 generated Rust operations (up from 191).
+
+### Breaking
+
+- Channel membership now starts with an invitation. Migrate `post_channel_member_add` and the
+  `post_ChannelMemberAdd` operation ID to `post_channel_invite_create` / `post_ChannelInviteCreate`.
+  The invitation takes `handle` or `email` with `role` and returns both members and invitations.
+- `get_profile_current_fetch` now takes `GetProfileCurrentFetchParams` with optional `lang`.
+  Pass `&Default::default()` to omit it.
+- Comment dislikes now return HTTP 410 with code `dislikes_disabled`. The generated
+  `post_comment_dislike_create` has no typed success response and returns `Result<serde_json::Value>`.
+- `DeleteVideoDeleteResponse` drops `series`.
+- The following generated Rust fields now use `Option`.
+  - `header_channel_id` in playlist create, update, delete, add-video and remove-video params,
+    comment create, update and delete params, and subscription create and delete params.
+  - `channel_id` on comment records and their authors in comment list, replies and create responses.
+  - `GetSearchSuggestionsGetParams.q`, `GetTrendingVideosSectionResponseDataItem.trending_metadata`,
+    `PostPlaylistCreateBody.title`, `PostVideoBulkUpdateBody.video_ids` and `changes`, and
+    `PutNotificationSettingsUpdateBody.settings`.
+- Generated struct literals must account for added fields, such as watch-history `q`,
+  search-suggestion `offset`, and channel member `invites`.
+  Use `..Default::default()` in literals that can use defaults for newly added fields.
+
 ## [0.4.0-rc.9] - 2026-11-26
 
 ### Added

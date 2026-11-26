@@ -281,8 +281,7 @@ pub fn group_suggestions(suggestions: Vec<SearchSuggestion>) -> Vec<SuggestionGr
 #[allow(clippy::unwrap_used)]
 mod tests {
 
-    /// The typed query must use exactly the parameters the pinned OpenAPI snapshot declares
-    /// for the operation, so a server rename shows up here when the snapshot is refreshed.
+    /// Check the typed query and blank-query pagination against the pinned OpenAPI parameters.
     #[test]
     fn query_parameters_match_the_openapi_snapshot() {
         let spec: serde_json::Value =
@@ -306,18 +305,32 @@ mod tests {
             .map(|p| p["name"].as_str().unwrap().to_owned())
             .collect();
         declared.sort();
-        let req = suggestions_request(&SuggestionQuery {
+        let query = SuggestionQuery {
             text: "x".into(),
             limit: Some(5),
             kinds: vec![SuggestionKind::Video],
             channel_id: Some("c".into()),
-        })
-        .unwrap()
-        .unwrap();
-        let mut sent: Vec<String> = req.query.iter().map(|(k, _)| k.clone()).collect();
-        sent.sort();
-        assert_eq!(sent, declared);
+        };
+        let req = suggestions_request(&query).unwrap().unwrap();
+        let page_query = SuggestionQuery {
+            text: String::new(),
+            ..query
+        };
+        let page = build_suggestions_request(&page_query, String::new(), Some(5)).unwrap();
+        let mut typed_params: Vec<_> = req.query.iter().map(|(name, _)| name.as_str()).collect();
+        typed_params.sort_unstable();
+        let mut page_params: Vec<_> = page.query.iter().map(|(name, _)| name.as_str()).collect();
+        page_params.sort_unstable();
+        assert_eq!(
+            typed_params,
+            declared
+                .iter()
+                .filter(|name| name.as_str() != "offset")
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(page_params, declared);
         assert_eq!(spec_path.replacen("/api/v1/", "/api/", 1), req.path);
+        assert_eq!(page.path, req.path);
         assert!(
             aun_api::OPERATIONS
                 .iter()
