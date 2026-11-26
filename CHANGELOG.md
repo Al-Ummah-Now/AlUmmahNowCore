@@ -7,6 +7,8 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+## [0.4.0-rc.8] - 2026-11-26
+
 ### Added
 
 - `AuthManager.token_for_account(user_id, force_refresh)` is available through UniFFI for clients
