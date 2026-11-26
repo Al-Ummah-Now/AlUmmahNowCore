@@ -7,6 +7,8 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+## [0.4.0-rc.11] - 2026-11-26
+
 ### Added
 
 - Bilingual playlist display text and localized playlist fields in native search.
