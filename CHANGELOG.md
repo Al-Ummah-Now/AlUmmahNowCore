@@ -11,6 +11,11 @@ FFI; such changes are listed under **Breaking**.
 
 - Resumable uploads from platform streams, such as Android content URIs, without a staging copy.
 
+### Breaking
+
+- Rust `UploadManifest` struct literals now require a `source: UploadSourceKind` field.
+  Existing persisted manifests default to `UploadSourceKind::Path`.
+
 ## [0.4.0-rc.11] - 2026-11-26
 
 ### Added

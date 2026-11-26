@@ -118,6 +118,44 @@ final class SmokeTests: XCTestCase {
         engine.shutdown()
     }
 
+    final class MemoryUploadSource: UploadSource {
+        func size() -> UInt64 { 3 }
+        func fingerprint() -> String { "version-1" }
+        func readAt(offset: UInt64, len: UInt64) -> Data {
+            let start = Int(min(offset, 3))
+            let count = Int(min(len, UInt64(3 - start)))
+            return Data([1, 2, 3][start..<(start + count)])
+        }
+    }
+
+    final class MemoryUploadOpener: UploadSourceOpener {
+        func reopen(sourceId: String) -> UploadSource {
+            XCTAssertEqual(sourceId, "content://test/video")
+            return MemoryUploadSource()
+        }
+    }
+
+    func testUploadStreamCallbacks() throws {
+        let client = try ApiClient(
+            config: ApiClientConfig(baseUrl: "http://127.0.0.1:9", userAgent: "smoke", locale: nil, timeoutMs: 2000, maxAttempts: 1),
+            tokens: nil
+        )
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let engine = try UploadEngine.withSourceOpener(
+            client: client, storeDir: dir.path, accountId: "u1", config: uploadConfigDefault(),
+            connectivity: Offline(), sourceOpener: MemoryUploadOpener()
+        )
+        defer {
+            engine.shutdown()
+            try? FileManager.default.removeItem(at: dir)
+        }
+        let request = UploadRequest(filePath: "picked.mp4", title: "درس", description: nil, mimeType: nil,
+                                    channelId: nil, isPublic: nil, tags: nil, category: nil,
+                                    titleLocalized: [:], descriptionLocalized: [:], priority: 0)
+        let id = try engine.enqueueStream(request: request, sourceId: "content://test/video")
+        XCTAssertEqual(try engine.list().map { $0.id }, [id])
+    }
+
     func testMediaSurface() async throws {
         XCTAssertGreaterThanOrEqual(edlSchemaVersion(), 1)
         XCTAssertTrue(transcriptionModelCatalog().contains { $0.tier == .tiny })

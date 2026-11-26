@@ -439,6 +439,17 @@ impl UploadEngine {
     }
 }
 
+enum TransferError {
+    Tus(Error),
+    Local(Error),
+}
+
+impl From<Error> for TransferError {
+    fn from(error: Error) -> Self {
+        Self::Local(error)
+    }
+}
+
 enum Outcome {
     Done,
     /// Stopped by pause/cancel/shutdown: state already set.
@@ -682,7 +693,7 @@ impl Inner {
             other => return Ok(other),
         }
 
-        blocking(move || source.validate()).await?;
+        source.validate_stream().await?;
         if self.interrupted(id, cancel) {
             return Ok(Outcome::Interrupted);
         }
@@ -840,11 +851,15 @@ impl Inner {
         loop {
             match self.transfer_once(id, source, cancel).await {
                 // 404/410: the proxy session (or direct authorisation) is gone. Once per run.
-                Err(Error::NotFound { .. }) | Err(Error::Http { status: 410, .. }) if !reauthorised => {
+                Err(TransferError::Tus(Error::NotFound { .. } | Error::Http { status: 410, .. }))
+                    if !reauthorised =>
+                {
                     reauthorised = true;
                     self.reauthorise(id).await?;
                 }
-                Err(Error::Unauthorized { .. }) | Err(Error::Forbidden { .. }) if !refreshed => {
+                Err(TransferError::Tus(Error::Unauthorized { .. } | Error::Forbidden { .. }))
+                    if !refreshed =>
+                {
                     refreshed = true;
                     let direct = matches!(self.snapshot(id)?.target, Some(TusTarget::Direct { .. }));
                     if direct {
@@ -853,7 +868,8 @@ impl Inner {
                         self.api.refresh_bearer().await?;
                     }
                 }
-                other => return other,
+                Ok(outcome) => return Ok(outcome),
+                Err(TransferError::Tus(error) | TransferError::Local(error)) => return Err(error),
             }
         }
     }
@@ -863,7 +879,7 @@ impl Inner {
         id: &str,
         source: &OpenSource,
         cancel: &CancellationToken,
-    ) -> Result<Outcome> {
+    ) -> std::result::Result<Outcome, TransferError> {
         let m = self.snapshot(id)?;
         let target = m
             .target
@@ -875,7 +891,11 @@ impl Inner {
         let upload_url = match &m.upload_url {
             Some(u) => {
                 // Resync with the server: it is the source of truth for the offset.
-                let off = self.tus.offset(&target, bearer.as_deref(), u).await?;
+                let off = self
+                    .tus
+                    .offset(&target, bearer.as_deref(), u)
+                    .await
+                    .map_err(TransferError::Tus)?;
                 self.update(id, |m| m.offset = off.min(size))?;
                 u.clone()
             }
@@ -883,7 +903,8 @@ impl Inner {
                 let url = self
                     .tus
                     .create(&target, bearer.as_deref(), size, &Self::metadata(&m))
-                    .await?;
+                    .await
+                    .map_err(TransferError::Tus)?;
                 self.update(id, |m| {
                     m.upload_url = Some(url.clone());
                     m.offset = 0;
@@ -901,6 +922,7 @@ impl Inner {
             if !self.can_run_now() {
                 return Ok(Outcome::Waiting);
             }
+            source.validate_stream().await?;
             let chunk = self.snapshot(id)?.chunk_size.max(MIN_CHUNK);
             let len = chunk.min(size - offset);
             let read_error = Arc::new(Mutex::new(None));
@@ -917,7 +939,7 @@ impl Inner {
                 .patch(&target, bearer.as_deref(), &upload_url, offset, body, len)
                 .await;
             if let Some(error) = lock(&read_error)?.take() {
-                return Err(error);
+                return Err(TransferError::Local(error));
             }
             match result {
                 Ok(new_offset) => {
@@ -929,7 +951,8 @@ impl Inner {
                     offset = self
                         .tus
                         .offset(&target, bearer.as_deref(), &upload_url)
-                        .await?
+                        .await
+                        .map_err(TransferError::Tus)?
                         .min(size);
                     self.update(id, |m| m.offset = offset)?;
                 }
@@ -937,8 +960,9 @@ impl Inner {
                     tracing::debug!(error = %e, "PATCH interrupted");
                     return Ok(Outcome::Interrupted);
                 }
-                Err(e) => return Err(e),
+                Err(e) => return Err(TransferError::Tus(e)),
             }
+            source.validate_stream().await?;
         }
         Ok(Outcome::Done)
     }
@@ -1040,6 +1064,14 @@ impl OpenSource {
         Error::invalid_input("the upload source changed since it was queued; add it again".into())
     }
 
+    async fn validate_stream(&self) -> Result<()> {
+        if matches!(self, Self::Stream { .. }) {
+            let source = self.clone();
+            blocking(move || source.validate()).await?;
+        }
+        Ok(())
+    }
+
     fn validate(&self) -> Result<()> {
         if let Self::Stream {
             source,
@@ -1074,12 +1106,7 @@ impl OpenSource {
                 file.read_exact(&mut buf)?;
                 Ok(buf)
             }
-            Self::Stream { source, .. } => {
-                self.validate()?;
-                let data = read_piece(source.as_ref(), offset, len)?;
-                self.validate()?;
-                Ok(data)
-            }
+            Self::Stream { source, .. } => read_piece(source.as_ref(), offset, len),
         }
     }
 }
