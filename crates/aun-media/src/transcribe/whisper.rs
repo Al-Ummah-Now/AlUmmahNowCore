@@ -40,9 +40,9 @@ impl WhisperTranscriber {
     pub fn new(model_path: &Path) -> Result<Self> {
         let path = model_path
             .to_str()
-            .ok_or_else(|| Error::InvalidInput("model path is not UTF-8".to_owned()))?;
+            .ok_or_else(|| Error::invalid_input("model path is not UTF-8".to_owned()))?;
         if !model_path.exists() {
-            return Err(Error::NotFound(path.to_owned()));
+            return Err(Error::not_found(path.to_owned()));
         }
         let mut transcriber = Self {
             context: None,
@@ -69,7 +69,7 @@ impl WhisperTranscriber {
         let path = self
             .model_path
             .to_str()
-            .ok_or_else(|| Error::InvalidInput("model path is not UTF-8".to_owned()))?;
+            .ok_or_else(|| Error::invalid_input("model path is not UTF-8".to_owned()))?;
         // Two threads may both load it; the second copy is dropped
         let _ = self.cpu.set(load(path, false)?);
         self.cpu
@@ -148,7 +148,7 @@ impl Transcriber for WhisperTranscriber {
         cancel: &CancellationToken,
     ) -> Result<Transcript> {
         if pcm.is_empty() {
-            return Err(Error::InvalidInput("no audio to transcribe".to_owned()));
+            return Err(Error::invalid_input("no audio to transcribe".to_owned()));
         }
         // Progress never goes back, even when the CPU starts over after the GPU failed
         let mut shown = 0;

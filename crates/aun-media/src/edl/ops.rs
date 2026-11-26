@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use super::model::{Clip, Project, TitleClip, TitleStyle, Track, TrackKind};
 
 fn not_found(id: &str) -> Error {
-    Error::NotFound(format!("clip {id}"))
+    Error::not_found(format!("clip {id}"))
 }
 
 impl Project {
@@ -28,7 +28,7 @@ impl Project {
             .find(|t| t.clips.iter().any(|c| c.id == clip_id))
             .ok_or_else(|| not_found(clip_id))?;
         if track.locked {
-            return Err(Error::Conflict(format!("track {} is locked", track.id)));
+            return Err(Error::conflict(format!("track {} is locked", track.id)));
         }
         Ok(track)
     }
@@ -45,7 +45,7 @@ impl Project {
                 .ok_or_else(|| not_found(clip_id))?;
             let clip = track.clips[index].clone();
             if at_ms <= clip.timeline_start_ms || at_ms >= clip.timeline_end_ms() {
-                return Err(Error::InvalidInput(format!(
+                return Err(Error::invalid_input(format!(
                     "split point {at_ms} is outside clip {clip_id}"
                 )));
             }
@@ -80,7 +80,7 @@ impl Project {
             let delta = (new_in_ms as f64 - clip.in_ms as f64) / clip.speed;
             let start = clip.timeline_start_ms as f64 + delta;
             if start < 0.0 {
-                return Err(Error::InvalidInput(
+                return Err(Error::invalid_input(
                     "trim would move the clip before the timeline start".to_owned(),
                 ));
             }
@@ -131,7 +131,7 @@ impl Project {
     /// are trimmed, spanning clips are split, and markers inside the range are dropped.
     pub fn ripple_delete_range(&mut self, start_ms: u64, end_ms: u64) -> Result<()> {
         if start_ms >= end_ms {
-            return Err(Error::InvalidInput("start must be before end".to_owned()));
+            return Err(Error::invalid_input("start must be before end".to_owned()));
         }
         self.transact(|project| {
             let shift = end_ms - start_ms;
@@ -204,7 +204,7 @@ impl Project {
                 || left.speed != right.speed
                 || left.volume != right.volume
             {
-                return Err(Error::InvalidInput(format!(
+                return Err(Error::invalid_input(format!(
                     "{right_id} does not continue {left_id}: only the two halves of a cut can be joined"
                 )));
             }
@@ -268,7 +268,7 @@ impl Project {
         self.transact(|project| {
             let track = unlocked_track(project, track_id)?;
             if track.kind != TrackKind::Title {
-                return Err(Error::InvalidInput(format!(
+                return Err(Error::invalid_input(format!(
                     "track {track_id} is not a title track"
                 )));
             }
@@ -356,7 +356,7 @@ impl Project {
                     .sources
                     .iter()
                     .find(|s| s.id == clip.source_id)
-                    .ok_or_else(|| Error::NotFound(format!("source {}", clip.source_id)))?;
+                    .ok_or_else(|| Error::not_found(format!("source {}", clip.source_id)))?;
                 duration_ms = duration_ms.max(clip.timeline_end_ms());
                 clips.push(FlatClip {
                     clip_id: clip.id.clone(),
@@ -447,9 +447,9 @@ fn unlocked_track<'a>(project: &'a mut Project, track_id: &str) -> Result<&'a mu
         .tracks
         .iter_mut()
         .find(|t| t.id == track_id)
-        .ok_or_else(|| Error::NotFound(format!("track {track_id}")))?;
+        .ok_or_else(|| Error::not_found(format!("track {track_id}")))?;
     if track.locked {
-        return Err(Error::Conflict(format!("track {} is locked", track.id)));
+        return Err(Error::conflict(format!("track {} is locked", track.id)));
     }
     Ok(track)
 }
@@ -459,9 +459,9 @@ fn unlocked_track_with_title<'a>(project: &'a mut Project, title_id: &str) -> Re
         .tracks
         .iter_mut()
         .find(|t| t.titles.iter().any(|x| x.id == title_id))
-        .ok_or_else(|| Error::NotFound(format!("title {title_id}")))?;
+        .ok_or_else(|| Error::not_found(format!("title {title_id}")))?;
     if track.locked {
-        return Err(Error::Conflict(format!("track {} is locked", track.id)));
+        return Err(Error::conflict(format!("track {} is locked", track.id)));
     }
     Ok(track)
 }

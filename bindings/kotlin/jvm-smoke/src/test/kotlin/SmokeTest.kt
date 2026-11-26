@@ -61,6 +61,7 @@ class SmokeTest {
         assertTrue(auth.beginLogin().url.contains("code_challenge_method=S256"))
         assertTrue(auth.accounts().isEmpty())
         assertNull(auth.accessToken())
+        assertNull(auth.tokenForAccount(userId = "missing", forceRefresh = true))
         assertFailsWith<AunException.Unsupported> { auth.beginDeviceLogin() }
         Unit
     }

@@ -190,7 +190,7 @@ impl SyncTransport for ApiSyncTransport {
         match self.client.post_update_watch_progress(&params, &body).await {
             Ok(_) => Ok(()),
             // No history entry yet on the server: record the view (creates it with the progress).
-            Err(Error::NotFound(_)) => {
+            Err(Error::NotFound { .. }) => {
                 let body = aun_api::PostRecordWatchHistoryBody {
                     video_id: video_id.to_owned(),
                     progress: Some(ms_to_secs(position_ms)),
@@ -211,7 +211,7 @@ impl SyncTransport for ApiSyncTransport {
             header_channel_id: None,
         };
         match self.client.delete_delete_watch_history(&params).await {
-            Ok(()) | Err(Error::NotFound(_)) => Ok(()),
+            Ok(()) | Err(Error::NotFound { .. }) => Ok(()),
             Err(e) => Err(e),
         }
     }
@@ -293,8 +293,8 @@ impl SyncTransport for ApiSyncTransport {
         };
         match r {
             // Already liked / not liked: the desired state holds.
-            Ok(_) | Err(Error::Conflict(_)) => Ok(()),
-            Err(Error::NotFound(_)) if !liked => Ok(()),
+            Ok(_) | Err(Error::Conflict { .. }) => Ok(()),
+            Err(Error::NotFound { .. }) if !liked => Ok(()),
             Err(e) => Err(e),
         }
     }

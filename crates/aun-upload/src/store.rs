@@ -76,10 +76,24 @@ pub struct UploadManifest {
     pub chunk_size: u64,
     pub attempts: u32,
     pub last_error: Option<String>,
+    /// Stable snake_case error kind (see `aun_common::Error::kind`).
+    #[serde(default)]
+    pub last_error_kind: Option<String>,
+    /// Machine-readable server code, when supplied by the server.
+    #[serde(default)]
+    pub last_error_code: Option<String>,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
     /// Earliest time to retry (Unix ms) after a backoff.
     pub not_before_ms: i64,
+}
+
+impl UploadManifest {
+    pub(crate) fn clear_error(&mut self) {
+        self.last_error = None;
+        self.last_error_kind = None;
+        self.last_error_code = None;
+    }
 }
 
 /// Directory of `<id>.json` manifests.
@@ -101,7 +115,7 @@ impl ManifestStore {
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
         {
-            return Err(Error::InvalidInput(format!("bad upload id {id:?}")));
+            return Err(Error::invalid_input(format!("bad upload id {id:?}")));
         }
         Ok(self.dir.join(format!("{id}.json")))
     }
@@ -172,9 +186,9 @@ impl ManifestStore {
 
 /// (size, mtime ms) of a file.
 pub fn file_identity(path: &Path) -> Result<(u64, i64)> {
-    let md = std::fs::metadata(path).map_err(|e| Error::InvalidInput(format!("{}: {e}", path.display())))?;
+    let md = std::fs::metadata(path).map_err(|e| Error::invalid_input(format!("{}: {e}", path.display())))?;
     if !md.is_file() {
-        return Err(Error::InvalidInput(format!("{} is not a file", path.display())));
+        return Err(Error::invalid_input(format!("{} is not a file", path.display())));
     }
     let mtime = md
         .modified()
@@ -244,10 +258,27 @@ mod tests {
             chunk_size: 1 << 20,
             attempts: 0,
             last_error: None,
+            last_error_kind: None,
+            last_error_code: None,
             created_at_ms: 0,
             updated_at_ms: 0,
             not_before_ms: 0,
         }
+    }
+
+    #[test]
+    fn loads_legacy_failure_without_structured_fields() {
+        let mut legacy = serde_json::to_value(manifest("u-1", 0)).unwrap();
+        let fields = legacy.as_object_mut().unwrap();
+        fields.remove("last_error_kind");
+        fields.remove("last_error_code");
+        fields.insert("state".into(), serde_json::json!("Failed"));
+        fields.insert("last_error".into(), serde_json::json!("older failure"));
+        let loaded: UploadManifest = serde_json::from_value(legacy).unwrap();
+        assert_eq!(loaded.state, UploadState::Failed);
+        assert_eq!(loaded.last_error.as_deref(), Some("older failure"));
+        assert_eq!(loaded.last_error_kind, None);
+        assert_eq!(loaded.last_error_code, None);
     }
 
     #[test]

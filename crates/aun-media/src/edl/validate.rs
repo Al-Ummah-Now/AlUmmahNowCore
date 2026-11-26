@@ -58,7 +58,7 @@ impl Project {
             .map(|i| format!("{} ({}): {}", i.code, i.item, i.message))
             .collect::<Vec<_>>()
             .join("; ");
-        Err(Error::InvalidInput(format!("invalid project: {summary}")))
+        Err(Error::invalid_input(format!("invalid project: {summary}")))
     }
 
     fn check_settings(&self, issues: &mut Issues) {

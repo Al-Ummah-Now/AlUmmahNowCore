@@ -133,11 +133,11 @@ fn newer_documents_are_unsupported() {
         load_project(r#"{"schemaVersion": 99}"#),
         Err(Error::Unsupported(_))
     ));
-    assert!(matches!(load_project("[]"), Err(Error::InvalidInput(_))));
-    assert!(matches!(load_project("{oops"), Err(Error::InvalidInput(_))));
+    assert!(matches!(load_project("[]"), Err(Error::InvalidInput { .. })));
+    assert!(matches!(load_project("{oops"), Err(Error::InvalidInput { .. })));
     assert!(matches!(
         load_project(r#"{"schemaVersion": "1"}"#),
-        Err(Error::InvalidInput(_))
+        Err(Error::InvalidInput { .. })
     ));
 }
 
@@ -276,7 +276,10 @@ fn split_rejects_the_boundary_and_leaves_the_project_alone() {
     let before = p.clone();
     assert!(p.split_clip("a", 0, "b").is_err());
     assert!(p.split_clip("a", 5000, "b").is_err());
-    assert!(matches!(p.split_clip("ghost", 10, "b"), Err(Error::NotFound(_))));
+    assert!(matches!(
+        p.split_clip("ghost", 10, "b"),
+        Err(Error::NotFound { .. })
+    ));
     // An id collision is caught by validation and rolled back.
     assert!(p.split_clip("a", 1000, "a").is_err());
     assert_eq!(p, before);
@@ -333,7 +336,7 @@ fn ripple_delete_clip_closes_the_gap() {
 fn locked_tracks_refuse_clip_edits_and_are_skipped_by_range_ripple() {
     let mut p = project(vec![clip("a", 0, 3000, 0)]);
     p.tracks[0].locked = true;
-    assert!(matches!(p.ripple_delete_clip("a"), Err(Error::Conflict(_))));
+    assert!(matches!(p.ripple_delete_clip("a"), Err(Error::Conflict { .. })));
     let mut unlocked = track("v2", TrackKind::Video, vec![]);
     let mut other = clip("x", 0, 3000, 2000);
     other.source_id = "cam".into();
@@ -629,7 +632,7 @@ fn nothing_to_render_is_invalid() {
     let p = project(vec![]);
     assert!(matches!(
         plan_render(&p, &request(preset(VideoCodec::H264, None)), &caps()),
-        Err(Error::InvalidInput(_))
+        Err(Error::InvalidInput { .. })
     ));
 }
 
@@ -665,12 +668,12 @@ fn join_refuses_clips_that_are_not_halves_of_one_cut() {
     // A gap between them, another source range, and the wrong order
     let mut p = project(vec![clip("a", 0, 3000, 0), clip("b", 3000, 6000, 3500)]);
     let before = p.clone();
-    assert!(matches!(p.join_clips("a", "b"), Err(Error::InvalidInput(_))));
+    assert!(matches!(p.join_clips("a", "b"), Err(Error::InvalidInput { .. })));
     let mut p2 = project(vec![clip("a", 0, 3000, 0), clip("b", 4000, 6000, 3000)]);
     assert!(p2.join_clips("a", "b").is_err());
     let mut p3 = project(vec![clip("a", 0, 3000, 0), clip("b", 3000, 6000, 3000)]);
     assert!(p3.join_clips("b", "a").is_err());
-    assert!(matches!(p.join_clips("a", "ghost"), Err(Error::NotFound(_))));
+    assert!(matches!(p.join_clips("a", "ghost"), Err(Error::NotFound { .. })));
     assert_eq!(p, before);
 }
 
@@ -693,7 +696,7 @@ fn move_places_a_clip_and_refuses_landing_on_another() {
     assert_eq!(p.tracks[1].clips[0].id, "a");
     let before = p.clone();
     assert!(p.move_clip("a", "v", 6000).is_err(), "would overlap b");
-    assert!(matches!(p.move_clip("a", "nope", 0), Err(Error::NotFound(_))));
+    assert!(matches!(p.move_clip("a", "nope", 0), Err(Error::NotFound { .. })));
     assert_eq!(p, before);
 }
 
@@ -706,7 +709,7 @@ fn move_onto_a_track_of_another_kind_or_a_locked_track_is_refused() {
     p.tracks.push(locked);
     let before = p.clone();
     assert!(p.move_clip("a", "t", 0).is_err());
-    assert!(matches!(p.move_clip("a", "v2", 0), Err(Error::Conflict(_))));
+    assert!(matches!(p.move_clip("a", "v2", 0), Err(Error::Conflict { .. })));
     assert_eq!(p, before);
 }
 
@@ -841,7 +844,7 @@ fn titles_are_added_moved_restyled_and_removed_as_json_ops() {
     assert_eq!(ids(&p), ["lt1"]);
     assert!(matches!(
         apply_json(&mut p, json!({"op": "removeTitle", "titleId": "lt2"})),
-        Err(Error::NotFound(_))
+        Err(Error::NotFound { .. })
     ));
 }
 
@@ -860,7 +863,7 @@ fn a_bad_title_edit_is_refused_and_changes_nothing() {
             &mut p,
             json!({"op": "addTitle", "trackId": "v", "title": lower_third("x", 0, 1000)})
         ),
-        Err(Error::InvalidInput(_))
+        Err(Error::InvalidInput { .. })
     ));
     // duplicate id, zero length, no text, bad colour
     assert!(
@@ -887,7 +890,7 @@ fn a_bad_title_edit_is_refused_and_changes_nothing() {
     p.tracks[1].locked = true;
     assert!(matches!(
         apply_json(&mut p, json!({"op": "removeTitle", "titleId": "lt"})),
-        Err(Error::Conflict(_))
+        Err(Error::Conflict { .. })
     ));
     p.tracks[1].locked = false;
     assert_eq!(p, before);

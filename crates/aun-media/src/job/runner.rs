@@ -170,7 +170,7 @@ impl JobHandle {
         {
             let mut control = lock(&self.control);
             if control.started {
-                return Err(Error::Conflict("job already started".to_owned()));
+                return Err(Error::conflict("job already started".to_owned()));
             }
             control.started = true;
         }

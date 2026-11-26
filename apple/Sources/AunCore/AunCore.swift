@@ -1423,6 +1423,13 @@ public protocol AuthManagerProtocol: AnyObject, Sendable {
     
     func switchAccount(userId: String) throws  -> AccountInfo
     
+    /**
+     * A valid access token for the given account, even when another account is active.
+     * Set `force_refresh` to refresh after a 401. Returns `None` if the account is missing or
+     * needs sign-in again.
+     */
+    func tokenForAccount(userId: String, forceRefresh: Bool) async throws  -> String?
+    
 }
 /**
  * Sign-in, accounts and tokens. One per app.
@@ -1695,6 +1702,28 @@ open func switchAccount(userId: String)throws  -> AccountInfo  {
         FfiConverterString.lower(userId),$0
     )
 })
+}
+    
+    /**
+     * A valid access token for the given account, even when another account is active.
+     * Set `force_refresh` to refresh after a 401. Returns `None` if the account is missing or
+     * needs sign-in again.
+     */
+open func tokenForAccount(userId: String, forceRefresh: Bool)async throws  -> String?  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_authmanager_token_for_account(
+                    self.uniffiCloneHandle(),
+                    FfiConverterString.lower(userId),FfiConverterBool.lower(forceRefresh)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterOptionString.lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
 }
     
 
@@ -10747,6 +10776,14 @@ public struct UploadInfo: Equatable, Hashable {
     public var videoId: String?
     public var sha256: String?
     public var lastError: String?
+    /**
+     * Stable snake_case error kind, such as `forbidden`.
+     */
+    public var lastErrorKind: String?
+    /**
+     * Machine-readable server code, such as `terms_required`.
+     */
+    public var lastErrorCode: String?
     public var priority: Int32
     public var createdAtMs: Int64
     public var updatedAtMs: Int64
@@ -10756,7 +10793,13 @@ public struct UploadInfo: Equatable, Hashable {
     public init(id: String, filePath: String, title: String, state: UploadState, sentBytes: UInt64, totalBytes: UInt64, 
         /**
          * Set once the server created the video.
-         */videoId: String?, sha256: String?, lastError: String?, priority: Int32, createdAtMs: Int64, updatedAtMs: Int64) {
+         */videoId: String?, sha256: String?, lastError: String?, 
+        /**
+         * Stable snake_case error kind, such as `forbidden`.
+         */lastErrorKind: String?, 
+        /**
+         * Machine-readable server code, such as `terms_required`.
+         */lastErrorCode: String?, priority: Int32, createdAtMs: Int64, updatedAtMs: Int64) {
         self.id = id
         self.filePath = filePath
         self.title = title
@@ -10766,6 +10809,8 @@ public struct UploadInfo: Equatable, Hashable {
         self.videoId = videoId
         self.sha256 = sha256
         self.lastError = lastError
+        self.lastErrorKind = lastErrorKind
+        self.lastErrorCode = lastErrorCode
         self.priority = priority
         self.createdAtMs = createdAtMs
         self.updatedAtMs = updatedAtMs
@@ -10796,6 +10841,8 @@ public struct FfiConverterTypeUploadInfo: FfiConverterRustBuffer {
                 videoId: FfiConverterOptionString.read(from: &buf), 
                 sha256: FfiConverterOptionString.read(from: &buf), 
                 lastError: FfiConverterOptionString.read(from: &buf), 
+                lastErrorKind: FfiConverterOptionString.read(from: &buf), 
+                lastErrorCode: FfiConverterOptionString.read(from: &buf), 
                 priority: FfiConverterInt32.read(from: &buf), 
                 createdAtMs: FfiConverterInt64.read(from: &buf), 
                 updatedAtMs: FfiConverterInt64.read(from: &buf)
@@ -10812,6 +10859,8 @@ public struct FfiConverterTypeUploadInfo: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.videoId, into: &buf)
         FfiConverterOptionString.write(value.sha256, into: &buf)
         FfiConverterOptionString.write(value.lastError, into: &buf)
+        FfiConverterOptionString.write(value.lastErrorKind, into: &buf)
+        FfiConverterOptionString.write(value.lastErrorCode, into: &buf)
         FfiConverterInt32.write(value.priority, into: &buf)
         FfiConverterInt64.write(value.createdAtMs, into: &buf)
         FfiConverterInt64.write(value.updatedAtMs, into: &buf)
@@ -11220,17 +11269,17 @@ public enum AunError: Swift.Error, Equatable, Hashable, Foundation.LocalizedErro
     case Offline
     case Http(status: UInt16, code: String?, detail: String
     )
-    case Unauthorized(detail: String
+    case Unauthorized(code: String?, detail: String
     )
-    case Forbidden(detail: String
+    case Forbidden(code: String?, detail: String
     )
-    case NotFound(detail: String
+    case NotFound(code: String?, detail: String
     )
-    case Conflict(detail: String
+    case Conflict(code: String?, detail: String
     )
     case RateLimited(retryAfterMs: UInt64?
     )
-    case InvalidInput(detail: String
+    case InvalidInput(code: String?, detail: String
     )
     case Storage(detail: String
     )
@@ -11280,21 +11329,26 @@ public struct FfiConverterTypeAunError: FfiConverterRustBuffer {
             detail: try FfiConverterString.read(from: &buf)
             )
         case 4: return .Unauthorized(
+            code: try FfiConverterOptionString.read(from: &buf), 
             detail: try FfiConverterString.read(from: &buf)
             )
         case 5: return .Forbidden(
+            code: try FfiConverterOptionString.read(from: &buf), 
             detail: try FfiConverterString.read(from: &buf)
             )
         case 6: return .NotFound(
+            code: try FfiConverterOptionString.read(from: &buf), 
             detail: try FfiConverterString.read(from: &buf)
             )
         case 7: return .Conflict(
+            code: try FfiConverterOptionString.read(from: &buf), 
             detail: try FfiConverterString.read(from: &buf)
             )
         case 8: return .RateLimited(
             retryAfterMs: try FfiConverterOptionUInt64.read(from: &buf)
             )
         case 9: return .InvalidInput(
+            code: try FfiConverterOptionString.read(from: &buf), 
             detail: try FfiConverterString.read(from: &buf)
             )
         case 10: return .Storage(
@@ -11338,23 +11392,27 @@ public struct FfiConverterTypeAunError: FfiConverterRustBuffer {
             FfiConverterString.write(detail, into: &buf)
             
         
-        case let .Unauthorized(detail):
+        case let .Unauthorized(code,detail):
             writeInt(&buf, Int32(4))
+            FfiConverterOptionString.write(code, into: &buf)
             FfiConverterString.write(detail, into: &buf)
             
         
-        case let .Forbidden(detail):
+        case let .Forbidden(code,detail):
             writeInt(&buf, Int32(5))
+            FfiConverterOptionString.write(code, into: &buf)
             FfiConverterString.write(detail, into: &buf)
             
         
-        case let .NotFound(detail):
+        case let .NotFound(code,detail):
             writeInt(&buf, Int32(6))
+            FfiConverterOptionString.write(code, into: &buf)
             FfiConverterString.write(detail, into: &buf)
             
         
-        case let .Conflict(detail):
+        case let .Conflict(code,detail):
             writeInt(&buf, Int32(7))
+            FfiConverterOptionString.write(code, into: &buf)
             FfiConverterString.write(detail, into: &buf)
             
         
@@ -11363,8 +11421,9 @@ public struct FfiConverterTypeAunError: FfiConverterRustBuffer {
             FfiConverterOptionUInt64.write(retryAfterMs, into: &buf)
             
         
-        case let .InvalidInput(detail):
+        case let .InvalidInput(code,detail):
             writeInt(&buf, Int32(9))
+            FfiConverterOptionString.write(code, into: &buf)
             FfiConverterString.write(detail, into: &buf)
             
         
@@ -16171,6 +16230,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_authmanager_switch_account() != 40927) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_authmanager_token_for_account() != 8470) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_devicelogin_cancel() != 38743) {

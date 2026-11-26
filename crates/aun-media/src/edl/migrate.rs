@@ -20,7 +20,7 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }];
 
 fn invalid(detail: impl Into<String>) -> Error {
-    Error::InvalidInput(format!("project: {}", detail.into()))
+    Error::invalid_input(format!("project: {}", detail.into()))
 }
 
 /// The document's `schemaVersion`; files from before versioning have none and count as 0.

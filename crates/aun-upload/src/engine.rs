@@ -147,10 +147,10 @@ impl UploadEngine {
     ) -> Result<Self> {
         let account_id = account_id.into();
         if account_id.is_empty() {
-            return Err(Error::InvalidInput("upload engine needs an account id".into()));
+            return Err(Error::invalid_input("upload engine needs an account id".into()));
         }
         if api.account_id().is_some_and(|a| a != account_id) {
-            return Err(Error::InvalidInput(
+            return Err(Error::invalid_input(
                 "API client is bound to a different account".into(),
             ));
         }
@@ -209,11 +209,11 @@ impl UploadEngine {
     /// Queues a file. Returns the upload id.
     pub fn enqueue(&self, request: UploadRequest) -> Result<String> {
         if request.title.trim().is_empty() {
-            return Err(Error::InvalidInput("title is required".into()));
+            return Err(Error::invalid_input("title is required".into()));
         }
         let (size, mtime) = file_identity(Path::new(&request.file_path))?;
         if size == 0 {
-            return Err(Error::InvalidInput("file is empty".into()));
+            return Err(Error::invalid_input("file is empty".into()));
         }
         let now = self.inner.clock.now_ms();
         let m = UploadManifest {
@@ -232,6 +232,8 @@ impl UploadEngine {
             chunk_size: 0,
             attempts: 0,
             last_error: None,
+            last_error_kind: None,
+            last_error_code: None,
             created_at_ms: now,
             updated_at_ms: now,
             not_before_ms: 0,
@@ -300,6 +302,7 @@ impl UploadEngine {
                 m.state = UploadState::Queued;
                 m.attempts = 0;
                 m.not_before_ms = 0;
+                m.clear_error();
             }
         })?;
         self.inner.wake.notify_one();
@@ -309,7 +312,9 @@ impl UploadEngine {
     /// Cancels: stops the transfer and asks the server to discard the partial upload.
     pub async fn cancel(&self, id: &str) -> Result<()> {
         match self.get(id)?.map(|m| m.state) {
-            Some(UploadState::Done) => return Err(Error::InvalidInput("the upload already finished".into())),
+            Some(UploadState::Done) => {
+                return Err(Error::invalid_input("the upload already finished".into()));
+            }
             Some(UploadState::Cancelled) => return Ok(()),
             _ => {}
         }
@@ -336,8 +341,8 @@ impl UploadEngine {
                 uploads.remove(id);
                 Ok(())
             }
-            Some(_) => Err(Error::InvalidInput("cancel or finish the upload first".into())),
-            None => Err(Error::NotFound(format!("upload {id}"))),
+            Some(_) => Err(Error::invalid_input("cancel or finish the upload first".into())),
+            None => Err(Error::not_found(format!("upload {id}"))),
         }
     }
 
@@ -423,7 +428,7 @@ impl Inner {
         let mut uploads = lock(&self.uploads)?;
         let m = uploads
             .get_mut(id)
-            .ok_or_else(|| Error::NotFound(format!("upload {id}")))?;
+            .ok_or_else(|| Error::not_found(format!("upload {id}")))?;
         f(m);
         m.updated_at_ms = self.clock.now_ms();
         self.store.save(m)?;
@@ -535,19 +540,20 @@ impl Inner {
             .map(|c| (c.max_attempts, c.retry_base))
             .unwrap_or((8, Duration::from_secs(2)));
         let now = self.clock.now_ms();
-        let msg = e.to_string();
         let result = self.update(id, |m| {
             if m.state.is_terminal() || m.state == UploadState::Paused {
                 return;
             }
-            m.last_error = Some(msg.clone());
+            m.last_error = Some(e.to_string());
+            m.last_error_kind = Some(e.kind().into());
+            m.last_error_code = e.code().map(str::to_owned);
             match &e {
                 Error::RateLimited { retry_after } => {
                     let wait = retry_after.unwrap_or(Duration::from_secs(60));
                     m.state = UploadState::Queued;
                     m.not_before_ms = now + wait.as_millis() as i64;
                 }
-                e if e.is_retryable() || matches!(e, Error::Conflict(_)) => {
+                e if e.is_retryable() || matches!(e, Error::Conflict { .. }) => {
                     m.attempts += 1;
                     if m.attempts >= max_attempts {
                         m.state = UploadState::Failed;
@@ -571,7 +577,7 @@ impl Inner {
         lock(&self.uploads)?
             .get(id)
             .cloned()
-            .ok_or_else(|| Error::NotFound(format!("upload {id}")))
+            .ok_or_else(|| Error::not_found(format!("upload {id}")))
     }
 
     /// Stops if the user paused/cancelled or the engine is shutting down.
@@ -588,7 +594,7 @@ impl Inner {
         let path = std::path::PathBuf::from(&m.request.file_path);
         let (size, mtime) = file_identity(&path)?;
         if size != m.file_size || mtime != m.file_mtime_ms {
-            return Err(Error::InvalidInput(
+            return Err(Error::invalid_input(
                 "the file changed since it was queued; add it again".into(),
             ));
         }
@@ -641,7 +647,7 @@ impl Inner {
             .await?;
         self.update(id, |m| {
             m.state = UploadState::Done;
-            m.last_error = None;
+            m.clear_error();
         })?;
         self.emit_state(id, UploadState::Done, None);
         Ok(Outcome::Done)
@@ -775,11 +781,11 @@ impl Inner {
         loop {
             match self.transfer_once(id, path, cancel).await {
                 // 404/410: the proxy session (or direct authorisation) is gone. Once per run.
-                Err(Error::NotFound(_)) | Err(Error::Http { status: 410, .. }) if !reauthorised => {
+                Err(Error::NotFound { .. }) | Err(Error::Http { status: 410, .. }) if !reauthorised => {
                     reauthorised = true;
                     self.reauthorise(id).await?;
                 }
-                Err(Error::Unauthorized(_)) | Err(Error::Forbidden(_)) if !refreshed => {
+                Err(Error::Unauthorized { .. }) | Err(Error::Forbidden { .. }) if !refreshed => {
                     refreshed = true;
                     let direct = matches!(self.snapshot(id)?.target, Some(TusTarget::Direct { .. }));
                     if direct {
@@ -845,7 +851,7 @@ impl Inner {
                     self.update(id, |m| m.offset = offset)?;
                     self.emit_progress(id, offset, size);
                 }
-                Err(Error::Conflict(_)) => {
+                Err(Error::Conflict { .. }) => {
                     offset = self
                         .tus
                         .offset(&target, bearer.as_deref(), &upload_url)

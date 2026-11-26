@@ -116,6 +116,7 @@ impl UpdateChecker {
     ) -> Result<std::sync::Arc<Self>, AunError> {
         if !version::is_valid(&installed_version) {
             return Err(AunError::InvalidInput {
+                code: None,
                 detail: format!("installed version {installed_version}"),
             });
         }
@@ -128,6 +129,7 @@ impl UpdateChecker {
             state
                 .accept_key_list(list.as_bytes(), &sig, &root_keys, &repo)
                 .map_err(|e| AunError::InvalidInput {
+                    code: None,
                     detail: format!("bundled key list: {e}"),
                 })?;
         }
@@ -155,11 +157,13 @@ impl UpdateChecker {
     ) -> Result<UpdatePrompt, AunError> {
         let value: serde_json::Value =
             serde_json::from_str(&update_json).map_err(|e| AunError::InvalidInput {
+                code: None,
                 detail: e.to_string(),
             })?;
         let update = value.get("update").cloned().unwrap_or(value);
         let answer: UpdateAnswer =
             serde_json::from_value(update.clone()).map_err(|e| AunError::InvalidInput {
+                code: None,
                 detail: e.to_string(),
             })?;
         let mut state = self.lock();

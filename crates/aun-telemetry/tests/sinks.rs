@@ -101,7 +101,7 @@ async fn http_sink_maps_errors() {
     assert!(send("/down").await.unwrap_err().is_retryable());
     assert_eq!(
         send("/bad").await.unwrap_err(),
-        Error::InvalidInput("schema".into())
+        Error::invalid_input("schema".into())
     );
     assert!(HttpSink::new("ftp://x", None).is_err());
     assert!(HttpSink::new("http://telemetry.example.com/ingest", None).is_err());

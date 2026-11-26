@@ -29,7 +29,7 @@ impl FolderWatcher {
     /// (cameras and copies write for a while). Files already present are not reported.
     pub fn start(dir: impl AsRef<Path>, recursive: bool, settle: Duration, on_file: OnFile) -> Result<Self> {
         // FSEvents reports canonical paths (`/private/var/...`), so watch the canonical one.
-        let dir = std::fs::canonicalize(dir.as_ref()).map_err(|e| Error::InvalidInput(e.to_string()))?;
+        let dir = std::fs::canonicalize(dir.as_ref()).map_err(|e| Error::invalid_input(e.to_string()))?;
         let pending: Arc<Mutex<HashMap<PathBuf, (u64, tokio::time::Instant)>>> = Arc::default();
         let existing = scan(&dir, recursive);
         let p2 = pending.clone();

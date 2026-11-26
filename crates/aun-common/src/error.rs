@@ -20,19 +20,19 @@ pub enum Error {
         message: String,
     },
     /// Authentication is missing or could not be refreshed: sign-in required.
-    #[error("unauthorized: {0}")]
-    Unauthorized(String),
-    #[error("forbidden: {0}")]
-    Forbidden(String),
-    #[error("not found: {0}")]
-    NotFound(String),
-    #[error("conflict: {0}")]
-    Conflict(String),
+    #[error("unauthorized: {message}")]
+    Unauthorized { code: Option<String>, message: String },
+    #[error("forbidden: {message}")]
+    Forbidden { code: Option<String>, message: String },
+    #[error("not found: {message}")]
+    NotFound { code: Option<String>, message: String },
+    #[error("conflict: {message}")]
+    Conflict { code: Option<String>, message: String },
     /// 429 from the server; `retry_after` comes from the `Retry-After` header when present.
     #[error("rate limited")]
     RateLimited { retry_after: Option<Duration> },
-    #[error("invalid input: {0}")]
-    InvalidInput(String),
+    #[error("invalid input: {message}")]
+    InvalidInput { code: Option<String>, message: String },
     /// Local persistence (database, file system) failed.
     #[error("storage error: {0}")]
     Storage(String),
@@ -56,17 +56,70 @@ impl Error {
     pub fn from_status(status: u16, code: Option<String>, message: impl Into<String>) -> Self {
         let message = message.into();
         match status {
-            401 => Error::Unauthorized(message),
-            403 => Error::Forbidden(message),
-            404 => Error::NotFound(message),
-            409 => Error::Conflict(message),
+            401 => Error::Unauthorized { code, message },
+            403 => Error::Forbidden { code, message },
+            404 => Error::NotFound { code, message },
+            409 => Error::Conflict { code, message },
             429 => Error::RateLimited { retry_after: None },
-            400 | 422 => Error::InvalidInput(message),
+            400 | 422 => Error::InvalidInput { code, message },
             _ => Error::Http {
                 status,
                 code,
                 message,
             },
+        }
+    }
+
+    /// Creates a local unauthorized error, with no server code.
+    pub fn unauthorized(message: String) -> Self {
+        Self::Unauthorized { code: None, message }
+    }
+
+    /// Creates a local not found error, with no server code.
+    pub fn not_found(message: String) -> Self {
+        Self::NotFound { code: None, message }
+    }
+
+    /// Creates a local conflict error, with no server code.
+    pub fn conflict(message: String) -> Self {
+        Self::Conflict { code: None, message }
+    }
+
+    /// Creates a local invalid input error, with no server code.
+    pub fn invalid_input(message: String) -> Self {
+        Self::InvalidInput { code: None, message }
+    }
+
+    /// The server's machine-readable code, when present.
+    pub fn code(&self) -> Option<&str> {
+        match self {
+            Self::Http { code, .. }
+            | Self::Unauthorized { code, .. }
+            | Self::Forbidden { code, .. }
+            | Self::NotFound { code, .. }
+            | Self::Conflict { code, .. }
+            | Self::InvalidInput { code, .. } => code.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// The stable, snake_case name of this error variant.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Network(_) => "network",
+            Self::Offline => "offline",
+            Self::Http { .. } => "http",
+            Self::Unauthorized { .. } => "unauthorized",
+            Self::Forbidden { .. } => "forbidden",
+            Self::NotFound { .. } => "not_found",
+            Self::Conflict { .. } => "conflict",
+            Self::RateLimited { .. } => "rate_limited",
+            Self::InvalidInput { .. } => "invalid_input",
+            Self::Storage(_) => "storage",
+            Self::Platform(_) => "platform",
+            Self::Unsupported(_) => "unsupported",
+            Self::Cancelled => "cancelled",
+            Self::Internal(_) => "internal",
         }
     }
 
@@ -101,9 +154,9 @@ mod tests {
     fn status_mapping() {
         assert_eq!(
             Error::from_status(401, None, "x"),
-            Error::Unauthorized("x".into())
+            Error::unauthorized("x".into())
         );
-        assert_eq!(Error::from_status(404, None, "x"), Error::NotFound("x".into()));
+        assert_eq!(Error::from_status(404, None, "x"), Error::not_found("x".into()));
         assert!(matches!(
             Error::from_status(429, None, ""),
             Error::RateLimited { .. }

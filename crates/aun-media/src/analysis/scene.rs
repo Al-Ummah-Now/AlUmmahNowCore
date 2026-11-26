@@ -64,7 +64,7 @@ pub struct SceneDetector {
 impl SceneDetector {
     pub fn new(config: SceneConfig) -> Result<Self> {
         if !(0.0..=1.0).contains(&config.threshold) || !(0.0..=1.0).contains(&config.histogram_weight) {
-            return Err(Error::InvalidInput(
+            return Err(Error::invalid_input(
                 "scene threshold and weight must be between 0 and 1".to_owned(),
             ));
         }
@@ -80,7 +80,7 @@ impl SceneDetector {
     pub fn push(&mut self, frame: VideoFrame) -> Result<Option<SceneChange>> {
         let expected = u64::from(frame.width) * u64::from(frame.height);
         if expected == 0 || frame.luma.len() as u64 != expected {
-            return Err(Error::InvalidInput(format!(
+            return Err(Error::invalid_input(format!(
                 "frame at {} ms: luma plane is {} bytes, expected {expected}",
                 frame.pts_ms,
                 frame.luma.len()
@@ -90,7 +90,7 @@ impl SceneDetector {
         let mut change = None;
         if let Some(prev) = &self.previous {
             if prev.width != frame.width || prev.height != frame.height {
-                return Err(Error::InvalidInput("frame size changed mid-stream".to_owned()));
+                return Err(Error::invalid_input("frame size changed mid-stream".to_owned()));
             }
             let hist = histogram_distance(&self.previous_histogram, &histogram, frame.luma.len());
             let sad = mean_absolute_difference(&prev.luma, &frame.luma);

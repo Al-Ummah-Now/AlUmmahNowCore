@@ -222,10 +222,12 @@ impl RequestSpec {
 /// a parameter value from changing which route is called.
 pub fn encode_path(segment: &str) -> Result<String> {
     if segment.is_empty() {
-        return Err(Error::InvalidInput("empty path parameter".into()));
+        return Err(Error::invalid_input("empty path parameter".into()));
     }
     if segment.bytes().all(|b| b == b'.') {
-        return Err(Error::InvalidInput(format!("invalid path parameter {segment:?}")));
+        return Err(Error::invalid_input(format!(
+            "invalid path parameter {segment:?}"
+        )));
     }
     let mut out = String::with_capacity(segment.len());
     for b in segment.bytes() {
@@ -349,7 +351,7 @@ impl ApiClient {
             None => None,
         };
         if req.auth == AuthMode::Required && token.is_none() {
-            return Err(Error::Unauthorized(format!(
+            return Err(Error::unauthorized(format!(
                 "{} requires sign-in",
                 req.operation_id
             )));
@@ -359,17 +361,17 @@ impl ApiClient {
             let result = self.send_once(&req, token.as_deref()).await;
             match result {
                 Ok(raw) => return Ok(raw),
-                Err((Error::Unauthorized(msg), _)) if !refreshed && self.auth.is_some() => {
+                Err((e @ Error::Unauthorized { .. }, _)) if !refreshed && self.auth.is_some() => {
                     refreshed = true;
                     let Some(auth) = &self.auth else {
-                        return Err(Error::Unauthorized(msg));
+                        return Err(e);
                     };
                     match auth.refresh().await? {
                         Some(t) => {
                             token = Some(t);
                             attempt -= 1; // the refresh retry doesn't count against the budget
                         }
-                        None => return Err(Error::Unauthorized(msg)),
+                        None => return Err(e),
                     }
                 }
                 Err((e, retry_after)) => {
@@ -423,7 +425,7 @@ impl ApiClient {
                     let part = reqwest::multipart::Part::bytes(f.bytes.clone())
                         .file_name(f.file_name.clone())
                         .mime_str(&f.mime_type)
-                        .map_err(|e| (Error::InvalidInput(e.to_string()), None))?;
+                        .map_err(|e| (Error::invalid_input(e.to_string()), None))?;
                     form = form.part(f.field.clone(), part);
                 }
                 rb.multipart(form)
@@ -460,17 +462,17 @@ fn parse_retry_after(h: &header::HeaderMap) -> Option<Duration> {
     v.trim().parse::<u64>().ok().map(Duration::from_secs)
 }
 
-/// Maps an error response. api-videos errors look like `{"success":false,"error":"…"}` or
-/// `{"error":{"code":"…","message":"…"}}` or chanfana's `{"errors":[{"message":"…"}]}`.
+/// Maps the flat and nested api-videos error envelopes and Chanfana validation errors.
 pub(crate) fn error_from_response(status: StatusCode, body: &str, retry_after: Option<Duration>) -> Error {
     let json: Option<serde_json::Value> = serde_json::from_str(body).ok();
     let (code, message) = match &json {
         Some(v) => {
             let err = v.get("error");
+            let first_error = v.get("errors").and_then(|errors| errors.get(0));
             let code = err
-                .and_then(|e| e.get("code"))
-                .or_else(|| v.get("code"))
-                .and_then(|c| c.as_str())
+                .and_then(|e| e.get("code")?.as_str())
+                .or_else(|| v.get("code")?.as_str())
+                .or_else(|| first_error?.get("code")?.as_str())
                 .map(str::to_owned);
             let message = err
                 .and_then(|e| {
@@ -479,13 +481,7 @@ pub(crate) fn error_from_response(status: StatusCode, body: &str, retry_after: O
                         .or_else(|| e.get("message")?.as_str().map(str::to_owned))
                 })
                 .or_else(|| v.get("message")?.as_str().map(str::to_owned))
-                .or_else(|| {
-                    v.get("errors")?
-                        .get(0)?
-                        .get("message")?
-                        .as_str()
-                        .map(str::to_owned)
-                });
+                .or_else(|| first_error?.get("message")?.as_str().map(str::to_owned));
             (code, message)
         }
         None => (None, None),
@@ -515,7 +511,10 @@ mod tests {
         assert_eq!(encode_path("سلام").unwrap(), "%D8%B3%D9%84%D8%A7%D9%85");
         assert_eq!(encode_path("v1.mp4").unwrap(), "v1.mp4");
         for bad in ["", ".", "..", "..."] {
-            assert!(matches!(encode_path(bad), Err(Error::InvalidInput(_))), "{bad:?}");
+            assert!(
+                matches!(encode_path(bad), Err(Error::InvalidInput { .. })),
+                "{bad:?}"
+            );
         }
         // Encoded separators stay inside the segment once parsed as a URL.
         let url = reqwest::Url::parse(&format!(
@@ -549,7 +548,7 @@ mod tests {
             r#"{"success":false,"error":"Video not found"}"#,
             None,
         );
-        assert_eq!(e, Error::NotFound("Video not found".into()));
+        assert_eq!(e, Error::not_found("Video not found".into()));
         let e = error_from_response(
             StatusCode::BAD_GATEWAY,
             r#"{"error":{"code":"upstream","message":"Bunny down"}}"#,
@@ -568,7 +567,7 @@ mod tests {
             r#"{"errors":[{"message":"title required"}]}"#,
             None,
         );
-        assert_eq!(e, Error::InvalidInput("title required".into()));
+        assert_eq!(e, Error::invalid_input("title required".into()));
         let e = error_from_response(StatusCode::TOO_MANY_REQUESTS, "", Some(Duration::from_secs(7)));
         assert_eq!(
             e,
@@ -576,5 +575,31 @@ mod tests {
                 retry_after: Some(Duration::from_secs(7))
             }
         );
+    }
+
+    #[test]
+    fn preserves_machine_codes_on_client_errors() {
+        let cases = [
+            (StatusCode::UNAUTHORIZED, "unauthorized"),
+            (StatusCode::FORBIDDEN, "forbidden"),
+            (StatusCode::NOT_FOUND, "not_found"),
+            (StatusCode::CONFLICT, "conflict"),
+            (StatusCode::BAD_REQUEST, "invalid_input"),
+            (StatusCode::UNPROCESSABLE_ENTITY, "invalid_input"),
+        ];
+        for (status, kind) in cases {
+            for body in [
+                r#"{"success":false,"code":"machine_code","error":"detail"}"#,
+                r#"{"error":{"code":"machine_code","message":"detail"}}"#,
+                r#"{"errors":[{"code":"machine_code","message":"detail"}]}"#,
+            ] {
+                let e = error_from_response(status, body, None);
+                assert_eq!(e.kind(), kind);
+                assert_eq!(e.code(), Some("machine_code"));
+                assert!(e.to_string().ends_with(": detail"));
+                assert!(!e.is_retryable());
+            }
+            assert_eq!(error_from_response(status, "plain detail", None).code(), None);
+        }
     }
 }

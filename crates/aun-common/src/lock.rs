@@ -41,7 +41,7 @@ impl StoreLock {
         // Called through the trait: `File::try_lock` (std, Rust 1.89) is newer than our MSRV.
         match fs4::FileExt::try_lock(&file) {
             Ok(()) => Ok(Self { path, _file: file }),
-            Err(fs4::TryLockError::WouldBlock) => Err(Error::Conflict(format!(
+            Err(fs4::TryLockError::WouldBlock) => Err(Error::conflict(format!(
                 "{} is in use by another process (is the app already running?)",
                 path.display()
             ))),
@@ -69,7 +69,7 @@ mod tests {
         let path = dir.join("nested").join("store.lock");
         let first = StoreLock::acquire(&path).unwrap();
         assert_eq!(first.path(), path.as_path());
-        assert!(matches!(StoreLock::acquire(&path), Err(Error::Conflict(_))));
+        assert!(matches!(StoreLock::acquire(&path), Err(Error::Conflict { .. })));
         drop(first);
         let again = StoreLock::acquire(&path).unwrap();
         drop(again);
@@ -97,7 +97,7 @@ mod tests {
         assert!(
             results
                 .iter()
-                .all(|r| r.is_ok() || matches!(r, Err(Error::Conflict(_))))
+                .all(|r| r.is_ok() || matches!(r, Err(Error::Conflict { .. })))
         );
         drop(results);
         let _ = std::fs::remove_dir_all(&dir);

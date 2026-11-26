@@ -214,7 +214,7 @@ async fn http_errors_map_to_the_error_model() {
         .download("test", Arc::new(Progress::default()), &CancellationToken::new())
         .await
         .unwrap_err();
-    assert!(matches!(err, Error::NotFound(_)), "{err}");
+    assert!(matches!(err, Error::NotFound { .. }), "{err}");
 }
 
 #[tokio::test]
@@ -260,10 +260,10 @@ async fn unknown_model_is_not_found() {
     let dir = tempfile::tempdir().unwrap();
     let m = ModelManager::new(dir.path(), Arc::new(HttpModelFetcher::new()));
     assert_eq!(m.list().unwrap().len(), 15);
-    assert!(matches!(m.delete("nope"), Err(Error::NotFound(_))));
+    assert!(matches!(m.delete("nope"), Err(Error::NotFound { .. })));
     assert!(matches!(
         m.download("nope", Arc::new(Progress::default()), &CancellationToken::new())
             .await,
-        Err(Error::NotFound(_))
+        Err(Error::NotFound { .. })
     ));
 }

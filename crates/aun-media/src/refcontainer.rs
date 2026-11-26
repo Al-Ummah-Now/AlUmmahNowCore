@@ -102,17 +102,17 @@ pub(crate) fn read_header(path: &Path) -> Result<(RefHeader, u64)> {
     let mut magic = [0u8; MAGIC.len()];
     reader.read_exact(&mut magic)?;
     if !sniff(&magic) {
-        return Err(Error::InvalidInput("not a reference container".to_owned()));
+        return Err(Error::invalid_input("not a reference container".to_owned()));
     }
     let mut line = Vec::new();
     reader.by_ref().take(MAX_HEADER).read_until(b'\n', &mut line)?;
     if line.last() != Some(&b'\n') {
-        return Err(Error::InvalidInput(
+        return Err(Error::invalid_input(
             "reference container header is truncated".to_owned(),
         ));
     }
     let header: RefHeader = serde_json::from_slice(&line)
-        .map_err(|e| Error::InvalidInput(format!("reference container header: {e}")))?;
+        .map_err(|e| Error::invalid_input(format!("reference container header: {e}")))?;
     Ok((header, MAGIC.len() as u64 + line.len() as u64))
 }
 
@@ -123,14 +123,14 @@ pub(crate) fn read_payload(path: &Path, index: usize) -> Result<(RefTrack, Vec<u
         .tracks
         .get(index)
         .cloned()
-        .ok_or_else(|| Error::InvalidInput(format!("no track {index}")))?;
+        .ok_or_else(|| Error::invalid_input(format!("no track {index}")))?;
     let offset = header.tracks[..index]
         .iter()
         .fold(data_offset, |o, t| o.saturating_add(t.payload_len));
     let mut file = File::open(path).map_err(|e| open_error(path, e))?;
     let available = file.metadata()?.len().saturating_sub(offset);
     if track.payload_len > available {
-        return Err(Error::InvalidInput(
+        return Err(Error::invalid_input(
             "reference container payload is truncated".to_owned(),
         ));
     }
@@ -151,14 +151,14 @@ pub(crate) fn decode_audio(
         .tracks
         .iter()
         .position(|t| t.kind == TrackKind::Audio)
-        .ok_or_else(|| Error::InvalidInput(format!("no audio track in {}", path.display())))?;
+        .ok_or_else(|| Error::invalid_input(format!("no audio track in {}", path.display())))?;
     let (track, payload) = read_payload(path, index)?;
     let format = AudioFormat {
         sample_rate: track.sample_rate.unwrap_or(0),
         channels: track.channels.unwrap_or(0),
     };
     if format.sample_rate == 0 || format.channels == 0 {
-        return Err(Error::InvalidInput("audio track has no format".to_owned()));
+        return Err(Error::invalid_input("audio track has no format".to_owned()));
     }
     let samples = pcm_to_f32(&payload);
     let block = (format.sample_rate as usize / 10).max(1) * format.channels as usize;

@@ -13,8 +13,14 @@ use crate::AunError;
 
 fn map_err(err: core::DownloadError) -> AunError {
     match err {
-        core::DownloadError::InvalidInput(msg) => AunError::InvalidInput { detail: msg },
-        core::DownloadError::Conflict(msg) => AunError::Conflict { detail: msg },
+        core::DownloadError::InvalidInput(msg) => AunError::InvalidInput {
+            code: None,
+            detail: msg,
+        },
+        core::DownloadError::Conflict(msg) => AunError::Conflict {
+            code: None,
+            detail: msg,
+        },
         core::DownloadError::Storage(msg) => AunError::Storage { detail: msg },
         core::DownloadError::Io(e) => AunError::Storage {
             detail: e.to_string(),

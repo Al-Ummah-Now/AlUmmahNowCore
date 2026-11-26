@@ -47,7 +47,7 @@ impl HttpSink {
         // Batches may carry auth headers: never send them in cleartext.
         aun_common::security::ensure_secure_url(url)?;
         if !(url.starts_with("https://") || url.starts_with("http://")) {
-            return Err(Error::InvalidInput(format!(
+            return Err(Error::invalid_input(format!(
                 "telemetry URL must be http(s): {url}"
             )));
         }

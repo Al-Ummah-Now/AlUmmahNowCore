@@ -73,12 +73,12 @@ pub enum AunError {
     Network { detail: String },                        // DNS, TLS, connection reset, timeouts
     Offline,                                           // no connectivity; queued work will retry
     Http { status: u16, code: Option<String>, detail: String },
-    Unauthorized { detail: String },                  // refresh failed / sign-in required
-    Forbidden { detail: String },
-    NotFound { detail: String },
-    Conflict { detail: String },
+    Unauthorized { code: Option<String>, detail: String },                  // refresh failed / sign-in required
+    Forbidden { code: Option<String>, detail: String },
+    NotFound { code: Option<String>, detail: String },
+    Conflict { code: Option<String>, detail: String },
     RateLimited { retry_after_ms: Option<u64> },
-    InvalidInput { detail: String },
+    InvalidInput { code: Option<String>, detail: String },
     Storage { detail: String },                       // local DB / file system
     Platform { detail: String },                      // a native adapter failed
     Unsupported { detail: String },                   // feature/backend not available on this target
@@ -87,7 +87,8 @@ pub enum AunError {
 }
 ```
 
-Fields are named `detail`, not `message`, because Kotlin exceptions already have `message`.
+Kotlin exceptions already have `message`, so the FFI uses `detail`. The optional `code`
+carries the server's machine-readable error code when available.
 Swift sees `throws AunError`, Kotlin `AunException` subclasses, C# `AunException` subclasses.
 `aun_common::Error::is_retryable()` decides retries centrally (network, offline, 408/425/429/5xx).
 

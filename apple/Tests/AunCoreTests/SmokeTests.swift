@@ -86,6 +86,8 @@ final class SmokeTests: XCTestCase {
         XCTAssertTrue(try auth.accounts().isEmpty)
         let token = try await auth.accessToken()
         XCTAssertNil(token)
+        let missingAccountToken = try await auth.tokenForAccount(userId: "missing", forceRefresh: true)
+        XCTAssertNil(missingAccountToken)
         do {
             _ = try await auth.beginDeviceLogin()
             XCTFail("expected Unsupported")

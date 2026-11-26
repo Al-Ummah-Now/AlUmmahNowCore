@@ -203,7 +203,7 @@ async fn start_twice_conflicts_and_handle_calls_are_idempotent() {
         .create(plan, &dir.path().join("work"), Arc::new(Log::default()))
         .unwrap();
     handle.start().unwrap();
-    assert!(matches!(handle.start(), Err(Error::Conflict(_))));
+    assert!(matches!(handle.start(), Err(Error::Conflict { .. })));
     handle.wait().await.unwrap();
     handle.pause();
     handle.resume();

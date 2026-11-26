@@ -37,7 +37,7 @@ impl DiskCache {
 
     fn bundle_path(&self, locale: &str) -> Result<PathBuf> {
         if locale.is_empty() || !locale.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
-            return Err(Error::InvalidInput(format!("bad locale for cache: {locale:?}")));
+            return Err(Error::invalid_input(format!("bad locale for cache: {locale:?}")));
         }
         Ok(self.dir.join("bundles").join(format!("{locale}.json")))
     }
@@ -153,7 +153,10 @@ mod tests {
             vec!["ar", "en"]
         );
         assert!(matches!(cache.load_bundle("xx"), Err(Error::Storage(_))));
-        assert!(matches!(cache.load_bundle("../etc"), Err(Error::InvalidInput(_))));
+        assert!(matches!(
+            cache.load_bundle("../etc"),
+            Err(Error::InvalidInput { .. })
+        ));
         // No temp files left behind.
         let leftovers = std::fs::read_dir(dir.join("bundles"))
             .unwrap()

@@ -140,12 +140,12 @@ impl EncodePreset {
     /// Checks that the settings make a producible output.
     pub fn validate(&self) -> Result<()> {
         if self.video.is_none() && self.audio.is_none() {
-            return Err(Error::InvalidInput(
+            return Err(Error::invalid_input(
                 "preset has neither video nor audio".to_owned(),
             ));
         }
         if self.video.is_some() && matches!(self.container, ContainerKind::M4a | ContainerKind::Ogg) {
-            return Err(Error::InvalidInput(format!(
+            return Err(Error::invalid_input(format!(
                 "container {:?} cannot hold video",
                 self.container
             )));
@@ -157,7 +157,7 @@ impl EncodePreset {
                 ContainerKind::Mp4 | ContainerKind::Mov => true,
             };
             if !fits {
-                return Err(Error::InvalidInput(format!(
+                return Err(Error::invalid_input(format!(
                     "container {:?} cannot hold {:?}",
                     self.container, a.codec
                 )));

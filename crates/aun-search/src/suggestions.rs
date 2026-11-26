@@ -123,7 +123,7 @@ pub fn suggestions_request(query: &SuggestionQuery) -> Result<Option<RequestSpec
     };
     let limit = query.limit.unwrap_or(DEFAULT_SUGGESTIONS);
     if !(1..=MAX_SUGGESTIONS).contains(&limit) {
-        return Err(Error::InvalidInput(format!(
+        return Err(Error::invalid_input(format!(
             "limit must be 1-{MAX_SUGGESTIONS}, got {limit}"
         )));
     }
@@ -323,7 +323,7 @@ mod tests {
                 limit: Some(limit),
                 ..query("a")
             };
-            assert!(matches!(suggestions_request(&q), Err(Error::InvalidInput(_))));
+            assert!(matches!(suggestions_request(&q), Err(Error::InvalidInput { .. })));
         }
     }
 

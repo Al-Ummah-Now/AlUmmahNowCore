@@ -262,7 +262,7 @@ impl OAuthClient {
             None => self.config.redirect_uri.clone(),
             Some(r) if r == self.config.redirect_uri || is_loopback_redirect(r) => r.to_owned(),
             Some(r) => {
-                return Err(Error::InvalidInput(format!(
+                return Err(Error::invalid_input(format!(
                     "redirect {r:?} is neither the registered redirect nor a loopback address"
                 )));
             }
@@ -283,7 +283,7 @@ impl OAuthClient {
         }
         params.extend_from_slice(extra);
         let url = reqwest::Url::parse_with_params(&self.config.authorization_endpoint, &params)
-            .map_err(|e| Error::InvalidInput(format!("authorization endpoint: {e}")))?;
+            .map_err(|e| Error::invalid_input(format!("authorization endpoint: {e}")))?;
         Ok(PendingAuthorization {
             url: url.into(),
             state,
@@ -300,7 +300,7 @@ impl OAuthClient {
         now_ms: i64,
     ) -> Result<TokenSet> {
         let url =
-            reqwest::Url::parse(redirect_url).map_err(|e| Error::InvalidInput(format!("redirect: {e}")))?;
+            reqwest::Url::parse(redirect_url).map_err(|e| Error::invalid_input(format!("redirect: {e}")))?;
         let expected = reqwest::Url::parse(&pending.redirect_uri).ok();
         if let Some(exp) = expected
             && (exp.scheme() != url.scheme()
@@ -308,7 +308,7 @@ impl OAuthClient {
                 || exp.port() != url.port()
                 || exp.path() != url.path())
         {
-            return Err(Error::InvalidInput(
+            return Err(Error::invalid_input(
                 "redirect does not match the registered redirect_uri".into(),
             ));
         }
@@ -318,15 +318,15 @@ impl OAuthClient {
             return Err(if err == "access_denied" {
                 Error::Cancelled
             } else {
-                Error::Unauthorized(format!("{err}: {desc}"))
+                Error::unauthorized(format!("{err}: {desc}"))
             });
         }
         if q.get("state") != Some(&pending.state) {
-            return Err(Error::InvalidInput("state mismatch (possible CSRF)".into()));
+            return Err(Error::invalid_input("state mismatch (possible CSRF)".into()));
         }
         let code = q
             .get("code")
-            .ok_or_else(|| Error::InvalidInput("redirect has no code".into()))?;
+            .ok_or_else(|| Error::invalid_input("redirect has no code".into()))?;
         let mut form: Vec<(&str, &str)> = vec![
             ("grant_type", "authorization_code"),
             ("code", code),
@@ -427,7 +427,7 @@ impl OAuthClient {
             Ok(e) if e.error == "authorization_pending" => Ok(DevicePoll::Pending),
             Ok(e) if e.error == "slow_down" => Ok(DevicePoll::SlowDown(0)),
             Ok(e) if e.error == "access_denied" => Err(Error::Cancelled),
-            Ok(e) if e.error == "expired_token" => Err(Error::Unauthorized(
+            Ok(e) if e.error == "expired_token" => Err(Error::unauthorized(
                 "the code expired before it was approved; start again".into(),
             )),
             _ => Err(oauth_error(status.as_u16(), &body)),
@@ -474,9 +474,9 @@ fn oauth_error(status: u16, body: &str) -> Error {
             };
             match e.error.as_str() {
                 "invalid_grant" | "invalid_token" | "unauthorized_client" | "invalid_client" => {
-                    Error::Unauthorized(msg)
+                    Error::unauthorized(msg)
                 }
-                "invalid_request" | "invalid_scope" | "unsupported_grant_type" => Error::InvalidInput(msg),
+                "invalid_request" | "invalid_scope" | "unsupported_grant_type" => Error::invalid_input(msg),
                 _ => Error::from_status(status, Some(e.error), msg),
             }
         }
@@ -526,7 +526,7 @@ pub async fn poll_until_granted(
             _ = tokio::time::sleep(Duration::from_secs(interval)) => {}
         }
         if tokio::time::Instant::now() >= deadline {
-            return Err(Error::Unauthorized(
+            return Err(Error::unauthorized(
                 "the code expired before it was approved; start again".into(),
             ));
         }
@@ -576,11 +576,11 @@ mod tests {
     fn maps_oauth_errors() {
         assert!(matches!(
             oauth_error(400, r#"{"error":"invalid_grant"}"#),
-            Error::Unauthorized(_)
+            Error::Unauthorized { .. }
         ));
         assert!(matches!(
             oauth_error(400, r#"{"error":"invalid_scope"}"#),
-            Error::InvalidInput(_)
+            Error::InvalidInput { .. }
         ));
         assert!(matches!(
             oauth_error(503, "down"),

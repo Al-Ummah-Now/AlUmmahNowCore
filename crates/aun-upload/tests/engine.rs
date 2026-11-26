@@ -174,6 +174,57 @@ impl UploadListener for Events {
 }
 
 #[tokio::test]
+async fn initiate_failure_code_survives_restart_and_is_recorded_again_after_retry() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/videos/upload/initiate"))
+        .respond_with(ResponseTemplate::new(403).set_body_json(json!({
+            "success": false, "code": "terms_required", "error": "Accept the current Terms"
+        })))
+        .expect(2)
+        .mount(&server)
+        .await;
+    let dir = tempfile::tempdir().unwrap();
+    let file = video(dir.path(), "clip.mp4", KIB);
+    let store = dir.path().join("q");
+    let engine = UploadEngine::open(api(&server), &store, "u1", cfg()).unwrap();
+    let id = engine.enqueue(request(&file)).unwrap();
+    engine.start();
+
+    let first = wait_for(&engine, &id, UploadState::Failed).await;
+    assert_eq!(
+        first.last_error.as_deref(),
+        Some("forbidden: Accept the current Terms")
+    );
+    assert_eq!(first.last_error_kind.as_deref(), Some("forbidden"));
+    assert_eq!(first.last_error_code.as_deref(), Some("terms_required"));
+    engine.shutdown();
+
+    let restarted = UploadEngine::open(api(&server), &store, "u1", cfg()).unwrap();
+    assert_eq!(restarted.get(&id).unwrap(), Some(first.clone()));
+    restarted.retry(&id).unwrap();
+    let queued = restarted.get(&id).unwrap().unwrap();
+    assert_eq!(queued.state, UploadState::Queued);
+    assert_eq!(queued.last_error, None);
+    assert_eq!(queued.last_error_kind, None);
+    assert_eq!(queued.last_error_code, None);
+    assert_eq!(
+        aun_upload::ManifestStore::open(&store)
+            .unwrap()
+            .load_all()
+            .unwrap(),
+        vec![queued]
+    );
+
+    restarted.start();
+    let second = wait_for(&restarted, &id, UploadState::Failed).await;
+    assert_eq!(second.last_error, first.last_error);
+    assert_eq!(second.last_error_kind, first.last_error_kind);
+    assert_eq!(second.last_error_code, first.last_error_code);
+    restarted.shutdown();
+}
+
+#[tokio::test]
 async fn uploads_in_chunks_and_completes() {
     let server = MockServer::start().await;
     let tus = Arc::new(TusState::default());
@@ -300,7 +351,7 @@ async fn other_accounts_uploads_are_not_loaded() {
     // A second engine for u1 on the same directory is refused while the first is open.
     assert!(matches!(
         UploadEngine::open(api(&server), &store, "u1", cfg()),
-        Err(Error::Conflict(_))
+        Err(Error::Conflict { .. })
     ));
     drop(e1);
     assert_eq!(
@@ -570,16 +621,16 @@ async fn rejects_bad_input() {
     let engine = UploadEngine::open(api(&server), dir.path().join("q"), "u1", cfg()).unwrap();
     assert!(matches!(
         engine.enqueue(request("/nonexistent/x.mp4")),
-        Err(Error::InvalidInput(_))
+        Err(Error::InvalidInput { .. })
     ));
     let empty = video(dir.path(), "e.mp4", 0);
     assert!(matches!(
         engine.enqueue(request(&empty)),
-        Err(Error::InvalidInput(_))
+        Err(Error::InvalidInput { .. })
     ));
     let mut r = request(&video(dir.path(), "a.mp4", 10));
     r.title = " ".into();
-    assert!(matches!(engine.enqueue(r), Err(Error::InvalidInput(_))));
+    assert!(matches!(engine.enqueue(r), Err(Error::InvalidInput { .. })));
     assert!(UploadEngine::open(api(&server), dir.path().join("q"), "", cfg()).is_err());
 }
 

@@ -71,6 +71,7 @@ impl UploadRequest {
             Some(m) => m,
             None => aun_upload::video_mime_for(std::path::Path::new(&self.file_path))
                 .ok_or_else(|| AunError::InvalidInput {
+                    code: None,
                     detail: format!("{} is not a supported video file", self.file_path),
                 })?
                 .to_owned(),
@@ -135,6 +136,10 @@ pub struct UploadInfo {
     pub video_id: Option<String>,
     pub sha256: Option<String>,
     pub last_error: Option<String>,
+    /// Stable snake_case error kind, such as `forbidden`.
+    pub last_error_kind: Option<String>,
+    /// Machine-readable server code, such as `terms_required`.
+    pub last_error_code: Option<String>,
     pub priority: i32,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
@@ -152,6 +157,8 @@ impl From<aun_upload::UploadManifest> for UploadInfo {
             video_id: m.video_id,
             sha256: m.sha256,
             last_error: m.last_error,
+            last_error_kind: m.last_error_kind,
+            last_error_code: m.last_error_code,
             priority: m.request.priority,
             created_at_ms: m.created_at_ms,
             updated_at_ms: m.updated_at_ms,

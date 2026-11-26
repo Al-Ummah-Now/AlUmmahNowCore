@@ -407,7 +407,7 @@ fn refuses_fragmented_or_broken_input() {
     fs::write(&junk, [0u8, 0, 0, 200, b'm', b'o', b'o', b'v', 1, 2, 3]).unwrap();
     assert!(matches!(
         package_mp4(&junk, &dir.path().join("o"), 6, &cancel),
-        Err(Error::InvalidInput(_))
+        Err(Error::InvalidInput { .. })
     ));
 
     // A sample table pointing past the end of the file

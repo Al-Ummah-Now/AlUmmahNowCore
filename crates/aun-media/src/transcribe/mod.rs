@@ -116,7 +116,7 @@ pub fn load_speech_pcm(path: &Path, cancel: &CancellationToken) -> Result<Vec<f3
         Ok(())
     })?;
     if rate == 0 {
-        return Err(Error::InvalidInput("no audio decoded".to_owned()));
+        return Err(Error::invalid_input("no audio decoded".to_owned()));
     }
     Ok(resample(&mono, rate, TRANSCRIBE_SAMPLE_RATE))
 }

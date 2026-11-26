@@ -108,7 +108,7 @@ pub fn plan_render(
         audio_copied = copied;
     }
     if mux_inputs.is_empty() {
-        return Err(Error::InvalidInput("project has nothing to render".to_owned()));
+        return Err(Error::invalid_input("project has nothing to render".to_owned()));
     }
     let inputs: Vec<&str> = mux_inputs.iter().map(String::as_str).collect();
     builder.nodes.push(JobNode::new(

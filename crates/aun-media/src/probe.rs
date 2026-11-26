@@ -130,7 +130,7 @@ pub fn probe_keyframes(path: &Path) -> Result<Vec<u64>> {
         .iter()
         .find(|t| t.handler == "vide")
         .map(Trak::keyframes_ms)
-        .ok_or_else(|| Error::InvalidInput(format!("no video track in {}", path.display())))
+        .ok_or_else(|| Error::invalid_input(format!("no video track in {}", path.display())))
 }
 
 fn read_up_to(file: &mut File, buf: &mut [u8]) -> Result<usize> {
@@ -274,7 +274,7 @@ fn probe_with_symphonia(path: &Path) -> Result<(Option<u64>, Vec<TrackInfo>)> {
         });
     }
     if tracks.is_empty() {
-        return Err(Error::InvalidInput(format!(
+        return Err(Error::invalid_input(format!(
             "no audio track in {}",
             path.display()
         )));
@@ -286,7 +286,7 @@ fn probe_with_symphonia(path: &Path) -> Result<(Option<u64>, Vec<TrackInfo>)> {
                 Ok(p) if p.track_id() == id => units = units.saturating_add(p.dur),
                 Ok(_) => {}
                 Err(SymphoniaError::IoError(_)) | Err(SymphoniaError::ResetRequired) => break,
-                Err(e) => return Err(Error::InvalidInput(format!("demux failed: {e}"))),
+                Err(e) => return Err(Error::invalid_input(format!("demux failed: {e}"))),
             }
         }
         let ms = match (time_base, rate) {
