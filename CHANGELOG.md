@@ -7,6 +7,8 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+## [0.4.0-rc.9] - 2026-11-26
+
 ### Added
 
 - `LoginPrompt::StepUp { max_age_seconds }` in Rust and UniFFI sends `prompt=login` and `max_age`.
