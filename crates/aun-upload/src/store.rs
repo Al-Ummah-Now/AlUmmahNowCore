@@ -59,6 +59,18 @@ impl UploadState {
     }
 }
 
+/// Persisted source descriptor. Legacy manifests default to a local path.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "source_kind", rename_all = "snake_case")]
+pub enum UploadSourceKind {
+    #[default]
+    Path,
+    Stream {
+        source_id: String,
+        fingerprint: String,
+    },
+}
+
 /// Everything needed to resume an upload after a restart.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UploadManifest {
@@ -67,6 +79,8 @@ pub struct UploadManifest {
     pub account_id: String,
     pub request: UploadRequest,
     pub state: UploadState,
+    #[serde(default)]
+    pub source: UploadSourceKind,
     pub file_size: u64,
     /// File modification time (Unix ms) when queued: a changed file is not resumed.
     pub file_mtime_ms: i64,
@@ -252,6 +266,7 @@ mod tests {
                 priority: 0,
             },
             state: UploadState::Uploading,
+            source: UploadSourceKind::Path,
             file_size: 1 << 30,
             file_mtime_ms: 0,
             sha256: None,
@@ -275,12 +290,14 @@ mod tests {
     fn loads_legacy_failure_without_structured_fields() {
         let mut legacy = serde_json::to_value(manifest("u-1", 0)).unwrap();
         let fields = legacy.as_object_mut().unwrap();
+        fields.remove("source");
         fields.remove("last_error_kind");
         fields.remove("last_error_code");
         fields.insert("state".into(), serde_json::json!("Failed"));
         fields.insert("last_error".into(), serde_json::json!("older failure"));
         let loaded: UploadManifest = serde_json::from_value(legacy).unwrap();
         assert_eq!(loaded.state, UploadState::Failed);
+        assert_eq!(loaded.source, UploadSourceKind::Path);
         assert_eq!(loaded.last_error.as_deref(), Some("older failure"));
         assert_eq!(loaded.last_error_kind, None);
         assert_eq!(loaded.last_error_code, None);

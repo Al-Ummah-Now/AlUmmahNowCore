@@ -6,6 +6,7 @@
 //! - [`watch`] (feature `watch`, desktop): folder watching that feeds the engine.
 
 pub mod engine;
+pub mod source;
 pub mod store;
 pub mod throttle;
 pub mod tus;
@@ -13,7 +14,10 @@ pub mod tus;
 pub mod watch;
 
 pub use engine::{MAX_PARALLEL, UploadConfig, UploadEngine, UploadListener};
-pub use store::{ManifestStore, UploadManifest, UploadRequest, UploadState, file_identity, sha256_file};
+pub use source::{UploadSource, UploadSourceOpener};
+pub use store::{
+    ManifestStore, UploadManifest, UploadRequest, UploadSourceKind, UploadState, file_identity, sha256_file,
+};
 pub use throttle::Throttle;
 pub use tus::{TUS_VERSION, TusClient, TusTarget, encode_metadata};
 

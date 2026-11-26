@@ -7,6 +7,10 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+### Added
+
+- Resumable uploads from platform streams, such as Android content URIs, without a staging copy.
+
 ## [0.4.0-rc.11] - 2026-11-26
 
 ### Added

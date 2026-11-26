@@ -82,6 +82,32 @@ class SmokeTest {
         engine.shutdown()
     }
 
+    @Test fun uploadStreamCallbacks() {
+        val client = ApiClient(ApiClientConfig("http://127.0.0.1:9", "smoke", null, 2000uL, 1u), null)
+        val dir = java.nio.file.Files.createTempDirectory("aun-upload-stream").toFile()
+        val id = "content://test/video"
+        val opener = object : UploadSourceOpener {
+            override fun reopen(sourceId: String): UploadSource {
+                assertEquals(id, sourceId)
+                return object : UploadSource {
+                    override fun size() = 3uL
+                    override fun fingerprint() = "version-1"
+                    override fun readAt(offset: ULong, len: ULong) = byteArrayOf(1, 2, 3)
+                }
+            }
+        }
+        val offline = object : Connectivity { override fun current() = NetworkState(online = false, metered = false) }
+        val engine = UploadEngine.withSourceOpener(client, dir.path, "u1", uploadConfigDefault(), offline, opener)
+        try {
+            val request = UploadRequest("picked.mp4", "درس", null, null, null, null, null, null, emptyMap(), emptyMap(), 0)
+            val uploadId = engine.enqueueStream(request, id)
+            assertEquals(uploadId, engine.list().single().id)
+        } finally {
+            engine.shutdown()
+            dir.deleteRecursively()
+        }
+    }
+
     @Test fun mediaSurface() = runBlocking {
         assertTrue(edlSchemaVersion() >= 1u)
         assertTrue(transcriptionModelCatalog().any { it.tier == ModelTier.TINY })
