@@ -7,6 +7,17 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+### Added
+
+- Bilingual playlist display text and localized playlist fields in native search.
+
+### Breaking
+
+- Rust `SearchSuggestion` struct literals now take optional `title_localized` and
+  `description_localized` fields.
+  The Kotlin constructor adds two trailing nullable parameters that default to `null`.
+  Recompile Kotlin binaries against the updated bindings.
+
 ## [0.4.0-rc.10] - 2026-11-26
 
 ### Added

@@ -5,6 +5,8 @@
 //! one starts; cancelling the foreign task drops the in-flight request. A `RateLimited` error carries
 //! `retry_after_ms`: pause suggestions for that long and keep the typed text.
 
+use std::collections::HashMap;
+
 use crate::{ApiClient, AunError};
 
 /// What a suggestion points at.
@@ -59,6 +61,10 @@ pub struct SearchSuggestion {
     pub metadata_json: Option<String>,
     /// True when picking it opens the item (`id` is set); false runs a full search for `text`.
     pub opens_item: bool,
+    #[uniffi(default = None)]
+    pub title_localized: Option<HashMap<String, String>>,
+    #[uniffi(default = None)]
+    pub description_localized: Option<HashMap<String, String>>,
 }
 
 impl From<aun_search::SearchSuggestion> for SearchSuggestion {
@@ -68,6 +74,8 @@ impl From<aun_search::SearchSuggestion> for SearchSuggestion {
             metadata_json: s
                 .metadata
                 .and_then(|m| serde_json::to_string(&serde_json::Value::Object(m)).ok()),
+            title_localized: s.title_localized.map(|map| map.into_iter().collect()),
+            description_localized: s.description_localized.map(|map| map.into_iter().collect()),
             text: s.text,
             kind: s.kind.into(),
             id: s.id.filter(|id| !id.is_empty()),
@@ -83,6 +91,8 @@ impl From<aun_search::SearchSuggestion> for SearchSuggestion {
 impl From<SearchSuggestion> for aun_search::SearchSuggestion {
     fn from(s: SearchSuggestion) -> Self {
         Self {
+            title_localized: s.title_localized.map(|map| map.into_iter().collect()),
+            description_localized: s.description_localized.map(|map| map.into_iter().collect()),
             text: s.text,
             kind: s.kind.into(),
             id: s.id,
@@ -233,6 +243,39 @@ pub fn recent_searches_filter(recent: Vec<String>, text: String) -> Vec<String> 
     aun_search::filter_recent_searches(&recent, &text)
 }
 
+/// The playlist payload in a ranked search result.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SearchPlaylist {
+    pub id: String,
+    pub name: String,
+    pub title_localized: Option<HashMap<String, String>>,
+    pub description: Option<String>,
+    pub description_localized: Option<HashMap<String, String>>,
+}
+
+impl From<aun_search::SearchPlaylist> for SearchPlaylist {
+    fn from(playlist: aun_search::SearchPlaylist) -> Self {
+        Self {
+            id: playlist.id,
+            name: playlist.name,
+            title_localized: playlist.title_localized.map(|map| map.into_iter().collect()),
+            description: playlist.description,
+            description_localized: playlist
+                .description_localized
+                .map(|map| map.into_iter().collect()),
+        }
+    }
+}
+
+/// Extracts playlists in ranked order from a full `GET /api/search` JSON response.
+#[uniffi::export]
+pub fn decode_search_playlists(body: String) -> Result<Vec<SearchPlaylist>, AunError> {
+    Ok(aun_search::decode_search_playlists(&body)?
+        .into_iter()
+        .map(Into::into)
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -248,7 +291,30 @@ mod tests {
             count: None,
             metadata_json: Some(r#"{"duration":61}"#.into()),
             opens_item: id.is_some(),
+            title_localized: None,
+            description_localized: None,
         }
+    }
+
+    #[test]
+    fn playlist_localizations_survive_ffi_conversion() -> Result<(), AunError> {
+        let mut suggestion = suggestion("Lessons", SuggestionKind::Playlist, Some("p1"));
+        suggestion.title_localized = Some([("ar".into(), "دروس".into())].into());
+        suggestion.description_localized = Some([("en".into(), "Notes".into())].into());
+        let round_trip = SearchSuggestion::from(aun_search::SearchSuggestion::from(suggestion.clone()));
+        assert_eq!(round_trip, suggestion);
+
+        let playlists = decode_search_playlists(
+            r#"{"results":[{"type":"playlist","playlist":{"id":"p1","name":"Lessons",
+                "titleLocalized":{"ar":"دروس"},"descriptionLocalized":{"en":"Notes"}}}]}"#
+                .into(),
+        )?;
+        assert_eq!(playlists[0].title_localized, suggestion.title_localized);
+        assert_eq!(
+            playlists[0].description_localized,
+            suggestion.description_localized
+        );
+        Ok(())
     }
 
     #[test]

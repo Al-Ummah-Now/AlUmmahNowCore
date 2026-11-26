@@ -9445,7 +9445,8 @@ public func FfiConverterTypePlaylist_lower(_ value: Playlist) -> RustBuffer {
 
 
 /**
- * Metadata to set on create or update. Updates leave omitted properties alone.
+ * Metadata to set on create or update. Updates leave omitted maps alone and clear maps sent as empty.
+ * On create, a non-empty English or Arabic name can supply the title.
  */
 public struct PlaylistMetadata: Equatable, Hashable {
     public var title: String?
@@ -10110,6 +10111,75 @@ public func FfiConverterTypeSceneChange_lower(_ value: SceneChange) -> RustBuffe
 
 
 /**
+ * The playlist payload in a ranked search result.
+ */
+public struct SearchPlaylist: Equatable, Hashable {
+    public var id: String
+    public var name: String
+    public var titleLocalized: [String: String]?
+    public var description: String?
+    public var descriptionLocalized: [String: String]?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, name: String, titleLocalized: [String: String]?, description: String?, descriptionLocalized: [String: String]?) {
+        self.id = id
+        self.name = name
+        self.titleLocalized = titleLocalized
+        self.description = description
+        self.descriptionLocalized = descriptionLocalized
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SearchPlaylist: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSearchPlaylist: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SearchPlaylist {
+        return
+            try SearchPlaylist(
+                id: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                titleLocalized: FfiConverterOptionDictionaryStringString.read(from: &buf), 
+                description: FfiConverterOptionString.read(from: &buf), 
+                descriptionLocalized: FfiConverterOptionDictionaryStringString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SearchPlaylist, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterOptionDictionaryStringString.write(value.titleLocalized, into: &buf)
+        FfiConverterOptionString.write(value.description, into: &buf)
+        FfiConverterOptionDictionaryStringString.write(value.descriptionLocalized, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSearchPlaylist_lift(_ buf: RustBuffer) throws -> SearchPlaylist {
+    return try FfiConverterTypeSearchPlaylist.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSearchPlaylist_lower(_ value: SearchPlaylist) -> RustBuffer {
+    return FfiConverterTypeSearchPlaylist.lower(value)
+}
+
+
+/**
  * One suggestion.
  */
 public struct SearchSuggestion: Equatable, Hashable {
@@ -10134,6 +10204,8 @@ public struct SearchSuggestion: Equatable, Hashable {
      * True when picking it opens the item (`id` is set); false runs a full search for `text`.
      */
     public var opensItem: Bool
+    public var titleLocalized: [String: String]?
+    public var descriptionLocalized: [String: String]?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -10149,7 +10221,7 @@ public struct SearchSuggestion: Equatable, Hashable {
          */metadataJson: String?, 
         /**
          * True when picking it opens the item (`id` is set); false runs a full search for `text`.
-         */opensItem: Bool) {
+         */opensItem: Bool, titleLocalized: [String: String]? = nil, descriptionLocalized: [String: String]? = nil) {
         self.text = text
         self.kind = kind
         self.id = id
@@ -10159,6 +10231,8 @@ public struct SearchSuggestion: Equatable, Hashable {
         self.count = count
         self.metadataJson = metadataJson
         self.opensItem = opensItem
+        self.titleLocalized = titleLocalized
+        self.descriptionLocalized = descriptionLocalized
     }
 
     
@@ -10185,7 +10259,9 @@ public struct FfiConverterTypeSearchSuggestion: FfiConverterRustBuffer {
                 verified: FfiConverterBool.read(from: &buf), 
                 count: FfiConverterOptionDouble.read(from: &buf), 
                 metadataJson: FfiConverterOptionString.read(from: &buf), 
-                opensItem: FfiConverterBool.read(from: &buf)
+                opensItem: FfiConverterBool.read(from: &buf), 
+                titleLocalized: FfiConverterOptionDictionaryStringString.read(from: &buf), 
+                descriptionLocalized: FfiConverterOptionDictionaryStringString.read(from: &buf)
         )
     }
 
@@ -10199,6 +10275,8 @@ public struct FfiConverterTypeSearchSuggestion: FfiConverterRustBuffer {
         FfiConverterOptionDouble.write(value.count, into: &buf)
         FfiConverterOptionString.write(value.metadataJson, into: &buf)
         FfiConverterBool.write(value.opensItem, into: &buf)
+        FfiConverterOptionDictionaryStringString.write(value.titleLocalized, into: &buf)
+        FfiConverterOptionDictionaryStringString.write(value.descriptionLocalized, into: &buf)
     }
 }
 
@@ -15854,6 +15932,31 @@ fileprivate struct FfiConverterSequenceTypeSceneChange: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeSearchPlaylist: FfiConverterRustBuffer {
+    typealias SwiftType = [SearchPlaylist]
+
+    public static func write(_ value: [SearchPlaylist], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSearchPlaylist.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SearchPlaylist] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SearchPlaylist]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSearchPlaylist.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeSearchSuggestion: FfiConverterRustBuffer {
     typealias SwiftType = [SearchSuggestion]
 
@@ -16848,6 +16951,28 @@ public func notificationBadgeLabel(unseenCount: UInt32, locale: String) -> Strin
 })
 }
 /**
+ * Picks the translation for a language or locale tag, then the original text or an empty string.
+ */
+public func localizedPlaylistText(base: String?, localized: [String: String]?, locale: String) -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_aun_core_fn_func_localized_playlist_text(
+        FfiConverterOptionString.lower(base),
+        FfiConverterOptionDictionaryStringString.lower(localized),
+        FfiConverterString.lower(locale),$0
+    )
+})
+}
+/**
+ * Extracts playlists in ranked order from a full `GET /api/search` JSON response.
+ */
+public func decodeSearchPlaylists(body: String)throws  -> [SearchPlaylist]  {
+    return try  FfiConverterSequenceTypeSearchPlaylist.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_func_decode_search_playlists(
+        FfiConverterString.lower(body),$0
+    )
+})
+}
+/**
  * Groups suggestions for display: completions, videos, channels, playlists, categories.
  */
 public func groupSearchSuggestions(suggestions: [SearchSuggestion]) -> [SuggestionGroup]  {
@@ -17140,6 +17265,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_func_notification_badge_label() != 12753) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_func_localized_playlist_text() != 48371) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_func_decode_search_playlists() != 41093) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_func_group_search_suggestions() != 56162) {

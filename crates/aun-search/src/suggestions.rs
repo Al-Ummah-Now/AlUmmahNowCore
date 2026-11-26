@@ -7,9 +7,11 @@
 //! pause suggestions for `retry_after`. Cancelling the call (dropping the future, or cancelling the
 //! foreign task over FFI) aborts the HTTP request, which is how apps drop stale requests.
 
+use std::collections::BTreeMap;
+
 use aun_api::{ApiClient, RequestSpec};
 use aun_common::{Error, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Upper bound the server accepts for `limit`.
 pub const MAX_SUGGESTIONS: u32 = 20;
@@ -21,7 +23,7 @@ pub const MAX_QUERY_CHARS: usize = 100;
 const MAX_INITIAL_OFFSET: u32 = 500;
 
 /// What a suggestion points at.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SuggestionKind {
     /// A query completion: picking it runs a full search for `text`.
@@ -60,9 +62,13 @@ impl SuggestionKind {
 }
 
 /// One suggestion as the server returns it.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct SearchSuggestion {
     pub text: String,
+    #[serde(rename = "titleLocalized", skip_serializing_if = "Option::is_none")]
+    pub title_localized: Option<BTreeMap<String, String>>,
+    #[serde(rename = "descriptionLocalized", skip_serializing_if = "Option::is_none")]
+    pub description_localized: Option<BTreeMap<String, String>>,
     #[serde(rename = "type")]
     pub kind: SuggestionKind,
     /// Item id for `video`, `channel`, `playlist` and `category`; opens the item when picked.
