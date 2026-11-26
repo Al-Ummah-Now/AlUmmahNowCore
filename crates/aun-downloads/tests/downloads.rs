@@ -1547,8 +1547,8 @@ fn auto_download_playlist_rule_missing_channel_id_and_combined_rules_never_thras
         assert_eq!(store.existing_auto_downloads_for_user("u1").len(), 2);
     }
 
-    // 3) Channel rule C + Playlist rule P together (even using the SAME raw ID "shared-1" on
-    //    videos of channel "shared-1"): zero eviction/re-download thrashing across 8 passes!
+    // 3) Overlapping channel and playlist rules share the same two files. A new shared video
+    //    replaces one file, and subsequent polls keep the same pair.
     {
         let dir = tempdir().unwrap();
         let mut store = DownloadStore::open(dir.path().join("combined.json")).unwrap();
@@ -1585,7 +1585,18 @@ fn auto_download_playlist_rule_missing_channel_id_and_combined_rules_never_thras
         let mut total_downloads = 0usize;
         let mut total_evictions = 0usize;
 
-        for _pass in 0..8 {
+        for pass in 0..8 {
+            if pass == 4 {
+                for source in [&ch, &pl] {
+                    candidates.push(EpisodeCandidate {
+                        video_id: "v10".into(),
+                        source: source.clone(),
+                        published_at_ms: 10_000,
+                        allow_downloads: true,
+                        estimated_bytes: Some(1_000),
+                    });
+                }
+            }
             let existing_ids: HashSet<String> = store
                 .list_for_user("u1")
                 .into_iter()
@@ -1628,8 +1639,14 @@ fn auto_download_playlist_rule_missing_channel_id_and_combined_rules_never_thras
                 total_downloads += 1;
             }
         }
-        assert_eq!(total_downloads, 4);
-        assert_eq!(total_evictions, 0);
+        assert_eq!(total_downloads, 3);
+        assert_eq!(total_evictions, 1);
+        let kept: HashSet<_> = store
+            .list_for_user("u1")
+            .into_iter()
+            .map(|r| r.video_id)
+            .collect();
+        assert_eq!(kept, HashSet::from(["v10".into(), "v9".into()]));
     }
 
     // 4) Duplicate candidate entries must be deduplicated before applying max_episodes.
@@ -1688,6 +1705,84 @@ fn auto_download_playlist_rule_missing_channel_id_and_combined_rules_never_thras
                     source: AutoDownloadSource::channel("ch-dup"),
                 },
             ]
+        );
+    }
+}
+
+#[test]
+fn shared_episode_is_retained_when_only_one_rule_rolls_forward() {
+    let ch = AutoDownloadSource::channel("channel");
+    let pl = AutoDownloadSource::playlist("playlist");
+    let settings = DownloadSettings {
+        auto_download_enabled: true,
+        max_storage_bytes: Some(3_000),
+        ..Default::default()
+    };
+    let rules = [
+        AutoDownloadRule {
+            source: ch.clone(),
+            max_episodes: 2,
+        },
+        AutoDownloadRule {
+            source: pl.clone(),
+            max_episodes: 2,
+        },
+    ];
+    let candidate = |id: &str, source: &AutoDownloadSource, published_at_ms| EpisodeCandidate {
+        video_id: id.into(),
+        source: source.clone(),
+        published_at_ms,
+        allow_downloads: true,
+        estimated_bytes: Some(1_000),
+    };
+    let candidates = [
+        candidate("new-channel", &ch, 4_000),
+        candidate("channel-only", &ch, 3_000),
+        candidate("shared", &ch, 2_000),
+        candidate("shared", &pl, 2_000),
+        candidate("playlist-only", &pl, 1_000),
+        candidate("older-playlist", &pl, 0),
+    ];
+    let owned = [
+        ExistingAutoDownload {
+            video_id: "channel-only".into(),
+            source: ch.clone(),
+            published_at_ms: 3_000,
+            size_bytes: 1_000,
+        },
+        ExistingAutoDownload {
+            video_id: "shared".into(),
+            source: ch.clone(),
+            published_at_ms: 2_000,
+            size_bytes: 1_000,
+        },
+    ];
+    let existing_ids = owned.iter().map(|e| e.video_id.clone()).collect();
+    for rules in [rules.clone(), [rules[1].clone(), rules[0].clone()]] {
+        let plan = select_auto_downloads(
+            &settings,
+            NetworkKind::Wifi,
+            true,
+            2_000,
+            0,
+            None,
+            &rules,
+            &candidates,
+            &existing_ids,
+            &owned,
+            &HashSet::new(),
+        );
+        // Three files fit the budget. "shared" still belongs in the playlist window, so it
+        // cannot fund a fourth file when the channel rolls forward.
+        assert!(plan.to_evict.is_empty());
+        assert_eq!(plan.to_download.len(), 1);
+        assert_eq!(
+            plan.to_download[0].video_id,
+            if rules[0].source == ch {
+                "new-channel"
+            } else {
+                "playlist-only"
+            }
         );
     }
 }
