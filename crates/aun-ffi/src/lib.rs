@@ -16,12 +16,14 @@ mod names;
 mod notifications;
 mod platform;
 mod player;
+mod playlists;
 mod runtime;
 mod search;
 mod short_links;
 mod sync;
 mod updates;
 mod upload;
+mod visibility;
 
 pub use api::*;
 pub use auth::*;
@@ -33,11 +35,13 @@ pub use names::*;
 pub use notifications::*;
 pub use platform::*;
 pub use player::*;
+pub use playlists::*;
 pub use search::*;
 pub use short_links::*;
 pub use sync::*;
 pub use updates::*;
 pub use upload::*;
+pub use visibility::*;
 
 /// The `aun-core` version, e.g. `"0.1.0"`. Apps log it and send it with telemetry.
 #[uniffi::export]

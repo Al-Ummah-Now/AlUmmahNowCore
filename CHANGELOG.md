@@ -7,6 +7,12 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+### Added
+
+- Public, unlisted, and private visibility for video uploads and edits, including bulk edits.
+- Native playlist operations for personal and channel playlists, including the personal `mine`
+  filter, visibility, and adding or removing videos.
+
 ### Changed
 
 - Refreshed the pinned api-videos OpenAPI contract from v1.0.0 to v1.4.0, covering 261 paths
@@ -14,6 +20,9 @@ FFI; such changes are listed under **Breaking**.
 
 ### Breaking
 
+- Rust `aun_upload::UploadRequest` struct literals now take `visibility`. Set it to `None` to
+  keep using the legacy `is_public` field. Existing saved uploads and native constructors still
+  accept an omitted visibility.
 - Channel membership now starts with an invitation. Migrate `post_channel_member_add` and the
   `post_ChannelMemberAdd` operation ID to `post_channel_invite_create` / `post_ChannelInviteCreate`.
   The invitation takes `handle` or `email` with `role` and returns both members and invitations.

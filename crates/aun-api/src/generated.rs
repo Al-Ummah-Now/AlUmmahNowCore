@@ -4670,6 +4670,9 @@ pub struct GetChannelDeletedVideosListResponseResultItemsItem {
     pub made_for_kids: Option<bool>,
     #[serde(rename = "isPublic")]
     pub is_public: bool,
+    /// Link-only: opens for anyone with the link, never listed
+    #[serde(rename = "isUnlisted", skip_serializing_if = "Option::is_none")]
+    pub is_unlisted: Option<bool>,
     /// Stable public MP4 (480p) for search engines; public R2 videos only (D-SEO-11)
     #[serde(rename = "contentUrl", skip_serializing_if = "Option::is_none")]
     pub content_url: Option<String>,
@@ -5021,6 +5024,9 @@ pub struct GetChannelLiveListResponseDataItem {
     pub made_for_kids: Option<bool>,
     #[serde(rename = "isPublic")]
     pub is_public: bool,
+    /// Link-only: opens for anyone with the link, never listed
+    #[serde(rename = "isUnlisted", skip_serializing_if = "Option::is_none")]
+    pub is_unlisted: Option<bool>,
     /// Stable public MP4 (480p) for search engines; public R2 videos only (D-SEO-11)
     #[serde(rename = "contentUrl", skip_serializing_if = "Option::is_none")]
     pub content_url: Option<String>,
@@ -5382,6 +5388,8 @@ pub struct GetChannelPlaylistsListResponseDataItem {
     pub is_public: Option<bool>,
     #[serde(rename = "isUnlisted", skip_serializing_if = "Option::is_none")]
     pub is_unlisted: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<String>,
     #[serde(rename = "sortMode", skip_serializing_if = "Option::is_none")]
     pub sort_mode: Option<String>,
     #[serde(rename = "sortField", skip_serializing_if = "Option::is_none")]
@@ -5710,6 +5718,9 @@ pub struct GetChannelShortsListResponseDataItem {
     pub made_for_kids: Option<bool>,
     #[serde(rename = "isPublic")]
     pub is_public: bool,
+    /// Link-only: opens for anyone with the link, never listed
+    #[serde(rename = "isUnlisted", skip_serializing_if = "Option::is_none")]
+    pub is_unlisted: Option<bool>,
     /// Stable public MP4 (480p) for search engines; public R2 videos only (D-SEO-11)
     #[serde(rename = "contentUrl", skip_serializing_if = "Option::is_none")]
     pub content_url: Option<String>,
@@ -6054,6 +6065,9 @@ pub struct GetChannelVideosListResponseDataItem {
     pub made_for_kids: Option<bool>,
     #[serde(rename = "isPublic")]
     pub is_public: bool,
+    /// Link-only: opens for anyone with the link, never listed
+    #[serde(rename = "isUnlisted", skip_serializing_if = "Option::is_none")]
+    pub is_unlisted: Option<bool>,
     /// Stable public MP4 (480p) for search engines; public R2 videos only (D-SEO-11)
     #[serde(rename = "contentUrl", skip_serializing_if = "Option::is_none")]
     pub content_url: Option<String>,
@@ -7809,6 +7823,8 @@ pub struct GetPlaylistFetchResponse {
     pub is_public: Option<bool>,
     #[serde(rename = "isUnlisted", skip_serializing_if = "Option::is_none")]
     pub is_unlisted: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<String>,
     #[serde(rename = "sortMode", skip_serializing_if = "Option::is_none")]
     pub sort_mode: Option<String>,
     #[serde(rename = "sortField", skip_serializing_if = "Option::is_none")]
@@ -8043,6 +8059,8 @@ pub struct GetPlaylistsListResponseDataItem {
     pub is_public: Option<bool>,
     #[serde(rename = "isUnlisted", skip_serializing_if = "Option::is_none")]
     pub is_unlisted: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<String>,
     #[serde(rename = "sortMode", skip_serializing_if = "Option::is_none")]
     pub sort_mode: Option<String>,
     #[serde(rename = "sortField", skip_serializing_if = "Option::is_none")]
@@ -10142,6 +10160,9 @@ pub struct GetVideoFetchResponse {
     pub made_for_kids: Option<bool>,
     #[serde(rename = "isPublic")]
     pub is_public: bool,
+    /// Link-only: opens for anyone with the link, never listed
+    #[serde(rename = "isUnlisted", skip_serializing_if = "Option::is_none")]
+    pub is_unlisted: Option<bool>,
     /// Stable public MP4 (480p) for search engines; public R2 videos only (D-SEO-11)
     #[serde(rename = "contentUrl", skip_serializing_if = "Option::is_none")]
     pub content_url: Option<String>,
@@ -10627,6 +10648,9 @@ pub struct GetVideoSearchResponseDataItem {
     pub made_for_kids: Option<bool>,
     #[serde(rename = "isPublic")]
     pub is_public: bool,
+    /// Link-only: opens for anyone with the link, never listed
+    #[serde(rename = "isUnlisted", skip_serializing_if = "Option::is_none")]
+    pub is_unlisted: Option<bool>,
     /// Stable public MP4 (480p) for search engines; public R2 videos only (D-SEO-11)
     #[serde(rename = "contentUrl", skip_serializing_if = "Option::is_none")]
     pub content_url: Option<String>,
@@ -11002,6 +11026,9 @@ pub struct GetVideosListResponseDataItem {
     pub made_for_kids: Option<bool>,
     #[serde(rename = "isPublic")]
     pub is_public: bool,
+    /// Link-only: opens for anyone with the link, never listed
+    #[serde(rename = "isUnlisted", skip_serializing_if = "Option::is_none")]
+    pub is_unlisted: Option<bool>,
     /// Stable public MP4 (480p) for search engines; public R2 videos only (D-SEO-11)
     #[serde(rename = "contentUrl", skip_serializing_if = "Option::is_none")]
     pub content_url: Option<String>,
@@ -15942,6 +15969,9 @@ pub struct PostVideoCreateResponseResultVideo {
     pub made_for_kids: Option<bool>,
     #[serde(rename = "isPublic")]
     pub is_public: bool,
+    /// Link-only: opens for anyone with the link, never listed
+    #[serde(rename = "isUnlisted", skip_serializing_if = "Option::is_none")]
+    pub is_unlisted: Option<bool>,
     /// Stable public MP4 (480p) for search engines; public R2 videos only (D-SEO-11)
     #[serde(rename = "contentUrl", skip_serializing_if = "Option::is_none")]
     pub content_url: Option<String>,
@@ -18573,6 +18603,9 @@ pub struct PutVideoUpdateResponseResultVideo {
     pub made_for_kids: Option<bool>,
     #[serde(rename = "isPublic")]
     pub is_public: bool,
+    /// Link-only: opens for anyone with the link, never listed
+    #[serde(rename = "isUnlisted", skip_serializing_if = "Option::is_none")]
+    pub is_unlisted: Option<bool>,
     /// Stable public MP4 (480p) for search engines; public R2 videos only (D-SEO-11)
     #[serde(rename = "contentUrl", skip_serializing_if = "Option::is_none")]
     pub content_url: Option<String>,

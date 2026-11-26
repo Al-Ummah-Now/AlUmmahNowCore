@@ -18,7 +18,11 @@ pub struct UploadRequest {
     pub mime_type: String,
     /// The channel to publish under (sent as the `channelId` header).
     pub channel_id: Option<String>,
+    /// Legacy visibility for callers that have not set `visibility`.
     pub is_public: Option<bool>,
+    /// When set, takes precedence over `is_public`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<aun_api::Visibility>,
     pub tags: Option<String>,
     pub category: Option<String>,
     /// Localised titles/descriptions, e.g. `{"ar": "…", "en": "…"}`.
@@ -240,6 +244,7 @@ mod tests {
                 mime_type: "video/mp4".into(),
                 channel_id: None,
                 is_public: None,
+                visibility: None,
                 tags: None,
                 category: None,
                 title_localized: BTreeMap::new(),
@@ -279,6 +284,25 @@ mod tests {
         assert_eq!(loaded.last_error.as_deref(), Some("older failure"));
         assert_eq!(loaded.last_error_kind, None);
         assert_eq!(loaded.last_error_code, None);
+    }
+
+    #[test]
+    fn loads_legacy_upload_visibility_and_persists_explicit_visibility() {
+        let mut original = manifest("u-1", 0);
+        original.request.is_public = Some(false);
+        let legacy = serde_json::to_value(&original).unwrap();
+        assert!(legacy["request"].get("visibility").is_none());
+        let mut restored: UploadManifest = serde_json::from_value(legacy).unwrap();
+        assert_eq!(restored.request.is_public, Some(false));
+        assert_eq!(restored.request.visibility, None);
+
+        restored.request.visibility = Some(aun_api::Visibility::Unlisted);
+        let stored = serde_json::to_value(&restored).unwrap();
+        assert_eq!(stored["request"]["visibility"], "unlisted");
+        assert_eq!(
+            serde_json::from_value::<UploadManifest>(stored).unwrap(),
+            restored
+        );
     }
 
     #[test]
