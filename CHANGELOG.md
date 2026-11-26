@@ -15,6 +15,8 @@ FFI; such changes are listed under **Breaking**.
 ### Fixed
 
 - Matching channel and playlist auto-download rules share their newest eligible episodes.
+  Files from a removed rule stay while another rule still needs them and free storage when
+  they roll out of every active rule's window.
 - Uploads keep the server's failure code across restarts and clear failure metadata when retried.
 
 ### Breaking
