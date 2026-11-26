@@ -16,22 +16,28 @@ use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 const KIB: usize = 1024;
 
 fn api(server: &MockServer) -> ApiClient {
+    api_with_token(server, Arc::new(StaticToken::default()))
+}
+
+fn api_with_token(server: &MockServer, token: Arc<StaticToken>) -> ApiClient {
     let mut c = ApiConfig::new(server.uri());
     c.retry = RetryPolicy {
         max_attempts: 1,
         base_delay: Duration::from_millis(1),
         max_delay: Duration::from_millis(5),
     };
-    ApiClient::new(c).unwrap().with_auth(Arc::new(StaticToken))
+    ApiClient::new(c).unwrap().with_auth(token)
 }
 
-struct StaticToken;
+#[derive(Default)]
+struct StaticToken(AtomicUsize);
 #[async_trait::async_trait]
 impl aun_api::AuthProvider for StaticToken {
     async fn access_token(&self) -> Option<String> {
         Some("tok".into())
     }
     async fn refresh(&self) -> aun_common::Result<Option<String>> {
+        self.0.fetch_add(1, Ordering::SeqCst);
         Ok(Some("tok".into()))
     }
 }
@@ -692,10 +698,14 @@ struct MemorySource {
     fail_read: AtomicBool,
     premature_eof: AtomicBool,
     changed_after_patch: Option<Arc<TusState>>,
+    size_calls: AtomicUsize,
+    fingerprint_calls: AtomicUsize,
+    late_read_error: Option<Error>,
 }
 
 impl aun_upload::UploadSource for MemorySource {
     fn size(&self) -> aun_common::Result<u64> {
+        self.size_calls.fetch_add(1, Ordering::SeqCst);
         let changed = self
             .changed_after_patch
             .as_ref()
@@ -704,12 +714,18 @@ impl aun_upload::UploadSource for MemorySource {
     }
 
     fn fingerprint(&self) -> aun_common::Result<String> {
+        self.fingerprint_calls.fetch_add(1, Ordering::SeqCst);
         Ok(self.changed.load(Ordering::SeqCst).to_string())
     }
 
     fn read_at(&self, offset: u64, len: u64) -> aun_common::Result<Vec<u8>> {
         assert!(len <= 64 * KIB as u64);
         self.reads.lock().unwrap().push(offset);
+        if offset >= 256 * KIB as u64
+            && let Some(error) = &self.late_read_error
+        {
+            return Err(error.clone());
+        }
         if self.fail_read.load(Ordering::SeqCst) {
             return Err(Error::Platform("stream read failed".into()));
         }
@@ -863,5 +879,99 @@ async fn stream_failures_surface_source_errors() {
             wait_for(&second, &id, UploadState::Done).await;
         }
         second.shutdown();
+    }
+}
+
+#[tokio::test]
+async fn local_read_errors_do_not_trigger_tus_recovery() {
+    for error in [
+        Error::not_found("content URI disappeared".into()),
+        Error::Forbidden {
+            code: None,
+            message: "URI permission revoked".into(),
+        },
+    ] {
+        let server = MockServer::start().await;
+        let tus = Arc::new(TusState::default());
+        mount_api(&server, 1).await;
+        mount_proxy(&server, tus.clone()).await;
+        Mock::given(method("GET"))
+            .and(path("/api/videos/upload/resume/v1"))
+            .respond_with(ResponseTemplate::new(500))
+            .expect(0)
+            .mount(&server)
+            .await;
+        let token = Arc::new(StaticToken::default());
+        let dir = tempfile::tempdir().unwrap();
+        let source = Arc::new(MemorySource {
+            bytes: vec![17; 512 * KIB],
+            late_read_error: Some(error.clone()),
+            ..Default::default()
+        });
+        let engine = UploadEngine::open(
+            api_with_token(&server, token.clone()),
+            dir.path(),
+            "u1",
+            UploadConfig {
+                compute_checksum: false,
+                ..cfg()
+            },
+        )
+        .unwrap();
+        engine
+            .register_source_opener(Arc::new(Opener(Some(source))))
+            .unwrap();
+        let id = engine
+            .enqueue_stream(request("picked.mp4"), SOURCE_ID.into())
+            .unwrap();
+        engine.start();
+        let failed = wait_for(&engine, &id, UploadState::Failed).await;
+        assert_eq!(failed.last_error.as_deref(), Some(error.to_string().as_str()));
+        assert_eq!(failed.offset, 256 * KIB as u64);
+        assert_eq!(token.0.load(Ordering::SeqCst), 0);
+        assert_eq!(tus.patches.load(Ordering::SeqCst), 1);
+        server.verify().await;
+        engine.shutdown();
+    }
+}
+
+#[tokio::test]
+async fn stream_metadata_is_checked_at_chunk_boundaries() {
+    for drift in [false, true] {
+        let server = MockServer::start().await;
+        let tus = Arc::new(TusState::default());
+        mount_api(&server, 1).await;
+        mount_proxy(&server, tus.clone()).await;
+        let dir = tempfile::tempdir().unwrap();
+        let source = Arc::new(MemorySource {
+            bytes: vec![17; 512 * KIB],
+            changed_after_patch: drift.then(|| tus.clone()),
+            ..Default::default()
+        });
+        let engine = UploadEngine::open(api(&server), dir.path(), "u1", cfg()).unwrap();
+        engine
+            .register_source_opener(Arc::new(Opener(Some(source.clone()))))
+            .unwrap();
+        let id = engine
+            .enqueue_stream(request("picked.mp4"), SOURCE_ID.into())
+            .unwrap();
+        engine.start();
+
+        if drift {
+            let failed = wait_for(&engine, &id, UploadState::Failed).await;
+            assert!(failed.last_error.unwrap().contains("source changed"));
+            assert_eq!(failed.offset, 256 * KIB as u64);
+            assert_eq!(tus.patches.load(Ordering::SeqCst), 1);
+            assert_eq!(source.size_calls.load(Ordering::SeqCst), 5);
+            assert_eq!(source.fingerprint_calls.load(Ordering::SeqCst), 4);
+        } else {
+            wait_for(&engine, &id, UploadState::Done).await;
+            assert_eq!(tus.patches.load(Ordering::SeqCst), 2);
+            // Enqueue, open, post-checksum, twice per chunk, and pre-completion.
+            assert_eq!(source.size_calls.load(Ordering::SeqCst), 8);
+            assert_eq!(source.fingerprint_calls.load(Ordering::SeqCst), 8);
+        }
+        assert!(source.reads.lock().unwrap().len() > 16);
+        engine.shutdown();
     }
 }

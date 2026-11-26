@@ -105,6 +105,49 @@ public class SmokeTests
         engine.Shutdown();
     }
 
+    private sealed class MemoryUploadSource : UploadSource
+    {
+        public ulong Size() => 3;
+        public string Fingerprint() => "version-1";
+
+        public byte[] ReadAt(ulong offset, ulong len)
+        {
+            var start = (int)System.Math.Min(offset, 3);
+            var count = (int)System.Math.Min(len, (ulong)(3 - start));
+            return new byte[] { 1, 2, 3 }[start..(start + count)];
+        }
+    }
+
+    private sealed class MemoryUploadOpener : UploadSourceOpener
+    {
+        public UploadSource Reopen(string sourceId)
+        {
+            Assert.Equal("content://test/video", sourceId);
+            return new MemoryUploadSource();
+        }
+    }
+
+    [Fact]
+    public void UploadStreamCallbacks()
+    {
+        var client = new ApiClient(new ApiClientConfig("http://127.0.0.1:9", "smoke", null, 2000, 1), null);
+        var dir = System.IO.Directory.CreateTempSubdirectory();
+        var engine = UploadEngine.WithSourceOpener(
+            client, dir.FullName, "u1", AunCoreMethods.UploadConfigDefault(), new Offline(), new MemoryUploadOpener());
+        try
+        {
+            var request = new UploadRequest("picked.mp4", "درس", null, null, null, null, null, null,
+                new Dictionary<string, string>(), new Dictionary<string, string>(), 0);
+            var id = engine.EnqueueStream(request, "content://test/video");
+            Assert.Equal(id, Assert.Single(engine.List()).Id);
+        }
+        finally
+        {
+            engine.Shutdown();
+            dir.Delete(recursive: true);
+        }
+    }
+
     [Fact]
     public async Task MediaSurface()
     {
