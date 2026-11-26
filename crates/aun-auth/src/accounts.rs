@@ -158,6 +158,9 @@ fn decode_jwt_payload<T: serde::de::DeserializeOwned>(payload: &str) -> Option<T
     serde_json::from_slice(&bytes).ok()
 }
 
+/// Allows for a device clock running slightly behind the token issuer.
+const MAX_FUTURE_CLOCK_SKEW_SECONDS: u64 = 60;
+
 /// Checks the freshness claim on tokens received directly from the trusted token endpoint.
 pub(crate) fn verify_auth_time(tokens: &TokenSet, now_ms: i64, max_age_seconds: u64) -> Result<()> {
     #[derive(Deserialize)]
@@ -176,8 +179,11 @@ pub(crate) fn verify_auth_time(tokens: &TokenSet, now_ms: i64, max_age_seconds: 
         Some(decode_jwt_payload::<AuthenticationClaims>(payload)?.auth_time)
     };
     let now = u64::try_from(now_ms.div_euclid(1_000)).ok();
-    let age = now.zip(auth_time()).and_then(|(now, time)| now.checked_sub(time));
-    if age.is_some_and(|age| age <= max_age_seconds) {
+    if now.zip(auth_time()).is_some_and(|(now, time)| {
+        let earliest = now.saturating_sub(max_age_seconds);
+        let latest = now.saturating_add(MAX_FUTURE_CLOCK_SKEW_SECONDS);
+        (earliest..=latest).contains(&time)
+    }) {
         return Ok(());
     }
     Err(Error::Unauthorized {
@@ -226,6 +232,31 @@ mod tests {
             e(br#"{"alg":"none"}"#),
             e(payload.to_string().as_bytes())
         )
+    }
+
+    #[test]
+    fn auth_time_allows_bounded_future_skew_with_a_strict_past_limit() {
+        for (auth_time, accepted) in [
+            (1_099, false), // 901 seconds old
+            (1_100, true),  // exactly max_age
+            (2_001, true),  // small clock skew
+            (2_060, true),  // exactly the allowed skew
+            (2_061, false), // beyond the allowed skew
+            (2_300, false),
+        ] {
+            let tokens = TokenSet {
+                access_token: jwt(serde_json::json!({"auth_time": auth_time})),
+                refresh_token: None,
+                id_token: None,
+                expires_at_ms: None,
+                scope: None,
+            };
+            assert_eq!(
+                verify_auth_time(&tokens, 2_000_500, 900).is_ok(),
+                accepted,
+                "auth_time {auth_time}"
+            );
+        }
     }
 
     #[test]
