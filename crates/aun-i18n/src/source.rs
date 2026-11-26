@@ -9,7 +9,7 @@
 //! `POST /api/i18n/sync` seeds the server's R2 store (development/admin) and is never called by apps.
 
 use async_trait::async_trait;
-use aun_api::ApiClient;
+use aun_api::{ApiClient, GetGetTranslationsEndpointParams, GetGetTranslationsEndpointResponse, requests};
 use aun_common::{Error, Result};
 use serde::{Deserialize, Serialize};
 
@@ -57,6 +57,9 @@ pub struct RemoteMetadata {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RemoteBundle {
     pub locale: String,
+    /// The server's ETag, including quotes and any weak prefix.
+    #[serde(default)]
+    pub etag: Option<String>,
     pub version: String,
     pub updated_at: String,
     pub translations: serde_json::Value,
@@ -68,7 +71,7 @@ pub struct RemoteBundle {
 pub trait TranslationSource: Send + Sync {
     async fn config(&self) -> Result<RemoteConfig>;
     async fn metadata(&self) -> Result<RemoteMetadata>;
-    /// `Ok(None)` means "not modified" for `if_none_match`.
+    /// `Ok(None)` means "not modified" for `if_none_match`, the cached ETag.
     async fn translations(&self, locale: &str, if_none_match: Option<&str>) -> Result<Option<RemoteBundle>>;
 }
 
@@ -123,20 +126,28 @@ impl TranslationSource for ApiTranslationSource {
     }
 
     async fn translations(&self, locale: &str, if_none_match: Option<&str>) -> Result<Option<RemoteBundle>> {
-        let params = aun_api::GetGetTranslationsEndpointParams {
+        let req = requests::get_get_translations_endpoint(&GetGetTranslationsEndpointParams {
             locale: locale.to_owned(),
-            header_if_none_match: if_none_match.map(|e| format!("\"{}\"", e.trim_matches('"'))),
-        };
-        match self.client.get_get_translations_endpoint(&params).await {
-            Ok(resp) => Ok(Some(RemoteBundle {
-                locale: resp.result.locale,
-                version: resp.result.version,
-                updated_at: resp.result.updated_at,
-                translations: resp.result.translations,
-            })),
-            // The client treats non-2xx as errors; 304 is our cache hit.
-            Err(Error::Http { status: 304, .. }) => Ok(None),
-            Err(e) => Err(e),
+            header_if_none_match: if_none_match.map(|tag| {
+                if tag.starts_with('"') || tag.starts_with("W/\"") || tag == "*" {
+                    tag.to_owned()
+                } else {
+                    format!("\"{tag}\"")
+                }
+            }),
+        })?;
+        let raw = self.client.execute(req).await?;
+        if raw.status == 304 {
+            return Ok(None);
         }
+        let resp: GetGetTranslationsEndpointResponse = serde_json::from_str(&raw.body)
+            .map_err(|e| Error::Internal(format!("decoding translations: {e}")))?;
+        Ok(Some(RemoteBundle {
+            locale: resp.result.locale,
+            etag: raw.header("etag").map(str::to_owned),
+            version: resp.result.version,
+            updated_at: resp.result.updated_at,
+            translations: resp.result.translations,
+        }))
     }
 }

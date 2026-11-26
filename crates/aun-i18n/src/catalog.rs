@@ -74,6 +74,12 @@ pub trait LocaleListener: Send + Sync {
 }
 
 #[derive(Debug)]
+struct BundleValidators {
+    checksum: Option<String>,
+    etag: Option<String>,
+}
+
+#[derive(Debug)]
 struct State {
     locale: String,
     fallback: String,
@@ -81,8 +87,7 @@ struct State {
     numerals: NumeralSystem,
     /// Downloaded (or cached) bundles, by locale.
     remote: HashMap<String, Bundle>,
-    /// Checksums of the remote bundles.
-    checksums: HashMap<String, Option<String>>,
+    validators: HashMap<String, BundleValidators>,
     /// Bundles embedded in the app (lower priority than downloaded ones).
     builtin: HashMap<String, Bundle>,
     config: Option<RemoteConfig>,
@@ -126,7 +131,7 @@ impl I18n {
         let mut fallback = normalize_locale(&options.fallback_locale).unwrap_or_else(|| "en".into());
         let cache = options.cache_dir.as_ref().map(DiskCache::new);
         let mut remote = HashMap::new();
-        let mut checksums = HashMap::new();
+        let mut validators = HashMap::new();
         let mut config = None;
         if let Some(cache) = &cache {
             match cache.load_config() {
@@ -140,7 +145,13 @@ impl I18n {
                 Err(e) => tracing::warn!(error = %e, "ignoring unreadable i18n config cache"),
             }
             for cached in cache.load_all_bundles() {
-                checksums.insert(cached.locale.clone(), cached.checksum.clone());
+                validators.insert(
+                    cached.locale.clone(),
+                    BundleValidators {
+                        checksum: cached.checksum,
+                        etag: cached.etag,
+                    },
+                );
                 remote.insert(
                     cached.locale.clone(),
                     Bundle::from_json(&cached.locale, &cached.version, &cached.translations),
@@ -155,7 +166,7 @@ impl I18n {
                 chain,
                 numerals: options.numerals,
                 remote,
-                checksums,
+                validators,
                 builtin: HashMap::new(),
                 config,
                 missing: HashSet::new(),
@@ -429,8 +440,8 @@ impl I18n {
     }
 
     /// Refreshes the config and the bundles of the current fallback chain from the source:
-    /// metadata checksums decide what to download (`If-None-Match` as a second guard). Results go to
-    /// the disk cache. On failure (e.g. offline) the cached bundles stay in use and the error is
+    /// metadata checksums decide what to revalidate. Requests use the cached ETag when available
+    /// and results go to the disk cache. On failure (e.g. offline) the cached bundles stay in use and the error is
     /// returned for the caller to retry later. Concurrent calls are serialised.
     pub async fn sync(&self) -> Result<SyncReport> {
         let source = self
@@ -467,25 +478,28 @@ impl I18n {
         };
         for locale in chain.iter().filter(|l| offered.contains(*l)) {
             let server_sum = metadata.checksums.get(locale).cloned();
-            let (cached_sum, have) = {
+            let etag = {
                 let st = self.read();
-                (
-                    st.checksums.get(locale).cloned().flatten(),
-                    st.remote.contains_key(locale),
-                )
+                let cached = st.validators.get(locale);
+                if server_sum.is_some() && cached.and_then(|v| v.checksum.as_ref()) == server_sum.as_ref() {
+                    report.unchanged.push(locale.clone());
+                    continue;
+                }
+                cached.and_then(|v| v.etag.clone())
             };
-            if have && server_sum.is_some() && cached_sum == server_sum {
-                report.unchanged.push(locale.clone());
-                continue;
-            }
-            let etag = if have { cached_sum.as_deref() } else { None };
-            match source.translations(locale, etag).await? {
-                None => report.unchanged.push(locale.clone()),
+            match source.translations(locale, etag.as_deref()).await? {
+                None if etag.is_some() => report.unchanged.push(locale.clone()),
+                None => {
+                    return Err(Error::Internal(
+                        "translation source returned 304 without a validator".into(),
+                    ));
+                }
                 Some(remote) => {
                     let cached = CachedBundle {
                         locale: locale.clone(),
                         version: remote.version.clone(),
-                        checksum: server_sum.clone(),
+                        checksum: server_sum,
+                        etag: remote.etag,
                         updated_at: remote.updated_at.clone(),
                         fetched_at_ms: self.clock.now_ms(),
                         translations: remote.translations,
@@ -496,7 +510,13 @@ impl I18n {
                     let bundle = Bundle::from_json(locale, &cached.version, &cached.translations);
                     let mut st = self.write();
                     st.remote.insert(locale.clone(), bundle);
-                    st.checksums.insert(locale.clone(), server_sum);
+                    st.validators.insert(
+                        locale.clone(),
+                        BundleValidators {
+                            checksum: cached.checksum,
+                            etag: cached.etag,
+                        },
+                    );
                     st.missing.clear();
                     report.updated.push(locale.clone());
                 }

@@ -13,8 +13,11 @@ use crate::source::RemoteConfig;
 pub struct CachedBundle {
     pub locale: String,
     pub version: String,
-    /// Checksum from `/api/i18n/metadata` when the bundle was fetched (also sent as `If-None-Match`).
+    /// Checksum from `/api/i18n/metadata` when the bundle was fetched.
     pub checksum: Option<String>,
+    /// ETag returned with the bundle. Older cache files have no ETag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub etag: Option<String>,
     pub updated_at: String,
     pub fetched_at_ms: i64,
     pub translations: serde_json::Value,
@@ -127,6 +130,7 @@ mod tests {
         CachedBundle {
             locale: locale.into(),
             version: "v1".into(),
+            etag: None,
             checksum: Some("abc".into()),
             updated_at: "2026-01-01T00:00:00Z".into(),
             fetched_at_ms: 1,

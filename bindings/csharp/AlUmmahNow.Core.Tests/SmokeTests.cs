@@ -79,9 +79,12 @@ public class SmokeTests
         Assert.Empty(auth.Accounts());
         Assert.Null(await auth.AccessToken());
         await Assert.ThrowsAsync<AunException.Unsupported>(() => auth.BeginDeviceLogin());
-        var loopback = auth.BeginLoginWithRedirect(LoginPrompt.Login, "http://127.0.0.1:53111/auth/callback");
+        var loopback = auth.BeginLoginWithRedirect(new LoginPrompt.Login(), "http://127.0.0.1:53111/auth/callback");
         Assert.Contains("redirect_uri=http%3A%2F%2F127.0.0.1%3A53111%2Fauth%2Fcallback", loopback.Url);
-        Assert.Throws<AunException.InvalidInput>(() => auth.BeginLoginWithRedirect(LoginPrompt.Default, "https://evil.example/cb"));
+        var stepUp = auth.BeginLoginWithPrompt(new LoginPrompt.StepUp(900UL));
+        Assert.Contains("prompt=login", stepUp.Url);
+        Assert.Contains("max_age=900", stepUp.Url);
+        Assert.Throws<AunException.InvalidInput>(() => auth.BeginLoginWithRedirect(new LoginPrompt.Default(), "https://evil.example/cb"));
         await auth.SignOutAndRevoke("nobody");
         auth.SignOut("nobody");
     }

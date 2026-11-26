@@ -71,6 +71,8 @@ pub enum LoginPrompt {
     Login,
     /// `prompt=select_account`: the account chooser (explicit "Choose account" only).
     SelectAccount,
+    /// `prompt=login` and `max_age`. Completion requires a recent `auth_time`.
+    StepUp { max_age_seconds: u64 },
 }
 
 impl From<LoginPrompt> for aun_auth::LoginPrompt {
@@ -80,6 +82,7 @@ impl From<LoginPrompt> for aun_auth::LoginPrompt {
             LoginPrompt::Silent => aun_auth::LoginPrompt::Silent,
             LoginPrompt::Login => aun_auth::LoginPrompt::Login,
             LoginPrompt::SelectAccount => aun_auth::LoginPrompt::SelectAccount,
+            LoginPrompt::StepUp { max_age_seconds } => aun_auth::LoginPrompt::StepUp { max_age_seconds },
         }
     }
 }

@@ -148,11 +148,42 @@ fn account_name(claims: &IdentityClaims, prop: &dyn Fn(&str) -> Option<String>) 
 }
 
 pub fn decode_claims(jwt: &str) -> Option<IdentityClaims> {
-    let payload = jwt.split('.').nth(1)?;
+    decode_jwt_payload(jwt.split('.').nth(1)?)
+}
+
+fn decode_jwt_payload<T: serde::de::DeserializeOwned>(payload: &str) -> Option<T> {
     let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(payload.trim_end_matches('='))
         .ok()?;
     serde_json::from_slice(&bytes).ok()
+}
+
+/// Checks the freshness claim on tokens received directly from the trusted token endpoint.
+pub(crate) fn verify_auth_time(tokens: &TokenSet, now_ms: i64, max_age_seconds: u64) -> Result<()> {
+    #[derive(Deserialize)]
+    struct AuthenticationClaims {
+        auth_time: u64,
+    }
+
+    let auth_time = || {
+        // OIDC supplies auth_time in the ID token. OpenAuth can issue only an access token.
+        let jwt = tokens.id_token.as_deref().unwrap_or(&tokens.access_token);
+        let (header, rest) = jwt.split_once('.')?;
+        let (payload, signature) = rest.split_once('.')?;
+        if header.is_empty() || signature.contains('.') {
+            return None;
+        }
+        Some(decode_jwt_payload::<AuthenticationClaims>(payload)?.auth_time)
+    };
+    let now = u64::try_from(now_ms.div_euclid(1_000)).ok();
+    let age = now.zip(auth_time()).and_then(|(now, time)| now.checked_sub(time));
+    if age.is_some_and(|age| age <= max_age_seconds) {
+        return Ok(());
+    }
+    Err(Error::Unauthorized {
+        code: Some("insufficient_user_authentication".into()),
+        message: "step-up requires a valid auth_time within max_age".into(),
+    })
 }
 
 /// Builds the profile for a token set (id_token preferred, then the access token).

@@ -165,6 +165,8 @@ pub enum LoginPrompt {
     Login,
     /// `prompt=select_account`: shows the account chooser (an explicit "Choose account").
     SelectAccount,
+    /// Shows the sign-in form and requires authentication within the given age, in seconds.
+    StepUp { max_age_seconds: u64 },
 }
 
 impl LoginPrompt {
@@ -173,7 +175,7 @@ impl LoginPrompt {
         match self {
             LoginPrompt::Default => None,
             LoginPrompt::Silent => Some("none"),
-            LoginPrompt::Login => Some("login"),
+            LoginPrompt::Login | LoginPrompt::StepUp { .. } => Some("login"),
             LoginPrompt::SelectAccount => Some("select_account"),
         }
     }

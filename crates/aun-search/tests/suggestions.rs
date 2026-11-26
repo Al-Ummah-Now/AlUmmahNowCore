@@ -100,3 +100,91 @@ async fn blank_text_sends_nothing() {
     };
     assert!(fetch_suggestions(&client(&server), &q).await.unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn blank_query_loads_scoped_pages_and_counts_server_rows_before_filtering() {
+    let server = MockServer::start().await;
+    let scope = || {
+        Mock::given(method("GET"))
+            .and(path("/api/search/suggestions"))
+            .and(query_param("q", ""))
+            .and(query_param("types", "playlist"))
+            .and(query_param("limit", "2"))
+            .and(query_param("channelId", "ch_9"))
+    };
+    scope()
+        .and(query_param("offset", "2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+            {"text": "Second playlist", "type": "playlist", "id": "p2"}
+        ])))
+        .expect(1)
+        .mount(&server)
+        .await;
+    scope()
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+            {"type": "playlist"},
+            {"text": "First playlist", "type": "playlist", "id": "p1"}
+        ])))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = client(&server);
+    let query = SuggestionQuery {
+        text: "  ".into(),
+        limit: Some(2),
+        kinds: vec![SuggestionKind::Playlist],
+        channel_id: Some("ch_9".into()),
+    };
+    let first = aun_search::fetch_suggestions_page(&client, &query, None)
+        .await
+        .unwrap();
+    assert_eq!(first.items.len(), 1);
+    assert_eq!(first.items[0].id.as_deref(), Some("p1"));
+    assert_eq!(first.next_cursor, Some(2));
+    assert!(first.has_more);
+
+    let next = aun_search::fetch_suggestions_page(&client, &query, first.next_cursor)
+        .await
+        .unwrap();
+    assert_eq!(next.items[0].id.as_deref(), Some("p2"));
+    assert_eq!(next.next_cursor, None);
+    assert!(!next.has_more);
+}
+
+#[tokio::test]
+async fn paging_stops_at_server_offset_cap_and_rejects_invalid_cursors() {
+    let server = MockServer::start().await;
+    Mock::given(path("/api/search/suggestions"))
+        .and(query_param("offset", "500"))
+        .and(query_param("q", ""))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+            {"text": "Last reachable result", "type": "video", "id": "last"}
+        ])))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let client = client(&server);
+    let blank = SuggestionQuery {
+        limit: Some(1),
+        ..Default::default()
+    };
+    let page = aun_search::fetch_suggestions_page(&client, &blank, Some(500))
+        .await
+        .unwrap();
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.next_cursor, None);
+    assert!(!page.has_more);
+    assert!(matches!(
+        aun_search::fetch_suggestions_page(&client, &blank, Some(501)).await,
+        Err(Error::InvalidInput { .. })
+    ));
+    let typed = SuggestionQuery {
+        text: "test".into(),
+        ..Default::default()
+    };
+    assert!(matches!(
+        aun_search::fetch_suggestions_page(&client, &typed, Some(1)).await,
+        Err(Error::InvalidInput { .. })
+    ));
+}

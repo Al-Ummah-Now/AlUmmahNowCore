@@ -100,7 +100,7 @@ impl From<SearchSuggestion> for aun_search::SearchSuggestion {
 /// A suggestions request.
 #[derive(Debug, Clone, Default, PartialEq, Eq, uniffi::Record)]
 pub struct SuggestionQuery {
-    /// What the user has typed so far. Blank returns an empty list without a request.
+    /// What the user has typed so far. Use `search_suggestions_page` to browse with blank text.
     pub text: String,
     /// 1-20; 8 when `None`.
     pub limit: Option<u32>,
@@ -121,6 +121,16 @@ impl From<SuggestionQuery> for aun_search::SuggestionQuery {
     }
 }
 
+/// A page of search suggestions.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct SearchSuggestionsPage {
+    pub items: Vec<SearchSuggestion>,
+    /// Pass this cursor back with the same query and scope to fetch the next page.
+    pub next_cursor: Option<u32>,
+    /// True when another page can be requested. That page may be empty.
+    pub has_more: bool,
+}
+
 /// Suggestions of one kind, in server order.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct SuggestionGroup {
@@ -137,13 +147,29 @@ pub struct TextRange {
 
 #[uniffi::export(async_runtime = "tokio")]
 impl ApiClient {
-    /// `GET /api/search/suggestions`, made once (no retries). Throws `RateLimited` on 429.
+    /// `GET /api/search/suggestions`, made once (no retries). Blank text returns an empty list
+    /// without a request. Throws `RateLimited` on 429.
     pub async fn search_suggestions(
         &self,
         query: SuggestionQuery,
     ) -> Result<Vec<SearchSuggestion>, AunError> {
         let items = aun_search::fetch_suggestions(&self.inner, &query.into()).await?;
         Ok(items.into_iter().map(Into::into).collect())
+    }
+
+    /// Fetch suggestions, including scoped initial items for blank text. Use `None` for the first
+    /// page. Continuation cursors are supported for blank text. Throws `RateLimited` on 429.
+    pub async fn search_suggestions_page(
+        &self,
+        query: SuggestionQuery,
+        cursor: Option<u32>,
+    ) -> Result<SearchSuggestionsPage, AunError> {
+        let page = aun_search::fetch_suggestions_page(&self.inner, &query.into(), cursor).await?;
+        Ok(SearchSuggestionsPage {
+            items: page.items.into_iter().map(Into::into).collect(),
+            next_cursor: page.next_cursor,
+            has_more: page.has_more,
+        })
     }
 }
 

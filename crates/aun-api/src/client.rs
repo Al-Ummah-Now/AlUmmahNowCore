@@ -264,6 +264,18 @@ impl std::fmt::Debug for ApiClient {
 pub struct RawResponse {
     pub status: u16,
     pub body: String,
+    /// UTF-8 response headers. Names are lowercase and repeated fields retain separate values.
+    pub headers: Vec<(String, String)>,
+}
+
+impl RawResponse {
+    /// The first value for a response header, looked up case-insensitively.
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.as_str())
+    }
 }
 
 impl ApiClient {
@@ -338,7 +350,7 @@ impl ApiClient {
         self.execute(req).await.map(|_| ())
     }
 
-    /// Runs a request with retries and the refresh-on-401 hook. Returns the body of a 2xx.
+    /// Runs a request with retries and the refresh-on-401 hook. Returns 2xx and 304 responses.
     pub async fn execute(&self, req: RequestSpec) -> Result<RawResponse> {
         let policy = &self.config.retry;
         let max_attempts = req
@@ -433,14 +445,23 @@ impl ApiClient {
         };
         let resp = rb.send().await.map_err(|e| (map_reqwest(e), None))?;
         let status = resp.status();
-        let retry_after = parse_retry_after(resp.headers());
-        let body = resp.text().await.map_err(|e| (map_reqwest(e), None))?;
-        if status.is_success() {
+        if status.is_success() || status == StatusCode::NOT_MODIFIED {
+            let headers = resp
+                .headers()
+                .iter()
+                .filter_map(|(name, value)| {
+                    let value = std::str::from_utf8(value.as_bytes()).ok()?;
+                    Some((name.to_string(), value.to_owned()))
+                })
+                .collect();
             return Ok(RawResponse {
                 status: status.as_u16(),
-                body,
+                body: resp.text().await.map_err(|e| (map_reqwest(e), None))?,
+                headers,
             });
         }
+        let retry_after = parse_retry_after(resp.headers());
+        let body = resp.text().await.map_err(|e| (map_reqwest(e), None))?;
         Err((error_from_response(status, &body, retry_after), retry_after))
     }
 }

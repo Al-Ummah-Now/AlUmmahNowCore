@@ -642,13 +642,13 @@ fileprivate struct FfiConverterData: FfiConverterRustBuffer {
 public protocol ApiClientProtocol: AnyObject, Sendable {
     
     /**
-     * Calls any operation by id. Throws `AunError` for non-2xx responses.
+     * Calls any operation by id. Returns 2xx and 304 responses.
      */
     func request(call: ApiCall) async throws  -> ApiResponse
     
     /**
      * Calls an `/api/` path that is not in the pinned OpenAPI document (same auth, refresh on
-     * 401, retries and errors as [`Self::request`]). Throws `AunError` for non-2xx responses.
+     * 401, retries and errors as [`Self::request`]). Returns 2xx and 304 responses.
      */
     func requestPath(call: PathCall) async throws  -> ApiResponse
     
@@ -718,9 +718,16 @@ public protocol ApiClientProtocol: AnyObject, Sendable {
     func userFeatures(channelId: String?) async throws  -> [String: Bool]
     
     /**
-     * `GET /api/search/suggestions`, made once (no retries). Throws `RateLimited` on 429.
+     * `GET /api/search/suggestions`, made once (no retries). Blank text returns an empty list
+     * without a request. Throws `RateLimited` on 429.
      */
     func searchSuggestions(query: SuggestionQuery) async throws  -> [SearchSuggestion]
+    
+    /**
+     * Fetch suggestions, including scoped initial items for blank text. Use `None` for the first
+     * page. Continuation cursors are supported for blank text. Throws `RateLimited` on 429.
+     */
+    func searchSuggestionsPage(query: SuggestionQuery, cursor: UInt32?) async throws  -> SearchSuggestionsPage
     
 }
 /**
@@ -789,7 +796,7 @@ public convenience init(config: ApiClientConfig, tokens: TokenSource?)throws  {
 
     
     /**
-     * Calls any operation by id. Throws `AunError` for non-2xx responses.
+     * Calls any operation by id. Returns 2xx and 304 responses.
      */
 open func request(call: ApiCall)async throws  -> ApiResponse  {
     return
@@ -810,7 +817,7 @@ open func request(call: ApiCall)async throws  -> ApiResponse  {
     
     /**
      * Calls an `/api/` path that is not in the pinned OpenAPI document (same auth, refresh on
-     * 401, retries and errors as [`Self::request`]). Throws `AunError` for non-2xx responses.
+     * 401, retries and errors as [`Self::request`]). Returns 2xx and 304 responses.
      */
 open func requestPath(call: PathCall)async throws  -> ApiResponse  {
     return
@@ -1090,7 +1097,8 @@ open func userFeatures(channelId: String?)async throws  -> [String: Bool]  {
 }
     
     /**
-     * `GET /api/search/suggestions`, made once (no retries). Throws `RateLimited` on 429.
+     * `GET /api/search/suggestions`, made once (no retries). Blank text returns an empty list
+     * without a request. Throws `RateLimited` on 429.
      */
 open func searchSuggestions(query: SuggestionQuery)async throws  -> [SearchSuggestion]  {
     return
@@ -1105,6 +1113,27 @@ open func searchSuggestions(query: SuggestionQuery)async throws  -> [SearchSugge
             completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceTypeSearchSuggestion.lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+    /**
+     * Fetch suggestions, including scoped initial items for blank text. Use `None` for the first
+     * page. Continuation cursors are supported for blank text. Throws `RateLimited` on 429.
+     */
+open func searchSuggestionsPage(query: SuggestionQuery, cursor: UInt32?)async throws  -> SearchSuggestionsPage  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_apiclient_search_suggestions_page(
+                    self.uniffiCloneHandle(),
+                    FfiConverterTypeSuggestionQuery_lower(query),FfiConverterOptionUInt32.lower(cursor)
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeSearchSuggestionsPage_lift,
             errorHandler: FfiConverterTypeAunError_lift
         )
 }
@@ -6184,7 +6213,7 @@ public func FfiConverterTypeApiOperation_lower(_ value: ApiOperation) -> RustBuf
 
 
 /**
- * A response body from [`ApiClient::request`].
+ * A raw response from [`ApiClient::request`] or [`ApiClient::request_path`].
  */
 public struct ApiResponse: Equatable, Hashable {
     public var status: UInt16
@@ -6192,15 +6221,23 @@ public struct ApiResponse: Equatable, Hashable {
      * Raw body (JSON for almost every operation).
      */
     public var body: String
+    /**
+     * UTF-8 response headers with lowercase names.
+     */
+    public var headers: [ResponseHeader]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
     public init(status: UInt16, 
         /**
          * Raw body (JSON for almost every operation).
-         */body: String) {
+         */body: String, 
+        /**
+         * UTF-8 response headers with lowercase names.
+         */headers: [ResponseHeader]) {
         self.status = status
         self.body = body
+        self.headers = headers
     }
 
     
@@ -6220,13 +6257,15 @@ public struct FfiConverterTypeApiResponse: FfiConverterRustBuffer {
         return
             try ApiResponse(
                 status: FfiConverterUInt16.read(from: &buf), 
-                body: FfiConverterString.read(from: &buf)
+                body: FfiConverterString.read(from: &buf), 
+                headers: FfiConverterSequenceTypeResponseHeader.read(from: &buf)
         )
     }
 
     public static func write(_ value: ApiResponse, into buf: inout [UInt8]) {
         FfiConverterUInt16.write(value.status, into: &buf)
         FfiConverterString.write(value.body, into: &buf)
+        FfiConverterSequenceTypeResponseHeader.write(value.headers, into: &buf)
     }
 }
 
@@ -9358,6 +9397,63 @@ public func FfiConverterTypeReleaseArtifact_lower(_ value: ReleaseArtifact) -> R
 }
 
 
+/**
+ * A response header. Repeated fields appear as separate entries.
+ */
+public struct ResponseHeader: Equatable, Hashable {
+    public var name: String
+    public var value: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, value: String) {
+        self.name = name
+        self.value = value
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ResponseHeader: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeResponseHeader: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ResponseHeader {
+        return
+            try ResponseHeader(
+                name: FfiConverterString.read(from: &buf), 
+                value: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ResponseHeader, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.value, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeResponseHeader_lift(_ buf: RustBuffer) throws -> ResponseHeader {
+    return try FfiConverterTypeResponseHeader.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeResponseHeader_lower(_ value: ResponseHeader) -> RustBuffer {
+    return FfiConverterTypeResponseHeader.lower(value)
+}
+
+
 public struct SceneChange: Equatable, Hashable {
     public var ptsMs: UInt64
     public var score: Double
@@ -9518,6 +9614,79 @@ public func FfiConverterTypeSearchSuggestion_lift(_ buf: RustBuffer) throws -> S
 #endif
 public func FfiConverterTypeSearchSuggestion_lower(_ value: SearchSuggestion) -> RustBuffer {
     return FfiConverterTypeSearchSuggestion.lower(value)
+}
+
+
+/**
+ * A page of search suggestions.
+ */
+public struct SearchSuggestionsPage: Equatable, Hashable {
+    public var items: [SearchSuggestion]
+    /**
+     * Pass this cursor back with the same query and scope to fetch the next page.
+     */
+    public var nextCursor: UInt32?
+    /**
+     * True when another page can be requested. That page may be empty.
+     */
+    public var hasMore: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(items: [SearchSuggestion], 
+        /**
+         * Pass this cursor back with the same query and scope to fetch the next page.
+         */nextCursor: UInt32?, 
+        /**
+         * True when another page can be requested. That page may be empty.
+         */hasMore: Bool) {
+        self.items = items
+        self.nextCursor = nextCursor
+        self.hasMore = hasMore
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SearchSuggestionsPage: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSearchSuggestionsPage: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SearchSuggestionsPage {
+        return
+            try SearchSuggestionsPage(
+                items: FfiConverterSequenceTypeSearchSuggestion.read(from: &buf), 
+                nextCursor: FfiConverterOptionUInt32.read(from: &buf), 
+                hasMore: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SearchSuggestionsPage, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeSearchSuggestion.write(value.items, into: &buf)
+        FfiConverterOptionUInt32.write(value.nextCursor, into: &buf)
+        FfiConverterBool.write(value.hasMore, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSearchSuggestionsPage_lift(_ buf: RustBuffer) throws -> SearchSuggestionsPage {
+    return try FfiConverterTypeSearchSuggestionsPage.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSearchSuggestionsPage_lower(_ value: SearchSuggestionsPage) -> RustBuffer {
+    return FfiConverterTypeSearchSuggestionsPage.lower(value)
 }
 
 
@@ -9810,7 +9979,7 @@ public func FfiConverterTypeSuggestionGroup_lower(_ value: SuggestionGroup) -> R
  */
 public struct SuggestionQuery: Equatable, Hashable {
     /**
-     * What the user has typed so far. Blank returns an empty list without a request.
+     * What the user has typed so far. Use `search_suggestions_page` to browse with blank text.
      */
     public var text: String
     /**
@@ -9830,7 +9999,7 @@ public struct SuggestionQuery: Equatable, Hashable {
     // declare one manually.
     public init(
         /**
-         * What the user has typed so far. Blank returns an empty list without a request.
+         * What the user has typed so far. Use `search_suggestions_page` to browse with blank text.
          */text: String, 
         /**
          * 1-20; 8 when `None`.
@@ -11587,6 +11756,11 @@ public enum LoginPrompt: Equatable, Hashable {
      * `prompt=select_account`: the account chooser (explicit "Choose account" only).
      */
     case selectAccount
+    /**
+     * `prompt=login` and `max_age`. Completion requires a recent `auth_time`.
+     */
+    case stepUp(maxAgeSeconds: UInt64
+    )
 
 
 
@@ -11616,6 +11790,9 @@ public struct FfiConverterTypeLoginPrompt: FfiConverterRustBuffer {
         
         case 4: return .selectAccount
         
+        case 5: return .stepUp(maxAgeSeconds: try FfiConverterUInt64.read(from: &buf)
+        )
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
@@ -11639,6 +11816,11 @@ public struct FfiConverterTypeLoginPrompt: FfiConverterRustBuffer {
         case .selectAccount:
             writeInt(&buf, Int32(4))
         
+        
+        case let .stepUp(maxAgeSeconds):
+            writeInt(&buf, Int32(5))
+            FfiConverterUInt64.write(maxAgeSeconds, into: &buf)
+            
         }
     }
 }
@@ -14785,6 +14967,31 @@ fileprivate struct FfiConverterSequenceTypeReleaseArtifact: FfiConverterRustBuff
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeResponseHeader: FfiConverterRustBuffer {
+    typealias SwiftType = [ResponseHeader]
+
+    public static func write(_ value: [ResponseHeader], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeResponseHeader.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ResponseHeader] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ResponseHeader]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeResponseHeader.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeSceneChange: FfiConverterRustBuffer {
     typealias SwiftType = [SceneChange]
 
@@ -16115,10 +16322,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_func_upload_config_default() != 36473) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_aun_core_checksum_method_apiclient_request() != 46776) {
+    if (uniffi_aun_core_checksum_method_apiclient_request() != 47584) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_aun_core_checksum_method_apiclient_request_path() != 9248) {
+    if (uniffi_aun_core_checksum_method_apiclient_request_path() != 9890) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_apiclient_device_register() != 28490) {
@@ -16160,7 +16367,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_method_apiclient_user_features() != 24924) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_aun_core_checksum_method_apiclient_search_suggestions() != 32608) {
+    if (uniffi_aun_core_checksum_method_apiclient_search_suggestions() != 46241) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_apiclient_search_suggestions_page() != 28498) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_offlinequeue_enqueue() != 34998) {
