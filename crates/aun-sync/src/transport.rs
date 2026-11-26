@@ -151,6 +151,7 @@ impl SyncTransport for ApiSyncTransport {
             limit: Some(f64::from(limit)),
             cursor,
             completed: None,
+            q: None,
             sort: Some("newest".into()),
             header_channel_id: None,
         };
