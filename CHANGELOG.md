@@ -7,6 +7,8 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+## [0.4.0-rc.10] - 2026-11-26
+
 ### Added
 
 - Public, unlisted, and private visibility for video uploads and edits, including bulk edits.
