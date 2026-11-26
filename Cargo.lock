@@ -127,7 +127,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "aun-api"
-version = "0.4.0-rc.8"
+version = "0.4.0-rc.9"
 dependencies = [
  "async-trait",
  "aun-common",
@@ -144,7 +144,7 @@ dependencies = [
 
 [[package]]
 name = "aun-auth"
-version = "0.4.0-rc.8"
+version = "0.4.0-rc.9"
 dependencies = [
  "async-trait",
  "aun-api",
@@ -164,7 +164,7 @@ dependencies = [
 
 [[package]]
 name = "aun-common"
-version = "0.4.0-rc.8"
+version = "0.4.0-rc.9"
 dependencies = [
  "fs4",
  "serde",
@@ -176,7 +176,7 @@ dependencies = [
 
 [[package]]
 name = "aun-downloads"
-version = "0.4.0-rc.8"
+version = "0.4.0-rc.9"
 dependencies = [
  "aun-common",
  "aun-player",
@@ -188,7 +188,7 @@ dependencies = [
 
 [[package]]
 name = "aun-ffi"
-version = "0.4.0-rc.8"
+version = "0.4.0-rc.9"
 dependencies = [
  "async-trait",
  "aun-api",
@@ -214,7 +214,7 @@ dependencies = [
 
 [[package]]
 name = "aun-i18n"
-version = "0.4.0-rc.8"
+version = "0.4.0-rc.9"
 dependencies = [
  "async-trait",
  "aun-api",
@@ -229,7 +229,7 @@ dependencies = [
 
 [[package]]
 name = "aun-media"
-version = "0.4.0-rc.8"
+version = "0.4.0-rc.9"
 dependencies = [
  "async-trait",
  "aun-common",
@@ -256,7 +256,7 @@ dependencies = [
 
 [[package]]
 name = "aun-player"
-version = "0.4.0-rc.8"
+version = "0.4.0-rc.9"
 dependencies = [
  "serde",
  "serde_json",
@@ -265,7 +265,7 @@ dependencies = [
 
 [[package]]
 name = "aun-search"
-version = "0.4.0-rc.8"
+version = "0.4.0-rc.9"
 dependencies = [
  "aun-api",
  "aun-common",
@@ -280,7 +280,7 @@ dependencies = [
 
 [[package]]
 name = "aun-sync"
-version = "0.4.0-rc.8"
+version = "0.4.0-rc.9"
 dependencies = [
  "async-trait",
  "aun-api",
@@ -295,7 +295,7 @@ dependencies = [
 
 [[package]]
 name = "aun-telemetry"
-version = "0.4.0-rc.8"
+version = "0.4.0-rc.9"
 dependencies = [
  "async-trait",
  "aun-api",
@@ -311,7 +311,7 @@ dependencies = [
 
 [[package]]
 name = "aun-updates"
-version = "0.4.0-rc.8"
+version = "0.4.0-rc.9"
 dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",
@@ -324,7 +324,7 @@ dependencies = [
 
 [[package]]
 name = "aun-upload"
-version = "0.4.0-rc.8"
+version = "0.4.0-rc.9"
 dependencies = [
  "async-trait",
  "aun-api",
