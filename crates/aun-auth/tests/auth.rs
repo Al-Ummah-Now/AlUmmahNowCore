@@ -752,7 +752,7 @@ async fn step_up_verifies_auth_time_before_replacing_tokens() {
 
     for (code, id_token) in [
         ("stale", jwt_with_claims(json!({"sub": "u1", "auth_time": 1099}))),
-        ("future", jwt_with_claims(json!({"sub": "u1", "auth_time": 2001}))),
+        ("future", jwt_with_claims(json!({"sub": "u1", "auth_time": 2061}))),
         ("missing", jwt_with_claims(json!({"sub": "u1", "iat": 2000}))),
         ("negative", jwt_with_claims(json!({"sub": "u1", "auth_time": -1}))),
         (

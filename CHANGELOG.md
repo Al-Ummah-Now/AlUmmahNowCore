@@ -10,8 +10,8 @@ FFI; such changes are listed under **Breaking**.
 ### Added
 
 - `LoginPrompt::StepUp { max_age_seconds }` in Rust and UniFFI sends `prompt=login` and `max_age`.
-  Completion requires a fresh `auth_time` before saving tokens. When an account is already active,
-  the callback must be for that account.
+  Completion requires a fresh `auth_time` before saving tokens and allows up to 60 seconds of
+  future clock skew. When an account is already active, the callback must be for that account.
 - `search_suggestions_page(query, cursor)` over UniFFI (`fetch_suggestions_page` in Rust) loads scoped
   results when a picker opens with blank text. Pass `next_cursor` back with the same query and scope
   while `has_more` is true. Typed queries use one page. The list-returning API still skips blank text.
