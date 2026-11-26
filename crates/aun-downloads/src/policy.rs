@@ -132,7 +132,7 @@ pub enum AutoSourceKind {
 }
 
 /// Identifies the specific auto-download rule (`kind` + `id`) that owns an auto-downloaded episode,
-/// preventing channel rules and playlist rules from colliding or evicting each other's episodes.
+/// keeping channel and playlist identities distinct even when their IDs are equal.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct AutoDownloadSource {
     pub kind: AutoSourceKind,
@@ -201,7 +201,9 @@ pub struct PlannedAutoDownload {
 }
 
 /// Output of [`select_auto_downloads`]: new episodes to queue (each tagged with its owning rule
-/// source) and older auto-downloaded episodes that fell out of a rule's `max_episodes` window.
+/// source) and older auto-downloaded episodes displaced from a rule's `max_episodes` window.
+/// An episode can fill a slot in each matching rule, while its download has one owning source.
+/// Membership in other rules comes from the current candidates.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AutoDownloadPlan {
     pub to_download: Vec<PlannedAutoDownload>,
@@ -242,87 +244,39 @@ pub fn select_auto_downloads(
         return AutoDownloadPlan::default();
     }
 
-    let mut plan = AutoDownloadPlan::default();
-    let mut picked_this_pass: HashSet<String> = HashSet::new();
-    let mut evicted_this_pass: HashSet<String> = HashSet::new();
-    let mut running_used = used_bytes;
-    let mut running_pending = pending_remaining_bytes;
-
+    // Only auto-downloads fill rule slots. Manual downloads stay out of auto-download planning.
+    let resident_ids: HashSet<&str> = existing_auto_downloads
+        .iter()
+        .map(|e| e.video_id.as_str())
+        .collect();
+    let mut protected_ids = HashSet::new();
+    let mut windows = Vec::with_capacity(rules.len());
     for rule in rules {
-        // Deduplicate existing auto-downloads for this rule from the store, newest first.
-        let mut existing_by_id: HashMap<&str, ExistingAutoDownload> = HashMap::new();
+        let mut owned_by_id: HashMap<&str, &ExistingAutoDownload> = HashMap::new();
         for e in existing_auto_downloads.iter().filter(|e| e.source == rule.source) {
-            existing_by_id
+            owned_by_id
                 .entry(e.video_id.as_str())
                 .and_modify(|prev| {
                     if e.published_at_ms > prev.published_at_ms {
-                        *prev = e.clone();
+                        *prev = e;
                     }
                 })
-                .or_insert_with(|| e.clone());
+                .or_insert(e);
         }
-        let mut kept_auto: Vec<ExistingAutoDownload> = existing_by_id.into_values().collect();
-        kept_auto.sort_by(|a, b| {
-            b.published_at_ms
-                .cmp(&a.published_at_ms)
-                .then_with(|| a.video_id.cmp(&b.video_id))
-        });
+        let mut owned: Vec<_> = owned_by_id.values().copied().collect();
+        owned.sort_by_key(|e| (std::cmp::Reverse(e.published_at_ms), e.video_id.as_str()));
 
-        // If the user lowered `max_episodes` below what is already kept, evict the excess oldest
-        // auto-downloads first and credit their reserved bytes back to `running_used`.
-        if kept_auto.len() > rule.max_episodes {
-            for excess in kept_auto.split_off(rule.max_episodes) {
-                if evicted_this_pass.insert(excess.video_id.clone()) {
-                    running_used = running_used.saturating_sub(excess.size_bytes);
-                    plan.to_evict.push(excess.video_id);
-                }
-            }
-        }
-
-        if rule.max_episodes == 0 {
-            continue;
-        }
-
-        let kept_ids: HashSet<String> = kept_auto.iter().map(|e| e.video_id.clone()).collect();
-
-        // Rank existing auto-downloads AND eligible deduplicated new candidates TOGETHER
-        // newest-first so that kept newer episodes that leave the candidate feed (e.g. creator
-        // turned off downloads or fell off page 1) still hold their slots in the `max_episodes`
-        // window and never cause older candidates to download and evict in a loop.
-        enum RankedEntry<'e, 'c> {
-            Existing(&'e ExistingAutoDownload),
-            Candidate(&'c EpisodeCandidate),
-        }
-        impl RankedEntry<'_, '_> {
-            fn published_at_ms(&self) -> i64 {
-                match self {
-                    Self::Existing(e) => e.published_at_ms,
-                    Self::Candidate(c) => c.published_at_ms,
-                }
-            }
-            fn video_id(&self) -> &str {
-                match self {
-                    Self::Existing(e) => &e.video_id,
-                    Self::Candidate(c) => &c.video_id,
-                }
-            }
-            fn is_existing(&self) -> bool {
-                matches!(self, Self::Existing(_))
-            }
-        }
-
-        let mut combined: Vec<RankedEntry<'_, '_>> = kept_auto.iter().map(RankedEntry::Existing).collect();
         let mut eligible_by_id: HashMap<&str, &EpisodeCandidate> = HashMap::new();
         for c in candidates {
+            let id = c.video_id.as_str();
             if c.source == rule.source
                 && c.allow_downloads
-                && !existing_video_ids.contains(&c.video_id)
-                && !dismissed_video_ids.contains(&c.video_id)
-                && !picked_this_pass.contains(&c.video_id)
-                && !kept_ids.contains(&c.video_id)
+                && (!existing_video_ids.contains(id) || resident_ids.contains(id))
+                && !dismissed_video_ids.contains(id)
+                && !owned_by_id.contains_key(id)
             {
                 eligible_by_id
-                    .entry(c.video_id.as_str())
+                    .entry(id)
                     .and_modify(|prev| {
                         if c.published_at_ms > prev.published_at_ms {
                             *prev = c;
@@ -331,44 +285,62 @@ pub fn select_auto_downloads(
                     .or_insert(c);
             }
         }
-        for c in eligible_by_id.into_values() {
-            combined.push(RankedEntry::Candidate(c));
-        }
-        combined.sort_by(|a, b| {
-            b.published_at_ms()
-                .cmp(&a.published_at_ms())
-                .then_with(|| b.is_existing().cmp(&a.is_existing()))
-                .then_with(|| a.video_id().cmp(b.video_id()))
-        });
 
-        let top_candidates: Vec<&EpisodeCandidate> = combined
-            .into_iter()
-            .take(rule.max_episodes)
-            .filter_map(|entry| match entry {
-                RankedEntry::Candidate(c) => Some(c),
-                RankedEntry::Existing(_) => None,
-            })
+        // Include owned episodes even if they fell out of the feed. Existing episodes win ties
+        // over new ones so a poll does not replace a file with one from the same timestamp.
+        let mut ranked: Vec<_> = owned
+            .iter()
+            .map(|e| (e.published_at_ms, true, e.video_id.as_str(), None))
+            .chain(eligible_by_id.into_values().map(|c| {
+                let id = c.video_id.as_str();
+                (c.published_at_ms, resident_ids.contains(id), id, Some(c))
+            }))
             .collect();
+        ranked.sort_by_key(|&(published_at, resident, id, _)| {
+            (std::cmp::Reverse(published_at), std::cmp::Reverse(resident), id)
+        });
+        ranked.truncate(rule.max_episodes);
+        protected_ids.extend(ranked.iter().map(|&(_, _, id, _)| id));
+        let desired = ranked
+            .into_iter()
+            .filter_map(|(_, _, _, candidate)| candidate)
+            .collect::<Vec<_>>();
+        windows.push((rule, owned, desired));
+    }
 
-        for ep in top_candidates {
-            if picked_this_pass.contains(&ep.video_id) {
-                continue;
+    let mut plan = AutoDownloadPlan::default();
+    let mut picked_this_pass = HashSet::new();
+    let mut evicted_this_pass = HashSet::new();
+    let mut running_used = used_bytes;
+    let mut running_pending = pending_remaining_bytes;
+
+    for (rule, mut owned, desired) in windows {
+        let mut occupied = owned.len().min(rule.max_episodes);
+        // Trim excess owned episodes first. Other rules can still retain the same file.
+        if owned.len() > rule.max_episodes {
+            for excess in owned.drain(rule.max_episodes..) {
+                let id = excess.video_id.as_str();
+                if !protected_ids.contains(id) && evicted_this_pass.insert(id) {
+                    running_used = running_used.saturating_sub(excess.size_bytes);
+                    plan.to_evict.push(excess.video_id.clone());
+                }
             }
-            let item_bytes = effective_item_bytes(ep.estimated_bytes.unwrap_or(0));
+        }
 
-            if kept_auto.len() >= rule.max_episodes {
-                // Accepting this newer episode will displace the oldest kept auto-download.
-                // Credit the displaced episode's reserved bytes against the user storage cap so a
-                // rule at its cap can roll forward to newer episodes.
-                let Some(oldest_pos) = kept_auto
-                    .iter()
-                    .rposition(|e| !picked_this_pass.contains(&e.video_id))
-                else {
-                    continue;
-                };
-                let displaced_bytes = kept_auto[oldest_pos].size_bytes;
-                let effective_used = running_used.saturating_sub(displaced_bytes);
-                if can_start_download(
+        for ep in desired {
+            let id = ep.video_id.as_str();
+            let needs_download = !resident_ids.contains(id) && !picked_this_pass.contains(id);
+            let victim = (occupied == rule.max_episodes)
+                .then(|| owned.last().copied())
+                .flatten();
+            let evict = victim.filter(|e| {
+                let victim_id = e.video_id.as_str();
+                !protected_ids.contains(victim_id) && !evicted_this_pass.contains(victim_id)
+            });
+            let effective_used = running_used.saturating_sub(evict.map_or(0, |e| e.size_bytes));
+            let item_bytes = effective_item_bytes(ep.estimated_bytes.unwrap_or(0));
+            if needs_download
+                && can_start_download(
                     settings,
                     network,
                     effective_used,
@@ -377,61 +349,28 @@ pub fn select_auto_downloads(
                     0,
                     available_disk_bytes,
                 ) != TransferDecision::Allow
-                {
-                    continue;
-                }
-                let victim = kept_auto.remove(oldest_pos);
-                if evicted_this_pass.insert(victim.video_id.clone()) {
-                    plan.to_evict.push(victim.video_id);
-                }
-                running_used = effective_used.saturating_add(item_bytes);
-                running_pending = running_pending.saturating_add(item_bytes);
-                picked_this_pass.insert(ep.video_id.clone());
-                plan.to_download.push(PlannedAutoDownload {
-                    video_id: ep.video_id.clone(),
-                    source: rule.source.clone(),
-                });
-                kept_auto.push(ExistingAutoDownload {
-                    video_id: ep.video_id.clone(),
-                    source: ep.source.clone(),
-                    published_at_ms: ep.published_at_ms,
-                    size_bytes: item_bytes,
-                });
-                kept_auto.sort_by(|a, b| {
-                    b.published_at_ms
-                        .cmp(&a.published_at_ms)
-                        .then_with(|| a.video_id.cmp(&b.video_id))
-                });
+            {
+                continue;
+            }
+
+            if victim.is_some() {
+                owned.pop();
             } else {
-                if can_start_download(
-                    settings,
-                    network,
-                    running_used,
-                    running_pending,
-                    item_bytes,
-                    0,
-                    available_disk_bytes,
-                ) != TransferDecision::Allow
-                {
-                    continue;
-                }
+                occupied += 1;
+            }
+            if let Some(e) = evict {
+                evicted_this_pass.insert(e.video_id.as_str());
+                plan.to_evict.push(e.video_id.clone());
+            }
+            running_used = effective_used;
+
+            if needs_download {
                 running_used = running_used.saturating_add(item_bytes);
                 running_pending = running_pending.saturating_add(item_bytes);
-                picked_this_pass.insert(ep.video_id.clone());
+                picked_this_pass.insert(id);
                 plan.to_download.push(PlannedAutoDownload {
                     video_id: ep.video_id.clone(),
                     source: rule.source.clone(),
-                });
-                kept_auto.push(ExistingAutoDownload {
-                    video_id: ep.video_id.clone(),
-                    source: ep.source.clone(),
-                    published_at_ms: ep.published_at_ms,
-                    size_bytes: item_bytes,
-                });
-                kept_auto.sort_by(|a, b| {
-                    b.published_at_ms
-                        .cmp(&a.published_at_ms)
-                        .then_with(|| a.video_id.cmp(&b.video_id))
                 });
             }
         }
