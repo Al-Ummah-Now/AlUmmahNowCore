@@ -5,10 +5,11 @@ use std::collections::{BTreeMap, HashSet};
 use std::os::unix::fs::PermissionsExt;
 
 use aun_downloads::{
-    AutoDownloadRule, AutoDownloadSource, AvailabilitySyncResult, DEFAULT_MIN_FREE_SPACE_BYTES,
-    DEFAULT_UNKNOWN_ITEM_ESTIMATE_BYTES, DownloadError, DownloadOrigin, DownloadRecord, DownloadSettings,
-    DownloadStatus, DownloadStore, EpisodeCandidate, ExistingAutoDownload, PlannedAutoDownload,
-    RevocationEntry, TransferDecision, UpdateOutcome, can_start_download, select_auto_downloads,
+    AutoDownloadPlan, AutoDownloadRule, AutoDownloadSource, AvailabilitySyncResult,
+    DEFAULT_MIN_FREE_SPACE_BYTES, DEFAULT_UNKNOWN_ITEM_ESTIMATE_BYTES, DownloadError, DownloadOrigin,
+    DownloadRecord, DownloadSettings, DownloadStatus, DownloadStore, EpisodeCandidate, ExistingAutoDownload,
+    PlannedAutoDownload, RevocationEntry, TransferDecision, UpdateOutcome, can_start_download,
+    select_auto_downloads,
 };
 use aun_player::NetworkKind;
 use tempfile::tempdir;
@@ -1785,4 +1786,127 @@ fn shared_episode_is_retained_when_only_one_rule_rolls_forward() {
             }
         );
     }
+}
+
+#[test]
+fn tight_storage_evicts_the_oldest_displaced_episode_that_no_rule_needs() {
+    let ch = AutoDownloadSource::channel("channel");
+    let pl = AutoDownloadSource::playlist("playlist");
+    let settings = DownloadSettings {
+        auto_download_enabled: true,
+        max_storage_bytes: Some(2_000),
+        ..Default::default()
+    };
+    let rules = [
+        AutoDownloadRule {
+            source: ch.clone(),
+            max_episodes: 2,
+        },
+        AutoDownloadRule {
+            source: pl.clone(),
+            max_episodes: 1,
+        },
+    ];
+    let owned = [("displaced", 2_000), ("shared", 1_000)].map(|(id, published_at_ms)| ExistingAutoDownload {
+        video_id: id.into(),
+        source: ch.clone(),
+        published_at_ms,
+        size_bytes: 1_000,
+    });
+    let candidates = [
+        ("newest", ch.clone(), 4_000),
+        ("next-newest", ch.clone(), 3_000),
+        ("shared", pl, 1_000),
+    ]
+    .map(|(id, source, published_at_ms)| EpisodeCandidate {
+        video_id: id.into(),
+        source,
+        published_at_ms,
+        allow_downloads: true,
+        estimated_bytes: Some(1_000),
+    });
+    let existing_ids = owned.iter().map(|e| e.video_id.clone()).collect();
+    let plan = select_auto_downloads(
+        &settings,
+        NetworkKind::Wifi,
+        true,
+        2_000,
+        0,
+        None,
+        &rules,
+        &candidates,
+        &existing_ids,
+        &owned,
+        &HashSet::new(),
+    );
+    assert_eq!(plan.to_evict, ["displaced"]);
+    assert_eq!(
+        plan.to_download,
+        [PlannedAutoDownload {
+            video_id: "newest".into(),
+            source: ch,
+        }]
+    );
+}
+
+#[test]
+fn removing_the_owning_rule_keeps_shared_files_until_the_surviving_rule_rolls_forward() {
+    let ch = AutoDownloadSource::channel("removed-channel");
+    let pl = AutoDownloadSource::playlist("surviving-playlist");
+    let settings = DownloadSettings {
+        auto_download_enabled: true,
+        max_storage_bytes: Some(2_000),
+        ..Default::default()
+    };
+    let rules = [AutoDownloadRule {
+        source: pl.clone(),
+        max_episodes: 2,
+    }];
+    let owned = [("v1", 1_000), ("v2", 2_000)].map(|(id, published_at_ms)| ExistingAutoDownload {
+        video_id: id.into(),
+        source: ch.clone(),
+        published_at_ms,
+        size_bytes: 1_000,
+    });
+    let candidates =
+        [("v1", 1_000), ("v2", 2_000), ("v3", 3_000), ("v4", 4_000)].map(|(id, published_at_ms)| {
+            EpisodeCandidate {
+                video_id: id.into(),
+                source: pl.clone(),
+                published_at_ms,
+                allow_downloads: true,
+                estimated_bytes: Some(1_000),
+            }
+        });
+    let existing_ids = owned.iter().map(|e| e.video_id.clone()).collect();
+    let dismissed = HashSet::new();
+    let plan_for = |feed: &[EpisodeCandidate]| {
+        select_auto_downloads(
+            &settings,
+            NetworkKind::Wifi,
+            true,
+            2_000,
+            0,
+            None,
+            &rules,
+            feed,
+            &existing_ids,
+            &owned,
+            &dismissed,
+        )
+    };
+
+    assert_eq!(plan_for(&candidates[..2]), AutoDownloadPlan::default());
+
+    // The records still name the old channel. Both files become evictable once the playlist
+    // window advances, and their storage makes room for the two replacements.
+    let plan = plan_for(&candidates);
+    assert_eq!(plan.to_evict, ["v1", "v2"]);
+    assert_eq!(
+        plan.to_download,
+        ["v4", "v3"].map(|id| PlannedAutoDownload {
+            video_id: id.into(),
+            source: pl.clone(),
+        })
+    );
 }

@@ -216,6 +216,9 @@ pub struct AutoDownloadPlan {
 /// `max_episodes` cap over time (ranking existing auto-downloads and candidates together so
 /// episodes that drop out of the feed never cause older videos to thrash), creator opt-out,
 /// existing downloads, and user-dismissed/deleted episodes.
+///
+/// Pass the full set of active rules. A download whose owning rule has been removed is evicted
+/// once it falls outside all matching active rules' windows.
 #[allow(clippy::too_many_arguments)]
 pub fn select_auto_downloads(
     settings: &DownloadSettings,
@@ -249,6 +252,7 @@ pub fn select_auto_downloads(
         .iter()
         .map(|e| e.video_id.as_str())
         .collect();
+    let mut active_owned_ids = HashSet::new();
     let mut protected_ids = HashSet::new();
     let mut windows = Vec::with_capacity(rules.len());
     for rule in rules {
@@ -263,6 +267,7 @@ pub fn select_auto_downloads(
                 })
                 .or_insert(e);
         }
+        active_owned_ids.extend(owned_by_id.keys().copied());
         let mut owned: Vec<_> = owned_by_id.values().copied().collect();
         owned.sort_by_key(|e| (std::cmp::Reverse(e.published_at_ms), e.video_id.as_str()));
 
@@ -314,6 +319,16 @@ pub fn select_auto_downloads(
     let mut running_used = used_bytes;
     let mut running_pending = pending_remaining_bytes;
 
+    // Keep downloads from removed rules for as long as another rule still wants them. Once
+    // they leave every window, recover their storage before planning replacement downloads.
+    for e in existing_auto_downloads {
+        let id = e.video_id.as_str();
+        if !active_owned_ids.contains(id) && !protected_ids.contains(id) && evicted_this_pass.insert(id) {
+            running_used = running_used.saturating_sub(e.size_bytes);
+            plan.to_evict.push(e.video_id.clone());
+        }
+    }
+
     for (rule, mut owned, desired) in windows {
         let mut occupied = owned.len().min(rule.max_episodes);
         // Trim excess owned episodes first. Other rules can still retain the same file.
@@ -330,13 +345,17 @@ pub fn select_auto_downloads(
         for ep in desired {
             let id = ep.video_id.as_str();
             let needs_download = !resident_ids.contains(id) && !picked_this_pass.contains(id);
-            let victim = (occupied == rule.max_episodes)
-                .then(|| owned.last().copied())
-                .flatten();
-            let evict = victim.filter(|e| {
+            let (victim_index, evict) = if occupied < rule.max_episodes {
+                (None, None)
+            } else if let Some(index) = owned.iter().rposition(|e| {
                 let victim_id = e.video_id.as_str();
                 !protected_ids.contains(victim_id) && !evicted_this_pass.contains(victim_id)
-            });
+            }) {
+                (Some(index), Some(owned[index]))
+            } else {
+                // The rule can give up its slot even if another rule still needs the file.
+                (owned.len().checked_sub(1), None)
+            };
             let effective_used = running_used.saturating_sub(evict.map_or(0, |e| e.size_bytes));
             let item_bytes = effective_item_bytes(ep.estimated_bytes.unwrap_or(0));
             if needs_download
@@ -353,8 +372,8 @@ pub fn select_auto_downloads(
                 continue;
             }
 
-            if victim.is_some() {
-                owned.pop();
+            if let Some(index) = victim_index {
+                owned.remove(index);
             } else {
                 occupied += 1;
             }
