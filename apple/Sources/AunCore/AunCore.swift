@@ -5501,6 +5501,12 @@ public protocol UploadEngineProtocol: AnyObject, Sendable {
     func enqueueAll(requests: [UploadRequest]) throws  -> [String]
     
     /**
+     * Queues a platform stream. Set request.file_path to the display filename for MIME
+     * inference and upload metadata. Only the opener uses source_id.
+     */
+    func enqueueStream(request: UploadRequest, sourceId: String) throws  -> String
+    
+    /**
      * Uploads with this SHA-256 (duplicate detection).
      */
     func findByChecksum(sha256: String) throws  -> [UploadInfo]
@@ -5518,6 +5524,11 @@ public protocol UploadEngineProtocol: AnyObject, Sendable {
      * Call when connectivity changes or the app returns to the foreground.
      */
     func poke() 
+    
+    /**
+     * Registers an opener. Call retry on any upload that already failed to reopen.
+     */
+    func registerSourceOpener(opener: UploadSourceOpener) throws 
     
     /**
      * Forgets a finished, failed or cancelled upload.
@@ -5618,6 +5629,22 @@ public convenience init(client: ApiClient, storeDir: String, accountId: String, 
     }
 
     
+    /**
+     * Opens the queue and registers the opener before recovering uploads.
+     */
+public static func withSourceOpener(client: ApiClient, storeDir: String, accountId: String, config: UploadConfig, connectivity: Connectivity?, sourceOpener: UploadSourceOpener?)throws  -> UploadEngine  {
+    return try  FfiConverterTypeUploadEngine_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_constructor_uploadengine_with_source_opener(
+        FfiConverterTypeApiClient_lower(client),
+        FfiConverterString.lower(storeDir),
+        FfiConverterString.lower(accountId),
+        FfiConverterTypeUploadConfig_lower(config),
+        FfiConverterOptionTypeConnectivity.lower(connectivity),
+        FfiConverterOptionTypeUploadSourceOpener.lower(sourceOpener),$0
+    )
+})
+}
+    
 
     
 open func addListener(listener: UploadListener)  {try! rustCall() {
@@ -5673,6 +5700,20 @@ open func enqueueAll(requests: [UploadRequest])throws  -> [String]  {
 }
     
     /**
+     * Queues a platform stream. Set request.file_path to the display filename for MIME
+     * inference and upload metadata. Only the opener uses source_id.
+     */
+open func enqueueStream(request: UploadRequest, sourceId: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_uploadengine_enqueue_stream(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeUploadRequest_lower(request),
+        FfiConverterString.lower(sourceId),$0
+    )
+})
+}
+    
+    /**
      * Uploads with this SHA-256 (duplicate detection).
      */
 open func findByChecksum(sha256: String)throws  -> [UploadInfo]  {
@@ -5718,6 +5759,17 @@ open func pause(id: String)throws   {try rustCallWithError(FfiConverterTypeAunEr
 open func poke()  {try! rustCall() {
     uniffi_aun_core_fn_method_uploadengine_poke(
             self.uniffiCloneHandle(),$0
+    )
+}
+}
+    
+    /**
+     * Registers an opener. Call retry on any upload that already failed to reopen.
+     */
+open func registerSourceOpener(opener: UploadSourceOpener)throws   {try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_uploadengine_register_source_opener(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeUploadSourceOpener_lower(opener),$0
     )
 }
 }
@@ -6079,6 +6131,475 @@ public func FfiConverterTypeUploadListener_lift(_ handle: UInt64) throws -> Uplo
 #endif
 public func FfiConverterTypeUploadListener_lower(_ value: UploadListener) -> UInt64 {
     return FfiConverterTypeUploadListener.lower(value)
+}
+
+
+
+
+
+
+/**
+ * A seekable platform stream with known size. Callbacks can run on background threads.
+ */
+public protocol UploadSource: AnyObject, Sendable {
+    
+    func size() throws  -> UInt64
+    
+    /**
+     * Identity stable across reopens and different whenever the bytes change.
+     */
+    func fingerprint() throws  -> String
+    
+    /**
+     * Reads at most len bytes. Short reads are allowed; empty means EOF.
+     */
+    func readAt(offset: UInt64, len: UInt64) throws  -> Data
+    
+}
+/**
+ * A seekable platform stream with known size. Callbacks can run on background threads.
+ */
+open class UploadSourceImpl: UploadSource, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aun_core_fn_clone_uploadsource(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aun_core_fn_free_uploadsource(handle, $0) }
+    }
+
+    
+
+    
+open func size()throws  -> UInt64  {
+    return try  FfiConverterUInt64.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_uploadsource_size(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * Identity stable across reopens and different whenever the bytes change.
+     */
+open func fingerprint()throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_uploadsource_fingerprint(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+    /**
+     * Reads at most len bytes. Short reads are allowed; empty means EOF.
+     */
+open func readAt(offset: UInt64, len: UInt64)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_uploadsource_read_at(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt64.lower(offset),
+        FfiConverterUInt64.lower(len),$0
+    )
+})
+}
+    
+
+    
+}
+
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfaceUploadSource {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    //
+    // This creates 1-element array, since this seems to be the only way to construct a const
+    // pointer that we can pass to the Rust code.
+    static let vtable: [UniffiVTableCallbackInterfaceUploadSource] = [UniffiVTableCallbackInterfaceUploadSource(
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            do {
+                try FfiConverterTypeUploadSource.handleMap.remove(handle: uniffiHandle)
+            } catch {
+                print("Uniffi callback interface UploadSource: handle missing in uniffiFree")
+            }
+        },
+        uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
+            do {
+                return try FfiConverterTypeUploadSource.handleMap.clone(handle: uniffiHandle)
+            } catch {
+                fatalError("Uniffi callback interface UploadSource: handle missing in uniffiClone")
+            }
+        },
+        size: { (
+            uniffiHandle: UInt64,
+            uniffiOutReturn: UnsafeMutablePointer<UInt64>,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> UInt64 in
+                guard let uniffiObj = try? FfiConverterTypeUploadSource.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try uniffiObj.size(
+                )
+            }
+
+            
+            let writeReturn = { uniffiOutReturn.pointee = FfiConverterUInt64.lower($0) }
+            uniffiTraitInterfaceCallWithError(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn,
+                lowerError: FfiConverterTypeAunError_lower
+            )
+        },
+        fingerprint: { (
+            uniffiHandle: UInt64,
+            uniffiOutReturn: UnsafeMutablePointer<RustBuffer>,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> String in
+                guard let uniffiObj = try? FfiConverterTypeUploadSource.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try uniffiObj.fingerprint(
+                )
+            }
+
+            
+            let writeReturn = { uniffiOutReturn.pointee = FfiConverterString.lower($0) }
+            uniffiTraitInterfaceCallWithError(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn,
+                lowerError: FfiConverterTypeAunError_lower
+            )
+        },
+        readAt: { (
+            uniffiHandle: UInt64,
+            offset: UInt64,
+            len: UInt64,
+            uniffiOutReturn: UnsafeMutablePointer<RustBuffer>,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> Data in
+                guard let uniffiObj = try? FfiConverterTypeUploadSource.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try uniffiObj.readAt(
+                     offset: try FfiConverterUInt64.lift(offset),
+                     len: try FfiConverterUInt64.lift(len)
+                )
+            }
+
+            
+            let writeReturn = { uniffiOutReturn.pointee = FfiConverterData.lower($0) }
+            uniffiTraitInterfaceCallWithError(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn,
+                lowerError: FfiConverterTypeAunError_lower
+            )
+        }
+    )]
+}
+
+private func uniffiCallbackInitUploadSource() {
+    uniffi_aun_core_fn_init_callback_vtable_uploadsource(UniffiCallbackInterfaceUploadSource.vtable)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeUploadSource: FfiConverter {
+    fileprivate static let handleMap = UniffiHandleMap<UploadSource>()
+
+    typealias FfiType = UInt64
+    typealias SwiftType = UploadSource
+
+    public static func lift(_ handle: UInt64) throws -> UploadSource {
+        if ((handle & 1) == 0) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return UploadSourceImpl(unsafeFromHandle: handle)
+        } else {
+            // Swift-generated handle, get the object from the handle map
+            return try handleMap.remove(handle: handle)
+        }
+    }
+
+    public static func lower(_ value: UploadSource) -> UInt64 {
+         if let rustImpl = value as? UploadSourceImpl {
+             // Rust-implemented object.  Clone the handle and return it
+            return rustImpl.uniffiCloneHandle()
+         } else {
+            // Swift object, generate a new vtable handle and return that.
+            return handleMap.insert(obj: value)
+         }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UploadSource {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: UploadSource, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUploadSource_lift(_ handle: UInt64) throws -> UploadSource {
+    return try FfiConverterTypeUploadSource.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUploadSource_lower(_ value: UploadSource) -> UInt64 {
+    return FfiConverterTypeUploadSource.lower(value)
+}
+
+
+
+
+
+
+/**
+ * Reopens a persisted stream ID. The app must retain access across restarts.
+ */
+public protocol UploadSourceOpener: AnyObject, Sendable {
+    
+    func reopen(sourceId: String) throws  -> UploadSource
+    
+}
+/**
+ * Reopens a persisted stream ID. The app must retain access across restarts.
+ */
+open class UploadSourceOpenerImpl: UploadSourceOpener, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aun_core_fn_clone_uploadsourceopener(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aun_core_fn_free_uploadsourceopener(handle, $0) }
+    }
+
+    
+
+    
+open func reopen(sourceId: String)throws  -> UploadSource  {
+    return try  FfiConverterTypeUploadSource_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_uploadsourceopener_reopen(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(sourceId),$0
+    )
+})
+}
+    
+
+    
+}
+
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfaceUploadSourceOpener {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    //
+    // This creates 1-element array, since this seems to be the only way to construct a const
+    // pointer that we can pass to the Rust code.
+    static let vtable: [UniffiVTableCallbackInterfaceUploadSourceOpener] = [UniffiVTableCallbackInterfaceUploadSourceOpener(
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            do {
+                try FfiConverterTypeUploadSourceOpener.handleMap.remove(handle: uniffiHandle)
+            } catch {
+                print("Uniffi callback interface UploadSourceOpener: handle missing in uniffiFree")
+            }
+        },
+        uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
+            do {
+                return try FfiConverterTypeUploadSourceOpener.handleMap.clone(handle: uniffiHandle)
+            } catch {
+                fatalError("Uniffi callback interface UploadSourceOpener: handle missing in uniffiClone")
+            }
+        },
+        reopen: { (
+            uniffiHandle: UInt64,
+            sourceId: RustBuffer,
+            uniffiOutReturn: UnsafeMutablePointer<UInt64>,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> UploadSource in
+                guard let uniffiObj = try? FfiConverterTypeUploadSourceOpener.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return try uniffiObj.reopen(
+                     sourceId: try FfiConverterString.lift(sourceId)
+                )
+            }
+
+            
+            let writeReturn = { uniffiOutReturn.pointee = FfiConverterTypeUploadSource_lower($0) }
+            uniffiTraitInterfaceCallWithError(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn,
+                lowerError: FfiConverterTypeAunError_lower
+            )
+        }
+    )]
+}
+
+private func uniffiCallbackInitUploadSourceOpener() {
+    uniffi_aun_core_fn_init_callback_vtable_uploadsourceopener(UniffiCallbackInterfaceUploadSourceOpener.vtable)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeUploadSourceOpener: FfiConverter {
+    fileprivate static let handleMap = UniffiHandleMap<UploadSourceOpener>()
+
+    typealias FfiType = UInt64
+    typealias SwiftType = UploadSourceOpener
+
+    public static func lift(_ handle: UInt64) throws -> UploadSourceOpener {
+        if ((handle & 1) == 0) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return UploadSourceOpenerImpl(unsafeFromHandle: handle)
+        } else {
+            // Swift-generated handle, get the object from the handle map
+            return try handleMap.remove(handle: handle)
+        }
+    }
+
+    public static func lower(_ value: UploadSourceOpener) -> UInt64 {
+         if let rustImpl = value as? UploadSourceOpenerImpl {
+             // Rust-implemented object.  Clone the handle and return it
+            return rustImpl.uniffiCloneHandle()
+         } else {
+            // Swift object, generate a new vtable handle and return that.
+            return handleMap.insert(obj: value)
+         }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UploadSourceOpener {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: UploadSourceOpener, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUploadSourceOpener_lift(_ handle: UInt64) throws -> UploadSourceOpener {
+    return try FfiConverterTypeUploadSourceOpener.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUploadSourceOpener_lower(_ value: UploadSourceOpener) -> UInt64 {
+    return FfiConverterTypeUploadSourceOpener.lower(value)
 }
 
 
@@ -14919,6 +15440,30 @@ fileprivate struct FfiConverterOptionTypeTokenSource: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeUploadSourceOpener: FfiConverterRustBuffer {
+    typealias SwiftType = UploadSourceOpener?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeUploadSourceOpener.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeUploadSourceOpener.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeAccountInfo: FfiConverterRustBuffer {
     typealias SwiftType = AccountInfo?
 
@@ -17771,6 +18316,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_method_uploadengine_enqueue_all() != 29664) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_method_uploadengine_enqueue_stream() != 9859) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aun_core_checksum_method_uploadengine_find_by_checksum() != 64209) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -17784,6 +18332,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_uploadengine_poke() != 21661) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_uploadengine_register_source_opener() != 8782) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_uploadengine_remove() != 37431) {
@@ -17814,6 +18365,18 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_method_uploadlistener_on_state() != 5742) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_uploadsource_size() != 28960) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_uploadsource_fingerprint() != 39668) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_uploadsource_read_at() != 57587) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_uploadsourceopener_reopen() != 55556) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_constructor_apiclient_new() != 27430) {
@@ -17849,6 +18412,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_constructor_uploadengine_new() != 6121) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_constructor_uploadengine_with_source_opener() != 53445) {
+        return InitializationResult.apiChecksumMismatch
+    }
 
     uniffiCallbackInitAuthListener()
     uniffiCallbackInitConnectivity()
@@ -17858,6 +18424,8 @@ private let initializationResult: InitializationResult = {
     uniffiCallbackInitSyncChangeListener()
     uniffiCallbackInitTokenSource()
     uniffiCallbackInitUploadListener()
+    uniffiCallbackInitUploadSource()
+    uniffiCallbackInitUploadSourceOpener()
     return InitializationResult.ok
 }()
 

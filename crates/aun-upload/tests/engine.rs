@@ -681,3 +681,187 @@ async fn insecure_tus_endpoint_override_is_refused() {
     wait_for(&engine, &id, UploadState::Failed).await;
     engine.shutdown();
 }
+
+const SOURCE_ID: &str = "content://test/videos/42";
+
+#[derive(Default)]
+struct MemorySource {
+    bytes: Vec<u8>,
+    reads: Mutex<Vec<u64>>,
+    changed: AtomicBool,
+    fail_read: AtomicBool,
+    premature_eof: AtomicBool,
+    changed_after_patch: Option<Arc<TusState>>,
+}
+
+impl aun_upload::UploadSource for MemorySource {
+    fn size(&self) -> aun_common::Result<u64> {
+        let changed = self
+            .changed_after_patch
+            .as_ref()
+            .is_some_and(|tus| tus.offset.load(Ordering::SeqCst) > 0);
+        Ok(self.bytes.len() as u64 + u64::from(changed))
+    }
+
+    fn fingerprint(&self) -> aun_common::Result<String> {
+        Ok(self.changed.load(Ordering::SeqCst).to_string())
+    }
+
+    fn read_at(&self, offset: u64, len: u64) -> aun_common::Result<Vec<u8>> {
+        assert!(len <= 64 * KIB as u64);
+        self.reads.lock().unwrap().push(offset);
+        if self.fail_read.load(Ordering::SeqCst) {
+            return Err(Error::Platform("stream read failed".into()));
+        }
+        if self.premature_eof.load(Ordering::SeqCst) {
+            return Ok(vec![]);
+        }
+        let start = offset as usize;
+        let end = (start + (len as usize).min(11 * KIB)).min(self.bytes.len());
+        Ok(self.bytes[start..end].to_vec())
+    }
+}
+
+struct Opener(Option<Arc<MemorySource>>);
+impl aun_upload::UploadSourceOpener for Opener {
+    fn reopen(&self, id: String) -> aun_common::Result<Arc<dyn aun_upload::UploadSource>> {
+        assert_eq!(id, SOURCE_ID);
+        self.0
+            .clone()
+            .map(|source| source as Arc<dyn aun_upload::UploadSource>)
+            .ok_or_else(|| Error::Platform("URI permission revoked".into()))
+    }
+}
+
+#[tokio::test]
+async fn stream_restart_resumes_at_saved_offset_without_staging() {
+    use sha2::{Digest, Sha256};
+
+    let server = MockServer::start().await;
+    let tus = Arc::new(TusState::default());
+    mount_api(&server, 1).await;
+    mount_proxy(&server, tus.clone()).await;
+    let store = tempfile::tempdir().unwrap();
+    let source = Arc::new(MemorySource {
+        bytes: (0..700 * KIB).map(|i| (i % 251) as u8).collect(),
+        ..Default::default()
+    });
+    let mut slow = cfg();
+    slow.bandwidth_bytes_per_sec = Some(256 * KIB as u64);
+    let first = UploadEngine::open(api(&server), store.path(), "u1", slow).unwrap();
+    first
+        .register_source_opener(Arc::new(Opener(Some(source.clone()))))
+        .unwrap();
+    let id = first
+        .enqueue_stream(request("picked.mp4"), SOURCE_ID.into())
+        .unwrap();
+    first.start();
+
+    let saved = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let offset = first.get(&id).unwrap().unwrap().offset;
+            if offset > 0 {
+                break offset;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(saved, 256 * KIB as u64);
+    first.shutdown();
+    drop(first);
+    let second = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match UploadEngine::open(api(&server), store.path(), "u1", cfg()) {
+                Ok(engine) => break engine,
+                Err(Error::Conflict { .. }) => tokio::time::sleep(Duration::from_millis(5)).await,
+                Err(e) => panic!("could not reopen queue: {e}"),
+            }
+        }
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(second.get(&id).unwrap().unwrap().offset, saved);
+    source.reads.lock().unwrap().clear();
+    second
+        .register_source_opener(Arc::new(Opener(Some(source.clone()))))
+        .unwrap();
+    second.start();
+    let done = wait_for(&second, &id, UploadState::Done).await;
+    assert_eq!(
+        done.sha256.unwrap(),
+        Sha256::digest(&source.bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>()
+    );
+    assert_eq!(source.reads.lock().unwrap().first(), Some(&saved));
+    assert_eq!(*tus.bytes.lock().unwrap(), source.bytes);
+    assert!(!store.path().join("picked.mp4").exists());
+    second.shutdown();
+}
+
+#[tokio::test]
+async fn stream_failures_surface_source_errors() {
+    for (case, expected) in [
+        ("missing opener", "opener missing"),
+        ("revoked", "URI permission revoked"),
+        ("read error", "stream read failed"),
+        ("early EOF", "invalid read length"),
+        ("fingerprint", "source changed"),
+        ("size", "source changed"),
+    ] {
+        let server = MockServer::start().await;
+        let tus = Arc::new(TusState::default());
+        let transfer = matches!(case, "missing opener" | "read error" | "early EOF" | "size");
+        mount_api(&server, u64::from(transfer)).await;
+        mount_proxy(&server, tus.clone()).await;
+        let store = tempfile::tempdir().unwrap();
+        let mut config = cfg();
+        config.compute_checksum = false;
+        let source = Arc::new(MemorySource {
+            bytes: vec![17; 600 * KIB],
+            changed_after_patch: (case == "size").then(|| tus.clone()),
+            ..Default::default()
+        });
+        let first = UploadEngine::open(api(&server), store.path(), "u1", config.clone()).unwrap();
+        first
+            .register_source_opener(Arc::new(Opener(Some(source.clone()))))
+            .unwrap();
+        let id = first
+            .enqueue_stream(request("picked.mp4"), SOURCE_ID.into())
+            .unwrap();
+        if case == "fingerprint" {
+            first.pause(&id).unwrap();
+        }
+        drop(first);
+        source.changed.store(case == "fingerprint", Ordering::SeqCst);
+        source.fail_read.store(case == "read error", Ordering::SeqCst);
+        source.premature_eof.store(case == "early EOF", Ordering::SeqCst);
+
+        let second = UploadEngine::open(api(&server), store.path(), "u1", config).unwrap();
+        if case != "missing opener" {
+            second
+                .register_source_opener(Arc::new(Opener((case != "revoked").then(|| source.clone()))))
+                .unwrap();
+        }
+        second.start();
+        if case == "fingerprint" {
+            assert_eq!(second.get(&id).unwrap().unwrap().state, UploadState::Paused);
+            second.resume(&id).unwrap();
+        }
+        let failed = wait_for(&second, &id, UploadState::Failed).await;
+        assert!(failed.last_error.unwrap().contains(expected), "{case}");
+        assert_eq!(failed.offset, if case == "size" { 256 * KIB as u64 } else { 0 });
+        if case == "missing opener" {
+            second
+                .register_source_opener(Arc::new(Opener(Some(source))))
+                .unwrap();
+            second.retry(&id).unwrap();
+            wait_for(&second, &id, UploadState::Done).await;
+        }
+        second.shutdown();
+    }
+}

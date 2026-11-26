@@ -18,13 +18,15 @@ use aun_common::platform::{AlwaysOnline, Clock, Connectivity, SystemClock};
 use aun_common::{Error, Result};
 use tokio_util::sync::CancellationToken;
 
-use crate::store::{ManifestStore, UploadManifest, UploadRequest, UploadState, file_identity, sha256_file};
+use crate::source::{PIECE, UploadSource, UploadSourceOpener, read_piece, sha256_source};
+use crate::store::{
+    ManifestStore, UploadManifest, UploadRequest, UploadSourceKind, UploadState, file_identity, sha256_file,
+};
 use crate::throttle::Throttle;
 use crate::tus::{TusClient, TusTarget};
 
 /// Prod allows 5 concurrent upload sessions per user.
 pub const MAX_PARALLEL: usize = 5;
-const PIECE: usize = 64 * 1024;
 const MIN_CHUNK: u64 = 256 * 1024;
 const MAX_CHUNK: u64 = 64 * 1024 * 1024;
 
@@ -81,6 +83,7 @@ struct Inner {
     throttle: Arc<Throttle>,
     connectivity: Arc<dyn Connectivity>,
     clock: Arc<dyn Clock>,
+    source_opener: Mutex<Option<Arc<dyn UploadSourceOpener>>>,
     uploads: Mutex<BTreeMap<String, UploadManifest>>,
     running: Mutex<HashMap<String, CancellationToken>>,
     listeners: Arc<Mutex<Vec<Arc<dyn UploadListener>>>>,
@@ -190,6 +193,7 @@ impl UploadEngine {
                 throttle,
                 connectivity,
                 clock,
+                source_opener: Mutex::default(),
                 uploads: Mutex::new(uploads),
                 running: Mutex::new(HashMap::new()),
                 listeners: Arc::new(Mutex::new(vec![])),
@@ -206,12 +210,54 @@ impl UploadEngine {
         }
     }
 
+    /// Register before starting the engine to recover queued streams automatically.
+    pub fn register_source_opener(&self, opener: Arc<dyn UploadSourceOpener>) -> Result<()> {
+        let previous = lock(&self.inner.source_opener)?.replace(opener);
+        drop(previous);
+        Ok(())
+    }
+
     /// Queues a file. Returns the upload id.
     pub fn enqueue(&self, request: UploadRequest) -> Result<String> {
+        Self::validate_title(&request)?;
+        let (size, mtime) = file_identity(Path::new(&request.file_path))?;
+        self.enqueue_source(request, UploadSourceKind::Path, size, mtime)
+    }
+
+    /// Queues a platform stream. Use the display filename in `request.file_path` for TUS metadata.
+    pub fn enqueue_stream(&self, request: UploadRequest, source_id: String) -> Result<String> {
+        Self::validate_title(&request)?;
+        if source_id.is_empty() {
+            return Err(Error::invalid_input("source id is required".into()));
+        }
+        let stream = self.inner.reopen(&source_id)?;
+        let size = stream.size()?;
+        let fingerprint = stream.fingerprint()?;
+        self.enqueue_source(
+            request,
+            UploadSourceKind::Stream {
+                source_id,
+                fingerprint,
+            },
+            size,
+            0,
+        )
+    }
+
+    fn validate_title(request: &UploadRequest) -> Result<()> {
         if request.title.trim().is_empty() {
             return Err(Error::invalid_input("title is required".into()));
         }
-        let (size, mtime) = file_identity(Path::new(&request.file_path))?;
+        Ok(())
+    }
+
+    fn enqueue_source(
+        &self,
+        request: UploadRequest,
+        source: UploadSourceKind,
+        size: u64,
+        mtime: i64,
+    ) -> Result<String> {
         if size == 0 {
             return Err(Error::invalid_input("file is empty".into()));
         }
@@ -221,6 +267,7 @@ impl UploadEngine {
             account_id: self.inner.account_id.clone(),
             request,
             state: UploadState::Queued,
+            source,
             file_size: size,
             file_mtime_ms: mtime,
             sha256: None,
@@ -529,6 +576,7 @@ impl Inner {
             Ok(Outcome::Waiting) => {
                 let _ = self.set_state(id, UploadState::Waiting);
             }
+            Err(_) if cancel.is_cancelled() => {}
             Err(e) => self.handle_error(id, e),
         }
     }
@@ -589,14 +637,20 @@ impl Inner {
                 .unwrap_or(true)
     }
 
-    async fn process(&self, id: &str, cancel: &CancellationToken) -> Result<Outcome> {
+    fn reopen(&self, source_id: &str) -> Result<Arc<dyn UploadSource>> {
+        let opener = lock(&self.source_opener)?
+            .clone()
+            .ok_or_else(|| Error::Platform("upload source opener missing; register one and retry".into()))?;
+        opener.reopen(source_id.to_owned())
+    }
+
+    async fn process(self: &Arc<Self>, id: &str, cancel: &CancellationToken) -> Result<Outcome> {
         let m = self.snapshot(id)?;
-        let path = std::path::PathBuf::from(&m.request.file_path);
-        let (size, mtime) = file_identity(&path)?;
-        if size != m.file_size || mtime != m.file_mtime_ms {
-            return Err(Error::invalid_input(
-                "the file changed since it was queued; add it again".into(),
-            ));
+        let engine = self.clone();
+        let manifest = m.clone();
+        let source = blocking(move || OpenSource::open(&engine, &manifest)).await?;
+        if self.interrupted(id, cancel) {
+            return Ok(Outcome::Interrupted);
         }
         if !self.can_run_now() {
             return Ok(Outcome::Waiting);
@@ -606,10 +660,9 @@ impl Inner {
         let compute = self.cfg.lock().map(|c| c.compute_checksum).unwrap_or(true);
         if compute && m.sha256.is_none() {
             self.set_state(id, UploadState::Hashing)?;
-            let p = path.clone();
-            let hash = tokio::task::spawn_blocking(move || sha256_file(&p))
-                .await
-                .map_err(|e| Error::Internal(e.to_string()))??;
+            let source = source.clone();
+            let token = cancel.clone();
+            let hash = blocking(move || source.checksum(&token)).await?;
             self.update(id, |m| m.sha256 = Some(hash))?;
         }
         if self.interrupted(id, cancel) {
@@ -624,9 +677,14 @@ impl Inner {
 
         // 3. TUS transfer
         self.set_state(id, UploadState::Uploading)?;
-        match self.transfer(id, &path, cancel).await? {
+        match self.transfer(id, &source, cancel).await? {
             Outcome::Done => {}
             other => return Ok(other),
+        }
+
+        blocking(move || source.validate()).await?;
+        if self.interrupted(id, cancel) {
+            return Ok(Outcome::Interrupted);
         }
 
         // 4. Complete
@@ -776,11 +834,11 @@ impl Inner {
         meta
     }
 
-    async fn transfer(&self, id: &str, path: &Path, cancel: &CancellationToken) -> Result<Outcome> {
+    async fn transfer(&self, id: &str, source: &OpenSource, cancel: &CancellationToken) -> Result<Outcome> {
         let mut reauthorised = false;
         let mut refreshed = false;
         loop {
-            match self.transfer_once(id, path, cancel).await {
+            match self.transfer_once(id, source, cancel).await {
                 // 404/410: the proxy session (or direct authorisation) is gone. Once per run.
                 Err(Error::NotFound { .. }) | Err(Error::Http { status: 410, .. }) if !reauthorised => {
                     reauthorised = true;
@@ -800,7 +858,12 @@ impl Inner {
         }
     }
 
-    async fn transfer_once(&self, id: &str, path: &Path, cancel: &CancellationToken) -> Result<Outcome> {
+    async fn transfer_once(
+        &self,
+        id: &str,
+        source: &OpenSource,
+        cancel: &CancellationToken,
+    ) -> Result<Outcome> {
         let m = self.snapshot(id)?;
         let target = m
             .target
@@ -840,13 +903,23 @@ impl Inner {
             }
             let chunk = self.snapshot(id)?.chunk_size.max(MIN_CHUNK);
             let len = chunk.min(size - offset);
-            let body = self.chunk_body(id, path, offset, len, size, cancel.clone())?;
+            let read_error = Arc::new(Mutex::new(None));
+            let body = self.chunk_body(
+                &m,
+                source.clone(),
+                offset..offset + len,
+                cancel.clone(),
+                read_error.clone(),
+            );
             let bearer = self.api.bearer().await;
-            match self
+            let result = self
                 .tus
                 .patch(&target, bearer.as_deref(), &upload_url, offset, body, len)
-                .await
-            {
+                .await;
+            if let Some(error) = lock(&read_error)?.take() {
+                return Err(error);
+            }
+            match result {
                 Ok(new_offset) => {
                     offset = new_offset.min(size);
                     self.update(id, |m| m.offset = offset)?;
@@ -870,66 +943,143 @@ impl Inner {
         Ok(Outcome::Done)
     }
 
-    /// Streams `[offset, offset+len)` of the file in 64 KiB pieces through the bandwidth cap,
-    /// reporting progress per piece. Aborts the body when cancelled.
+    /// Streams bounded pieces through the bandwidth cap and reports progress.
     fn chunk_body(
         &self,
-        id: &str,
-        path: &Path,
-        offset: u64,
-        len: u64,
-        total: u64,
+        manifest: &UploadManifest,
+        source: OpenSource,
+        range: std::ops::Range<u64>,
         cancel: CancellationToken,
-    ) -> Result<reqwest::Body> {
-        use std::io::{Read, Seek, SeekFrom};
-        let mut file = std::fs::File::open(path)?;
-        file.seek(SeekFrom::Start(offset))?;
-        let file = Arc::new(Mutex::new(file.take(len)));
-        let id = id.to_owned();
-        let state = Arc::new((
-            self.throttle.clone(),
-            self.listeners.clone(),
-            std::sync::atomic::AtomicU64::new(offset),
-        ));
-        let stream = futures_util::stream::unfold(
-            (file, state, id, cancel),
-            move |(file, state, id, cancel)| async move {
+        read_error: Arc<Mutex<Option<Error>>>,
+    ) -> reqwest::Body {
+        let id = manifest.id.clone();
+        let total = manifest.file_size;
+        let throttle = self.throttle.clone();
+        let listeners = self.listeners.clone();
+        let stream = futures_util::stream::try_unfold(range, move |mut range| {
+            let (source, cancel, throttle, listeners, id, read_error) = (
+                source.clone(),
+                cancel.clone(),
+                throttle.clone(),
+                listeners.clone(),
+                id.clone(),
+                read_error.clone(),
+            );
+            async move {
+                if range.is_empty() {
+                    return Ok(None);
+                }
                 if cancel.is_cancelled() {
-                    return Some((Err(std::io::Error::other("cancelled")), (file, state, id, cancel)));
+                    return Err(std::io::Error::other("cancelled"));
                 }
-                let read = {
-                    let f = file.clone();
-                    tokio::task::spawn_blocking(move || -> std::io::Result<Vec<u8>> {
-                        let mut buf = vec![0u8; PIECE];
-                        let mut g = f.lock().map_err(|_| std::io::Error::other("poisoned"))?;
-                        let n = g.read(&mut buf)?;
-                        buf.truncate(n);
-                        Ok(buf)
-                    })
-                    .await
-                };
-                let buf = match read {
-                    Ok(Ok(b)) => b,
-                    Ok(Err(e)) => return Some((Err(e), (file, state, id, cancel))),
-                    Err(e) => return Some((Err(std::io::Error::other(e)), (file, state, id, cancel))),
-                };
-                if buf.is_empty() {
-                    return None;
-                }
-                // Cancel-aware, so shutdown does not wait out a throttled piece.
-                tokio::select! {
-                    () = state.0.acquire(buf.len() as u64) => {}
-                    () = cancel.cancelled() => {
-                        return Some((Err(std::io::Error::other("cancelled")), (file, state, id, cancel)));
+                let offset = range.start;
+                let len = (range.end - offset).min(PIECE);
+                let read = blocking(move || source.read(offset, len)).await;
+                let buf = read.map_err(|error| {
+                    let io_error = std::io::Error::other(error.to_string());
+                    if let Ok(mut slot) = read_error.lock() {
+                        *slot = Some(error);
                     }
+                    io_error
+                })?;
+                tokio::select! {
+                    () = throttle.acquire(buf.len() as u64) => {}
+                    () = cancel.cancelled() => return Err(std::io::Error::other("cancelled")),
                 }
-                let sent = state.2.fetch_add(buf.len() as u64, Ordering::Relaxed) + buf.len() as u64;
-                for l in state.1.lock().map(|v| v.clone()).unwrap_or_default() {
-                    l.on_progress(&id, sent, total);
+                range.start += buf.len() as u64;
+                for listener in listeners.lock().map(|v| v.clone()).unwrap_or_default() {
+                    listener.on_progress(&id, range.start, total);
                 }
-                Some((Ok(bytes::Bytes::from(buf)), (file, state, id, cancel)))
+                Ok(Some((bytes::Bytes::from(buf), range)))
+            }
+        });
+        reqwest::Body::wrap_stream(stream)
+    }
+}
+
+async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send + 'static) -> Result<T> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| Error::Internal(e.to_string()))?
+}
+
+#[derive(Clone)]
+enum OpenSource {
+    Path(std::path::PathBuf, Arc<Mutex<std::fs::File>>),
+    Stream {
+        source: Arc<dyn UploadSource>,
+        size: u64,
+        fingerprint: String,
+    },
+}
+
+impl OpenSource {
+    fn open(engine: &Inner, m: &UploadManifest) -> Result<Self> {
+        let source = match &m.source {
+            UploadSourceKind::Path => {
+                let path = std::path::PathBuf::from(&m.request.file_path);
+                if file_identity(&path)? != (m.file_size, m.file_mtime_ms) {
+                    return Err(Self::changed());
+                }
+                Self::Path(path.clone(), Arc::new(Mutex::new(std::fs::File::open(path)?)))
+            }
+            UploadSourceKind::Stream {
+                source_id,
+                fingerprint,
+            } => Self::Stream {
+                source: engine.reopen(source_id)?,
+                size: m.file_size,
+                fingerprint: fingerprint.clone(),
             },
-        );
-        Ok(reqwest::Body::wrap_stream(stream))
+        };
+        source.validate()?;
+        Ok(source)
+    }
+
+    fn changed() -> Error {
+        Error::invalid_input("the upload source changed since it was queued; add it again".into())
+    }
+
+    fn validate(&self) -> Result<()> {
+        if let Self::Stream {
+            source,
+            size,
+            fingerprint,
+        } = self
+            && (source.size()? != *size || source.fingerprint()? != *fingerprint)
+        {
+            return Err(Self::changed());
+        }
+        Ok(())
+    }
+
+    fn checksum(&self, cancel: &CancellationToken) -> Result<String> {
+        match self {
+            Self::Path(path, _) => sha256_file(path),
+            Self::Stream { source, size, .. } => {
+                let hash = sha256_source(source.as_ref(), *size, cancel)?;
+                self.validate()?;
+                Ok(hash)
+            }
+        }
+    }
+
+    fn read(&self, offset: u64, len: u64) -> Result<Vec<u8>> {
+        match self {
+            Self::Path(_, file) => {
+                use std::io::{Read, Seek, SeekFrom};
+                let mut file = lock(file)?;
+                file.seek(SeekFrom::Start(offset))?;
+                let mut buf = vec![0; len as usize];
+                file.read_exact(&mut buf)?;
+                Ok(buf)
+            }
+            Self::Stream { source, .. } => {
+                self.validate()?;
+                let data = read_piece(source.as_ref(), offset, len)?;
+                self.validate()?;
+                Ok(data)
+            }
+        }
     }
 }

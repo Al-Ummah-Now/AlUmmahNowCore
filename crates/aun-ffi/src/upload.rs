@@ -190,6 +190,46 @@ impl aun_upload::UploadListener for ForeignUploadListener {
     }
 }
 
+/// A seekable platform stream with known size. Callbacks can run on background threads.
+#[uniffi::export(with_foreign)]
+pub trait UploadSource: Send + Sync {
+    fn size(&self) -> Result<u64, AunError>;
+    /// Identity stable across reopens and different whenever the bytes change.
+    fn fingerprint(&self) -> Result<String, AunError>;
+    /// Reads at most len bytes. Short reads are allowed; empty means EOF.
+    fn read_at(&self, offset: u64, len: u64) -> Result<Vec<u8>, AunError>;
+}
+
+/// Reopens a persisted stream ID. The app must retain access across restarts.
+#[uniffi::export(with_foreign)]
+pub trait UploadSourceOpener: Send + Sync {
+    fn reopen(&self, source_id: String) -> Result<Arc<dyn UploadSource>, AunError>;
+}
+
+struct ForeignUploadSource(Arc<dyn UploadSource>);
+
+impl aun_upload::UploadSource for ForeignUploadSource {
+    fn size(&self) -> aun_common::Result<u64> {
+        Ok(self.0.size()?)
+    }
+
+    fn fingerprint(&self) -> aun_common::Result<String> {
+        Ok(self.0.fingerprint()?)
+    }
+
+    fn read_at(&self, offset: u64, len: u64) -> aun_common::Result<Vec<u8>> {
+        Ok(self.0.read_at(offset, len)?)
+    }
+}
+
+struct ForeignUploadSourceOpener(Arc<dyn UploadSourceOpener>);
+
+impl aun_upload::UploadSourceOpener for ForeignUploadSourceOpener {
+    fn reopen(&self, source_id: String) -> aun_common::Result<Arc<dyn aun_upload::UploadSource>> {
+        Ok(Arc::new(ForeignUploadSource(self.0.reopen(source_id)?)))
+    }
+}
+
 /// The resumable upload queue for one account. Uploads survive app restarts: create the engine
 /// again with the same `store_dir` and `account_id` and they continue where they stopped.
 #[derive(uniffi::Object)]
@@ -220,6 +260,19 @@ impl UploadEngine {
         config: UploadConfig,
         connectivity: Option<Arc<dyn Connectivity>>,
     ) -> Result<Arc<Self>, AunError> {
+        Self::with_source_opener(client, store_dir, account_id, config, connectivity, None)
+    }
+
+    /// Opens the queue and registers the opener before recovering uploads.
+    #[uniffi::constructor]
+    pub fn with_source_opener(
+        client: Arc<ApiClient>,
+        store_dir: String,
+        account_id: String,
+        config: UploadConfig,
+        connectivity: Option<Arc<dyn Connectivity>>,
+        source_opener: Option<Arc<dyn UploadSourceOpener>>,
+    ) -> Result<Arc<Self>, AunError> {
         let cfg = aun_upload::UploadConfig {
             max_parallel: config.max_parallel as usize,
             bandwidth_bytes_per_sec: config.bandwidth_bytes_per_sec,
@@ -240,12 +293,28 @@ impl UploadEngine {
             connectivity,
             Arc::new(aun_common::platform::SystemClock),
         )?;
+        if let Some(opener) = source_opener {
+            inner.register_source_opener(Arc::new(ForeignUploadSourceOpener(opener)))?;
+        }
         let _guard = runtime()?.enter();
         inner.start();
         Ok(Arc::new(Self {
             inner,
             watchers: Mutex::default(),
         }))
+    }
+
+    /// Registers an opener. Call retry on any upload that already failed to reopen.
+    pub fn register_source_opener(&self, opener: Arc<dyn UploadSourceOpener>) -> Result<(), AunError> {
+        Ok(self
+            .inner
+            .register_source_opener(Arc::new(ForeignUploadSourceOpener(opener)))?)
+    }
+
+    /// Queues a platform stream. Set request.file_path to the display filename for MIME
+    /// inference and upload metadata. Only the opener uses source_id.
+    pub fn enqueue_stream(&self, request: UploadRequest, source_id: String) -> Result<String, AunError> {
+        Ok(self.inner.enqueue_stream(request.into_core()?, source_id)?)
     }
 
     pub fn add_listener(&self, listener: Arc<dyn UploadListener>) {
@@ -431,5 +500,66 @@ mod tests {
             );
             assert_eq!(core.and_then(|request| request.is_public), Some(true));
         }
+    }
+}
+
+#[cfg(test)]
+mod source_tests {
+    use super::*;
+    use aun_upload::UploadSourceOpener as _;
+
+    struct Source;
+
+    impl UploadSource for Source {
+        fn size(&self) -> Result<u64, AunError> {
+            Ok(3)
+        }
+
+        fn fingerprint(&self) -> Result<String, AunError> {
+            Ok("revision-1".into())
+        }
+
+        fn read_at(&self, offset: u64, len: u64) -> Result<Vec<u8>, AunError> {
+            assert_eq!(len, 2);
+            match offset {
+                0 => Ok(vec![42]),
+                3 => Ok(vec![]),
+                _ => Err(AunError::Platform {
+                    detail: "read failed".into(),
+                }),
+            }
+        }
+    }
+
+    struct Opener;
+
+    impl UploadSourceOpener for Opener {
+        fn reopen(&self, source_id: String) -> Result<Arc<dyn UploadSource>, AunError> {
+            if source_id == "content://test/video" {
+                Ok(Arc::new(Source))
+            } else {
+                Err(AunError::Platform {
+                    detail: "permission revoked".into(),
+                })
+            }
+        }
+    }
+
+    #[test]
+    fn adapts_source_results_and_errors() {
+        let opener = ForeignUploadSourceOpener(Arc::new(Opener));
+        let source = opener.reopen("content://test/video".into()).unwrap();
+        assert_eq!(source.size().unwrap(), 3);
+        assert_eq!(source.fingerprint().unwrap(), "revision-1");
+        assert_eq!(source.read_at(0, 2).unwrap(), vec![42]);
+        assert!(source.read_at(3, 2).unwrap().is_empty());
+        assert_eq!(
+            source.read_at(1, 2),
+            Err(aun_common::Error::Platform("read failed".into()))
+        );
+        assert!(matches!(
+            opener.reopen("content://test/revoked".into()),
+            Err(aun_common::Error::Platform(detail)) if detail == "permission revoked"
+        ));
     }
 }
