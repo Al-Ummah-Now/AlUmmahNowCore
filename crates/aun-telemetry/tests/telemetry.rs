@@ -491,3 +491,35 @@ async fn flush_never_starts_send_after_consent_denied_returns() {
         );
     }
 }
+
+#[tokio::test]
+async fn custom_sink_reentrantly_revoking_consent_does_not_deadlock() {
+    struct ReentrantSink {
+        telemetry: std::sync::Mutex<Option<Arc<Telemetry>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl TelemetrySink for ReentrantSink {
+        async fn send(&self, _batch: &TelemetryBatch) -> aun_common::Result<()> {
+            let t = self.telemetry.lock().unwrap().clone().unwrap();
+            t.set_consent(ConsentState::Denied).unwrap();
+            Ok(())
+        }
+    }
+
+    let sink = Arc::new(ReentrantSink {
+        telemetry: std::sync::Mutex::new(None),
+    });
+    let t = Telemetry::new(TelemetryConfig::default(), sink.clone());
+    *sink.telemetry.lock().unwrap() = Some(t.clone());
+    t.set_consent(ConsentState::Analytics).unwrap();
+    t.track("tap", HashMap::new());
+    t.track("tap", HashMap::new());
+
+    let report = tokio::time::timeout(std::time::Duration::from_secs(2), t.flush())
+        .await
+        .expect("re-entrant set_consent inside custom sink deadlocked")
+        .unwrap();
+    assert_eq!(t.consent(), ConsentState::Denied);
+    assert_eq!(report.remaining, 0);
+}

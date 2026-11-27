@@ -8,6 +8,7 @@
 //!   error events.
 //! - `Analytics`: everything.
 
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::Future;
 use std::hash::{BuildHasher, Hasher};
@@ -114,11 +115,34 @@ struct State {
     unsaved: u32,
 }
 
+thread_local! {
+    /// Address of the `Telemetry` currently inside `ConsentGated::poll` on this thread, so a
+    /// custom `TelemetrySink` that re-entrantly calls `set_consent()` during its own poll does
+    /// not deadlock waiting on `send_gate.write()`.
+    static ACTIVE_SEND_POLL_OWNER: Cell<usize> = const { Cell::new(0) };
+}
+
+struct ActivePollGuard(usize);
+
+impl ActivePollGuard {
+    fn enter(owner: usize) -> Self {
+        let prev = ACTIVE_SEND_POLL_OWNER.with(|c| c.replace(owner));
+        Self(prev)
+    }
+}
+
+impl Drop for ActivePollGuard {
+    fn drop(&mut self) {
+        ACTIVE_SEND_POLL_OWNER.with(|c| c.set(self.0));
+    }
+}
+
 /// Polls `inner` while holding `send_gate.read()` only if `consent_epoch` still matches
 /// `expected_epoch`. `set_consent` increments `consent_epoch` and acquires+drops `send_gate.write()`,
 /// guaranteeing no poll of a revoked batch can start or still be running once `set_consent` returns.
 struct ConsentGated<'a, F> {
     inner: Pin<Box<F>>,
+    owner: usize,
     send_gate: &'a RwLock<()>,
     consent_epoch: &'a AtomicU64,
     expected_epoch: u64,
@@ -132,6 +156,7 @@ impl<F: Future<Output = Result<()>>> Future for ConsentGated<'_, F> {
         if self.consent_epoch.load(Ordering::Acquire) != self.expected_epoch {
             return Poll::Ready(None);
         }
+        let _active = ActivePollGuard::enter(self.owner);
         match self.inner.as_mut().poll(cx) {
             Poll::Ready(res) => Poll::Ready(Some(res)),
             Poll::Pending => Poll::Pending,
@@ -289,10 +314,16 @@ impl Telemetry {
             let _ = self.consent_tx.send(epoch);
             std::mem::replace(&mut st.consent, consent)
         };
-        // Barrier: wait for any in-progress single poll step of an older-epoch send to finish
-        // before returning, ensuring no older-epoch send can start or poll after this point.
-        let _barrier = self.send_gate.write().unwrap_or_else(|p| p.into_inner());
-        drop(_barrier);
+        // Barrier: wait for any in-progress single poll step of an older-epoch send on another
+        // thread to finish before returning, ensuring no older-epoch send can start or poll after
+        // this point. Skip when called re-entrantly from inside our own `ConsentGated::poll` on
+        // this thread (which already holds `send_gate.read()`).
+        let self_addr = std::ptr::from_ref(self) as usize;
+        let reentrant = ACTIVE_SEND_POLL_OWNER.with(|c| c.get() == self_addr);
+        if !reentrant {
+            let _barrier = self.send_gate.write().unwrap_or_else(|p| p.into_inner());
+            drop(_barrier);
+        }
         if !consent.allows_crash() {
             {
                 let mut st = self.lock();
@@ -657,6 +688,7 @@ impl Telemetry {
             };
             let gated_send = ConsentGated {
                 inner: Box::pin(self.sink.send(&batch)),
+                owner: std::ptr::from_ref(self) as usize,
                 send_gate: &self.send_gate,
                 consent_epoch: &self.consent_epoch,
                 expected_epoch: epoch,
