@@ -506,13 +506,17 @@ fn custom_sink_reentrantly_revoking_consent_with_concurrent_caller_does_not_dead
     #[async_trait::async_trait]
     impl TelemetrySink for ReentrantSink {
         async fn send(&self, _batch: &TelemetryBatch) -> aun_common::Result<()> {
+            let t = self.telemetry.lock().unwrap().clone().unwrap();
             if let Some(tx) = self.entered_tx.lock().unwrap().take() {
                 let _ = tx.send(());
             }
-            // Give the external thread time to enter `set_consent(Denied)` and contend on
-            // `io_lock` / `send_gate` while this poll holds `send_gate.read()`.
-            std::thread::sleep(std::time::Duration::from_millis(5));
-            let t = self.telemetry.lock().unwrap().clone().unwrap();
+            // Wait deterministically until the external thread has entered `set_consent(Denied)`
+            // and updated `state.consent` (under `io_lock` before hitting `send_gate.write()`).
+            // Under an AB-BA lock inversion (`io_lock` held across `send_gate.write()`), the
+            // re-entrant `set_consent` call below deadlocks deterministically on the first run.
+            while t.consent() != ConsentState::Denied {
+                std::thread::yield_now();
+            }
             t.set_consent(ConsentState::Denied).unwrap();
             self.reentered.store(true, Ordering::SeqCst);
             Ok(())
