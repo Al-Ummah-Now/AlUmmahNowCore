@@ -7,6 +7,12 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+## [0.4.0-rc.13] - 2026-11-27
+
+### Added
+
+- `aun-telemetry` FFI (`TelemetryClient`, `ConsentState`, `CrashReport`, `Breadcrumb`, `BreadcrumbLevel`, `EventKind`, `TelemetryConfig`, `AppInfo`, `FlushReport`, `HttpSink`) exposed across Swift, Kotlin, and C# via UniFFI (`AlUmmahNowCore#76`). Opt-in by default (`ConsentState::Undecided`), offline disk persistence with atomic revocation/purge, crash-safe flush gating, and automatic PII scrubbing.
+
 ## [0.4.0-rc.12] - 2026-11-26
 
 ### Added
