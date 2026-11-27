@@ -9,9 +9,13 @@
 //! - `Analytics`: everything.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::future::Future;
 use std::hash::{BuildHasher, Hasher};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
+use std::task::{Context, Poll};
 
 use aun_common::platform::{Clock, SystemClock};
 use aun_common::{Error, Result};
@@ -102,7 +106,6 @@ struct Persisted {
 #[derive(Debug)]
 struct State {
     consent: ConsentState,
-    consent_epoch: u64,
     session_id: String,
     sampled_in: bool,
     events: VecDeque<TelemetryEvent>,
@@ -111,18 +114,47 @@ struct State {
     unsaved: u32,
 }
 
+/// Polls `inner` while holding `send_gate.read()` only if `consent_epoch` still matches
+/// `expected_epoch`. `set_consent` increments `consent_epoch` and acquires+drops `send_gate.write()`,
+/// guaranteeing no poll of a revoked batch can start or still be running once `set_consent` returns.
+struct ConsentGated<'a, F> {
+    inner: Pin<Box<F>>,
+    send_gate: &'a RwLock<()>,
+    consent_epoch: &'a AtomicU64,
+    expected_epoch: u64,
+}
+
+impl<F: Future<Output = Result<()>>> Future for ConsentGated<'_, F> {
+    type Output = Option<Result<()>>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let _guard = self.send_gate.read().unwrap_or_else(|p| p.into_inner());
+        if self.consent_epoch.load(Ordering::Acquire) != self.expected_epoch {
+            return Poll::Ready(None);
+        }
+        match self.inner.as_mut().poll(cx) {
+            Poll::Ready(res) => Poll::Ready(Some(res)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
 /// The telemetry recorder. Create one per app and share the `Arc`.
 pub struct Telemetry {
     config: TelemetryConfig,
     sink: Arc<dyn TelemetrySink>,
     clock: Arc<dyn Clock>,
     /// Serialises buffer file reads, writes and deletes across `persist` and `set_consent`.
-    /// Lock ordering: always acquire `io_lock` before `state`.
+    /// Lock ordering: `io_lock` → `state` (dropped) → `send_gate` (leaf lock).
     io_lock: Mutex<()>,
     state: Mutex<State>,
-    /// Broadcasts `consent_epoch` changes (always sent while holding `state`) so `flush()`
-    /// immediately aborts before or during `sink.send()` when consent is revoked or narrowed.
+    /// Monotonically incremented under `state` whenever `set_consent` runs.
+    consent_epoch: AtomicU64,
+    /// Broadcasts `consent_epoch` changes so `flush()` wakes and cancels immediately on revocation.
     consent_tx: tokio::sync::watch::Sender<u64>,
+    /// Leaf lock: held for read during each single non-blocking poll of `sink.send()`, and
+    /// acquired+dropped for write in `set_consent()` as a barrier against revoked sends.
+    send_gate: RwLock<()>,
     flush_lock: tokio::sync::Mutex<()>,
 }
 
@@ -204,7 +236,6 @@ impl Telemetry {
             io_lock: Mutex::new(()),
             state: Mutex::new(State {
                 consent: ConsentState::Unknown,
-                consent_epoch: 0,
                 session_id,
                 sampled_in,
                 events: VecDeque::new(),
@@ -212,7 +243,9 @@ impl Telemetry {
                 previous_breadcrumbs: Vec::new(),
                 unsaved: 0,
             }),
+            consent_epoch: AtomicU64::new(0),
             consent_tx,
+            send_gate: RwLock::new(()),
             flush_lock: tokio::sync::Mutex::new(()),
         })
     }
@@ -252,10 +285,14 @@ impl Telemetry {
         let _io = self.io_lock();
         let previous = {
             let mut st = self.lock();
-            st.consent_epoch = st.consent_epoch.wrapping_add(1);
-            let _ = self.consent_tx.send(st.consent_epoch);
+            let epoch = self.consent_epoch.fetch_add(1, Ordering::AcqRel).wrapping_add(1);
+            let _ = self.consent_tx.send(epoch);
             std::mem::replace(&mut st.consent, consent)
         };
+        // Barrier: wait for any in-progress single poll step of an older-epoch send to finish
+        // before returning, ensuring no older-epoch send can start or poll after this point.
+        let _barrier = self.send_gate.write().unwrap_or_else(|p| p.into_inner());
+        drop(_barrier);
         if !consent.allows_crash() {
             {
                 let mut st = self.lock();
@@ -534,14 +571,18 @@ impl Telemetry {
     fn envelope_bytes(&self) -> usize {
         let empty = TelemetryBatch {
             batch_id: "0".repeat(32),
-            sent_at_ms: i64::MAX,
+            // i64::MIN ("-9223372036854775808") is the widest possible JSON i64 (20 bytes).
+            sent_at_ms: i64::MIN,
             app: self.config.app.clone(),
             events: Vec::new(),
         };
         serde_json::to_vec(&empty).map(|v| v.len()).unwrap_or(512)
     }
 
-    fn next_batch(&self, st: &mut State) -> (Vec<TelemetryEvent>, u32, tokio::sync::watch::Receiver<u64>) {
+    fn next_batch(
+        &self,
+        st: &mut State,
+    ) -> (Vec<TelemetryEvent>, u32, u64, tokio::sync::watch::Receiver<u64>) {
         let mut batch = Vec::new();
         let mut dropped = 0u32;
         let max_bytes = self.config.max_batch_bytes as usize;
@@ -574,9 +615,11 @@ impl Telemetry {
         if !oversized_ids.is_empty() {
             st.events.retain(|e| !oversized_ids.contains(&e.id));
         }
-        // Subscribe while still holding `state` so any subsequent `set_consent` marks `consent_rx` changed.
+        // Snapshot epoch and subscribe while still holding `state` so any subsequent `set_consent`
+        // both bumps `consent_epoch` and marks `consent_rx` changed.
+        let epoch = self.consent_epoch.load(Ordering::Acquire);
         let consent_rx = self.consent_tx.subscribe();
-        (batch, dropped, consent_rx)
+        (batch, dropped, epoch, consent_rx)
     }
 
     /// Sends buffered events in batches until the buffer is empty or a send fails. A retryable
@@ -597,7 +640,7 @@ impl Telemetry {
         }
         let mut result = Ok(());
         loop {
-            let (batch_events, oversized_dropped, mut consent_rx) = {
+            let (batch_events, oversized_dropped, epoch, mut consent_rx) = {
                 let mut st = self.lock();
                 self.next_batch(&mut st)
             };
@@ -612,15 +655,21 @@ impl Telemetry {
                 app: self.config.app.clone(),
                 events: batch_events,
             };
-            // Biased select checks consent changes first: if `set_consent` ran after we released
-            // `state`, `consent_rx.changed()` is already ready and `sink.send` is never polled; if
-            // `set_consent` runs mid-flight, the send future is immediately cancelled and dropped.
+            let gated_send = ConsentGated {
+                inner: Box::pin(self.sink.send(&batch)),
+                send_gate: &self.send_gate,
+                consent_epoch: &self.consent_epoch,
+                expected_epoch: epoch,
+            };
+            // `ConsentGated` enforces the `send_gate` read lock around the epoch check + every poll
+            // of `sink.send`, while `consent_rx.changed()` wakes and cancels an in-flight Pending send.
             let send_outcome = tokio::select! {
                 biased;
-                _ = consent_rx.changed() => {
-                    break;
-                }
-                res = self.sink.send(&batch) => res,
+                _ = consent_rx.changed() => None,
+                res = gated_send => res,
+            };
+            let Some(send_outcome) = send_outcome else {
+                break;
             };
             match send_outcome {
                 Ok(()) => {

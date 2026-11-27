@@ -416,3 +416,78 @@ async fn flush_cancels_in_flight_send_when_consent_revoked() {
     assert_eq!(report.remaining, 0);
     assert_eq!(sink.completed.load(Ordering::SeqCst), 0);
 }
+
+#[tokio::test]
+async fn flush_respects_max_batch_bytes_with_i64_min_timestamp() {
+    struct MinClock;
+    impl aun_common::platform::Clock for MinClock {
+        fn now_ms(&self) -> i64 {
+            i64::MIN
+        }
+    }
+
+    let sink = Arc::new(Recorder::default());
+    let cap = 512u32;
+    let t = Telemetry::with_clock(
+        TelemetryConfig {
+            max_batch_bytes: cap,
+            ..TelemetryConfig::default()
+        },
+        sink.clone(),
+        Arc::new(MinClock),
+    );
+    t.set_consent(ConsentState::Analytics).unwrap();
+    for i in 0..4 {
+        let mut props = HashMap::new();
+        props.insert("k".into(), PropValue::Text(format!("val_{i}_") + &"a".repeat(80)));
+        assert_eq!(t.track("tap", props), RecordOutcome::Recorded);
+    }
+    let report = t.flush().await.unwrap();
+    assert_eq!(report.sent, 4);
+    for batch in sink.batches.lock().unwrap().iter() {
+        let len = serde_json::to_vec(batch).unwrap().len();
+        assert!(len <= cap as usize, "batch {len} exceeded cap {cap}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn flush_never_starts_send_after_consent_denied_returns() {
+    use std::sync::atomic::AtomicBool;
+
+    struct FlagSink {
+        revoked: Arc<AtomicBool>,
+        sent_after_revoke: Arc<AtomicBool>,
+    }
+
+    #[async_trait::async_trait]
+    impl TelemetrySink for FlagSink {
+        async fn send(&self, _batch: &TelemetryBatch) -> aun_common::Result<()> {
+            if self.revoked.load(Ordering::SeqCst) {
+                self.sent_after_revoke.store(true, Ordering::SeqCst);
+            }
+            tokio::task::yield_now().await;
+            Ok(())
+        }
+    }
+
+    for _ in 0..30 {
+        let revoked = Arc::new(AtomicBool::new(false));
+        let sent_after_revoke = Arc::new(AtomicBool::new(false));
+        let sink = Arc::new(FlagSink {
+            revoked: revoked.clone(),
+            sent_after_revoke: sent_after_revoke.clone(),
+        });
+        let t = Telemetry::new(TelemetryConfig::default(), sink);
+        t.set_consent(ConsentState::Analytics).unwrap();
+        t.track("tap", HashMap::new());
+        let t_flush = t.clone();
+        let h = tokio::spawn(async move { t_flush.flush().await });
+        t.set_consent(ConsentState::Denied).unwrap();
+        revoked.store(true, Ordering::SeqCst);
+        let _ = h.await.unwrap();
+        assert!(
+            !sent_after_revoke.load(Ordering::SeqCst),
+            "sink.send started after set_consent(Denied) returned"
+        );
+    }
+}
