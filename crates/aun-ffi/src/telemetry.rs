@@ -161,11 +161,11 @@ pub struct TelemetryClientConfig {
     /// Path to the persistent JSON buffer file (e.g. inside the app's cache/support directory).
     #[uniffi(default = None)]
     pub buffer_path: Option<String>,
-    /// Fraction of sessions whose analytics/QoE/error events are kept (0.0–1.0). Default `1.0`.
+    /// Fraction of sessions whose analytics/QoE/error events are kept (0.0–1.0, finite). Default `1.0`.
     /// Crash reports are never sampled out.
     #[uniffi(default = None)]
     pub sample_rate: Option<f64>,
-    /// Maximum JSON batch size in bytes (4 096–240 000). Defaults to 200 000 when `ingest_url` is set.
+    /// Maximum JSON batch size in bytes (32 768–240 000). Defaults to 200 000 when `ingest_url` is set.
     #[uniffi(default = None)]
     pub max_batch_bytes: Option<u32>,
 }
@@ -292,12 +292,27 @@ fn parse_properties(json: Option<String>) -> Result<HashMap<String, PropValue>, 
                 out.insert(k, PropValue::Text(s));
             }
             serde_json::Value::Null => {}
-            other => {
-                out.insert(k, PropValue::Text(other.to_string()));
+            _ => {
+                return Err(AunError::InvalidInput {
+                    code: None,
+                    detail: format!("property '{k}' must be a flat primitive (string, number, or bool)"),
+                });
             }
         }
     }
     Ok(out)
+}
+
+fn sanitize_header(name: &str, raw: Option<&str>) -> Result<Option<String>, AunError> {
+    let Some(value) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(None);
+    };
+    let scrubbed = aun_telemetry::scrub::truncate(&aun_telemetry::scrub::scrub_text(value), 160);
+    reqwest::header::HeaderValue::from_str(&scrubbed).map_err(|_| AunError::InvalidInput {
+        code: None,
+        detail: format!("invalid {name} header value"),
+    })?;
+    Ok(Some(scrubbed))
 }
 
 /// Consent-gated telemetry and crash reporter. Create one per app and share it.
@@ -316,15 +331,12 @@ impl TelemetryClient {
             .map(str::trim)
             .filter(|s| !s.is_empty());
         let has_ingest = ingest_url.is_some();
+        let user_agent = sanitize_header("user_agent", config.user_agent.as_deref())?;
+        let client_header = sanitize_header("client_header", config.client_header.as_deref())?;
         let sink: Arc<dyn TelemetrySink> = match ingest_url {
             Some(url) => {
-                let mut http = HttpSink::new(url, config.user_agent.as_deref())?;
-                if let Some(client) = config
-                    .client_header
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                {
+                let mut http = HttpSink::new(url, user_agent.as_deref())?;
+                if let Some(client) = client_header.as_deref() {
                     http = http.with_header("X-AUN-Client", client);
                 }
                 Arc::new(http)
@@ -344,13 +356,20 @@ impl TelemetryClient {
             ..TelemetryConfig::default()
         };
         if let Some(rate) = config.sample_rate {
+            if !rate.is_finite() || !(0.0..=1.0).contains(&rate) {
+                return Err(AunError::InvalidInput {
+                    code: None,
+                    detail: "sample_rate must be a finite number between 0.0 and 1.0".into(),
+                });
+            }
             cfg.sample_rate = rate;
         }
         cfg.max_batch_bytes = match config.max_batch_bytes {
-            Some(b) => b.clamp(4_096, 240_000),
+            Some(b) => b.clamp(32_768, 240_000),
             None if has_ingest => 200_000,
             None => cfg.max_batch_bytes,
         };
+        cfg.max_event_bytes = cfg.max_event_bytes.min(cfg.max_batch_bytes.saturating_sub(1_024));
         Ok(Arc::new(Self {
             inner: Telemetry::new(cfg, sink),
         }))
@@ -527,13 +546,17 @@ mod tests {
     }
 
     #[test]
-    fn rejects_non_object_properties_and_cleartext_ingest_url() {
+    fn rejects_invalid_inputs_headers_and_sample_rates() {
         let client = match TelemetryClient::new(test_config(None, None)) {
             Ok(c) => c,
             Err(e) => panic!("unexpected init error: {e:?}"),
         };
         assert!(matches!(
             client.track("screen_view".into(), Some("[1,2,3]".into())),
+            Err(AunError::InvalidInput { .. })
+        ));
+        assert!(matches!(
+            client.track("screen_view".into(), Some(r#"{"nested":{"a":1}}"#.into())),
             Err(AunError::InvalidInput { .. })
         ));
         assert!(
@@ -543,6 +566,35 @@ mod tests {
             ))
             .is_err()
         );
+
+        for bad_rate in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -0.1, 1.5] {
+            let mut cfg = test_config(None, None);
+            cfg.sample_rate = Some(bad_rate);
+            assert!(matches!(
+                TelemetryClient::new(cfg),
+                Err(AunError::InvalidInput { .. })
+            ));
+        }
+
+        let mut bad_hdr = test_config(
+            None,
+            Some("https://videos.api.alummahnow.net/api/telemetry/batches".into()),
+        );
+        bad_hdr.client_header = Some("aun-ios/1.0\r\nX-Injected: 1".into());
+        assert!(matches!(
+            TelemetryClient::new(bad_hdr),
+            Err(AunError::InvalidInput { .. })
+        ));
+
+        let scrubbed = match sanitize_header(
+            "client_header",
+            Some("aun-ios/1.0 user@example.com Bearer secret_token_123456"),
+        ) {
+            Ok(Some(v)) => v,
+            other => panic!("expected scrubbed header, got {other:?}"),
+        };
+        assert!(!scrubbed.contains("user@example.com"));
+        assert!(!scrubbed.contains("secret_token_123456"));
     }
 
     #[tokio::test]

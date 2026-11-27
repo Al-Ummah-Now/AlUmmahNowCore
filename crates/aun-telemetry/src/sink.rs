@@ -77,7 +77,10 @@ impl TelemetrySink for HttpSink {
         for (k, v) in &self.headers {
             rb = rb.header(k, v);
         }
-        let resp = rb.send().await.map_err(|e| {
+        let req = rb
+            .build()
+            .map_err(|e| Error::invalid_input(format!("invalid telemetry request: {e}")))?;
+        let resp = self.client.execute(req).await.map_err(|e| {
             if e.is_timeout() {
                 Error::Network(format!("timeout: {e}"))
             } else {

@@ -12136,12 +12136,12 @@ public struct TelemetryClientConfig: Equatable, Hashable {
      */
     public var bufferPath: String?
     /**
-     * Fraction of sessions whose analytics/QoE/error events are kept (0.0–1.0). Default `1.0`.
+     * Fraction of sessions whose analytics/QoE/error events are kept (0.0–1.0, finite). Default `1.0`.
      * Crash reports are never sampled out.
      */
     public var sampleRate: Double?
     /**
-     * Maximum JSON batch size in bytes (4 096–240 000). Defaults to 200 000 when `ingest_url` is set.
+     * Maximum JSON batch size in bytes (32 768–240 000). Defaults to 200 000 when `ingest_url` is set.
      */
     public var maxBatchBytes: UInt32?
 
@@ -12162,11 +12162,11 @@ public struct TelemetryClientConfig: Equatable, Hashable {
          * Path to the persistent JSON buffer file (e.g. inside the app's cache/support directory).
          */bufferPath: String? = nil, 
         /**
-         * Fraction of sessions whose analytics/QoE/error events are kept (0.0–1.0). Default `1.0`.
+         * Fraction of sessions whose analytics/QoE/error events are kept (0.0–1.0, finite). Default `1.0`.
          * Crash reports are never sampled out.
          */sampleRate: Double? = nil, 
         /**
-         * Maximum JSON batch size in bytes (4 096–240 000). Defaults to 200 000 when `ingest_url` is set.
+         * Maximum JSON batch size in bytes (32 768–240 000). Defaults to 200 000 when `ingest_url` is set.
          */maxBatchBytes: UInt32? = nil) {
         self.app = app
         self.ingestUrl = ingestUrl

@@ -102,6 +102,7 @@ struct Persisted {
 #[derive(Debug)]
 struct State {
     consent: ConsentState,
+    consent_epoch: u64,
     session_id: String,
     sampled_in: bool,
     events: VecDeque<TelemetryEvent>,
@@ -115,6 +116,9 @@ pub struct Telemetry {
     config: TelemetryConfig,
     sink: Arc<dyn TelemetrySink>,
     clock: Arc<dyn Clock>,
+    /// Serialises buffer file reads, writes and deletes across `persist` and `set_consent`.
+    /// Lock ordering: always acquire `io_lock` before `state`.
+    io_lock: Mutex<()>,
     state: Mutex<State>,
     flush_lock: tokio::sync::Mutex<()>,
 }
@@ -193,8 +197,10 @@ impl Telemetry {
             config,
             sink,
             clock,
+            io_lock: Mutex::new(()),
             state: Mutex::new(State {
                 consent: ConsentState::Unknown,
+                consent_epoch: 0,
                 session_id,
                 sampled_in,
                 events: VecDeque::new(),
@@ -204,6 +210,10 @@ impl Telemetry {
             }),
             flush_lock: tokio::sync::Mutex::new(()),
         })
+    }
+
+    fn io_lock(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.io_lock.lock().unwrap_or_else(|p| p.into_inner())
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
@@ -234,8 +244,10 @@ impl Telemetry {
     /// session's breadcrumbs become [`Telemetry::previous_session_breadcrumbs`]). Narrowing it
     /// purges what is no longer allowed, from memory and from disk.
     pub fn set_consent(&self, consent: ConsentState) -> Result<()> {
+        let _io = self.io_lock();
         let previous = {
             let mut st = self.lock();
+            st.consent_epoch = st.consent_epoch.wrapping_add(1);
             std::mem::replace(&mut st.consent, consent)
         };
         if !consent.allows_crash() {
@@ -256,15 +268,15 @@ impl Telemetry {
             return Ok(());
         }
         if !previous.allows_crash() {
-            self.load_persisted()?;
+            self.load_persisted_locked()?;
         }
         if !consent.allows_analytics() {
             self.lock().events.retain(|e| e.kind == EventKind::Crash);
         }
-        self.persist()
+        self.persist_locked()
     }
 
-    fn load_persisted(&self) -> Result<()> {
+    fn load_persisted_locked(&self) -> Result<()> {
         let Some(path) = self.path() else {
             return Ok(());
         };
@@ -293,6 +305,11 @@ impl Telemetry {
     /// Writes the buffer and current breadcrumbs (atomic replace). Call when the app goes to the
     /// background so breadcrumbs survive a crash.
     pub fn persist(&self) -> Result<()> {
+        let _io = self.io_lock();
+        self.persist_locked()
+    }
+
+    fn persist_locked(&self) -> Result<()> {
         let Some(path) = self.path() else {
             return Ok(());
         };
@@ -508,25 +525,39 @@ impl Telemetry {
         self.lock().events.iter().cloned().collect()
     }
 
-    fn next_batch(&self, st: &State) -> Vec<TelemetryEvent> {
+    fn next_batch(&self, st: &mut State) -> (Vec<TelemetryEvent>, u32, u64) {
         let mut batch = Vec::new();
-        let mut bytes = 256usize; // envelope
+        let mut dropped = 0u32;
+        let max_bytes = self.config.max_batch_bytes as usize;
+        let envelope_bytes = 256usize;
+        let mut bytes = envelope_bytes;
+        let mut oversized_ids = HashSet::new();
         for e in st
             .events
             .iter()
             .filter(|e| st.consent.allows(e.kind) && self.sink.accepts(e.kind))
         {
             let size = serde_json::to_vec(e).map(|v| v.len()).unwrap_or(usize::MAX);
+            if envelope_bytes.saturating_add(size) > max_bytes {
+                // Single event alone exceeds the configured batch byte cap: drop it so it never
+                // violates the cap or blocks the rest of the queue.
+                oversized_ids.insert(e.id.clone());
+                dropped += 1;
+                continue;
+            }
             if !batch.is_empty()
                 && (batch.len() >= self.config.max_batch_events as usize
-                    || bytes.saturating_add(size) > self.config.max_batch_bytes as usize)
+                    || bytes.saturating_add(size + 1) > max_bytes)
             {
                 break;
             }
             bytes = bytes.saturating_add(size + 1);
             batch.push(e.clone());
         }
-        batch
+        if !oversized_ids.is_empty() {
+            st.events.retain(|e| !oversized_ids.contains(&e.id));
+        }
+        (batch, dropped, st.consent_epoch)
     }
 
     /// Sends buffered events in batches until the buffer is empty or a send fails. A retryable
@@ -547,10 +578,11 @@ impl Telemetry {
         }
         let mut result = Ok(());
         loop {
-            let batch_events = {
-                let st = self.lock();
-                self.next_batch(&st)
+            let (batch_events, oversized_dropped, epoch) = {
+                let mut st = self.lock();
+                self.next_batch(&mut st)
             };
+            report.dropped += oversized_dropped;
             if batch_events.is_empty() {
                 break;
             }
@@ -561,6 +593,14 @@ impl Telemetry {
                 app: self.config.app.clone(),
                 events: batch_events,
             };
+            // Re-verify consent right before starting network delivery so a concurrent revocation
+            // or narrowing cannot send newly disallowed events.
+            {
+                let st = self.lock();
+                if st.consent_epoch != epoch || !batch.events.iter().all(|e| st.consent.allows(e.kind)) {
+                    break;
+                }
+            }
             match self.sink.send(&batch).await {
                 Ok(()) => {
                     report.sent += ids.len() as u32;

@@ -291,3 +291,51 @@ async fn qoe_summary_is_recorded() {
     assert_eq!(e.properties["rebuffer_count"], PropValue::Int(1));
     assert_eq!(e.properties["rebuffer_ratio"], PropValue::Float(0.1));
 }
+
+#[tokio::test]
+async fn drops_single_event_exceeding_max_batch_bytes() {
+    let sink = Arc::new(Recorder::default());
+    let t = Telemetry::new(
+        TelemetryConfig {
+            max_batch_bytes: 512,
+            ..TelemetryConfig::default()
+        },
+        sink.clone(),
+    );
+    t.set_consent(ConsentState::CrashOnly).unwrap();
+    t.report_crash(CrashReport {
+        kind: "SIGSEGV".into(),
+        message: "huge".into(),
+        stack: Some("x".repeat(2_000)),
+        ..Default::default()
+    });
+    let r = t.flush().await.unwrap();
+    assert_eq!((r.sent, r.dropped, r.remaining), (0, 1, 0));
+    assert!(sink.batches.lock().unwrap().is_empty());
+}
+
+#[test]
+fn concurrent_persist_and_revoke_leaves_no_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("telemetry.json");
+    let t = Telemetry::new(config(&dir), Arc::new(NoopSink));
+    for _ in 0..20 {
+        t.set_consent(ConsentState::Analytics).unwrap();
+        t.track("tap", HashMap::new());
+        let t1 = t.clone();
+        let t2 = t.clone();
+        let h1 = std::thread::spawn(move || {
+            let _ = t1.persist();
+        });
+        let h2 = std::thread::spawn(move || {
+            t2.set_consent(ConsentState::Denied).unwrap();
+        });
+        h1.join().unwrap();
+        h2.join().unwrap();
+        // After Denied finishes (and any in-flight persist completes), final consent is Denied
+        // so the buffer file must not exist if Denied ran last, and calling Denied guarantees removal.
+        if t.consent() == ConsentState::Denied {
+            assert!(!path.exists(), "persist recreated buffer file after Denied");
+        }
+    }
+}
