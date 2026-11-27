@@ -339,3 +339,80 @@ fn concurrent_persist_and_revoke_leaves_no_file() {
         }
     }
 }
+
+#[tokio::test]
+async fn flush_respects_max_batch_bytes_with_large_app_metadata() {
+    let sink = Arc::new(Recorder::default());
+    let cap = 1_024u32;
+    let t = Telemetry::new(
+        TelemetryConfig {
+            app: aun_telemetry::AppInfo {
+                platform: "ios".into(),
+                app_version: "1.0.0-".to_owned() + &"v".repeat(200),
+                os_version: "18.2-".to_owned() + &"o".repeat(200),
+                device_class: "phone".into(),
+                locale: "ar-SA".into(),
+                core_version: String::new(),
+            },
+            max_batch_bytes: cap,
+            ..TelemetryConfig::default()
+        },
+        sink.clone(),
+    );
+    t.set_consent(ConsentState::Analytics).unwrap();
+    for i in 0..5 {
+        let mut props = HashMap::new();
+        props.insert(
+            "screen".into(),
+            PropValue::Text(format!("screen_{i}_") + &"s".repeat(120)),
+        );
+        assert_eq!(t.track("screen_view", props), RecordOutcome::Recorded);
+    }
+    let report = t.flush().await.unwrap();
+    assert_eq!(report.sent, 5);
+    assert_eq!(report.remaining, 0);
+    let batches = sink.batches.lock().unwrap();
+    assert!(batches.len() > 1, "expected split across multiple batches");
+    for batch in batches.iter() {
+        let actual_len = serde_json::to_vec(batch).unwrap().len();
+        assert!(
+            actual_len <= cap as usize,
+            "batch JSON ({actual_len} bytes) exceeded max_batch_bytes ({cap})"
+        );
+    }
+}
+
+#[tokio::test]
+async fn flush_cancels_in_flight_send_when_consent_revoked() {
+    struct BlockingSink {
+        started: tokio::sync::Notify,
+        completed: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl TelemetrySink for BlockingSink {
+        async fn send(&self, _batch: &TelemetryBatch) -> aun_common::Result<()> {
+            self.started.notify_one();
+            std::future::pending::<()>().await;
+            self.completed.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    let sink = Arc::new(BlockingSink {
+        started: tokio::sync::Notify::new(),
+        completed: AtomicUsize::new(0),
+    });
+    let t = Telemetry::new(TelemetryConfig::default(), sink.clone());
+    t.set_consent(ConsentState::Analytics).unwrap();
+    t.track("tap", HashMap::new());
+
+    let t_flush = t.clone();
+    let handle = tokio::spawn(async move { t_flush.flush().await });
+    sink.started.notified().await;
+    t.set_consent(ConsentState::Denied).unwrap();
+    let report = handle.await.unwrap().unwrap();
+    assert_eq!(report.sent, 0);
+    assert_eq!(report.remaining, 0);
+    assert_eq!(sink.completed.load(Ordering::SeqCst), 0);
+}

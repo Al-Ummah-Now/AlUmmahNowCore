@@ -120,6 +120,9 @@ pub struct Telemetry {
     /// Lock ordering: always acquire `io_lock` before `state`.
     io_lock: Mutex<()>,
     state: Mutex<State>,
+    /// Broadcasts `consent_epoch` changes (always sent while holding `state`) so `flush()`
+    /// immediately aborts before or during `sink.send()` when consent is revoked or narrowed.
+    consent_tx: tokio::sync::watch::Sender<u64>,
     flush_lock: tokio::sync::Mutex<()>,
 }
 
@@ -193,6 +196,7 @@ impl Telemetry {
         config.max_batch_events = config.max_batch_events.clamp(1, 1_000);
         let session_id = random_id();
         let sampled_in = session_in_sample(&session_id, config.sample_rate);
+        let (consent_tx, _consent_rx) = tokio::sync::watch::channel(0u64);
         Arc::new(Self {
             config,
             sink,
@@ -208,6 +212,7 @@ impl Telemetry {
                 previous_breadcrumbs: Vec::new(),
                 unsaved: 0,
             }),
+            consent_tx,
             flush_lock: tokio::sync::Mutex::new(()),
         })
     }
@@ -248,6 +253,7 @@ impl Telemetry {
         let previous = {
             let mut st = self.lock();
             st.consent_epoch = st.consent_epoch.wrapping_add(1);
+            let _ = self.consent_tx.send(st.consent_epoch);
             std::mem::replace(&mut st.consent, consent)
         };
         if !consent.allows_crash() {
@@ -525,11 +531,21 @@ impl Telemetry {
         self.lock().events.iter().cloned().collect()
     }
 
-    fn next_batch(&self, st: &mut State) -> (Vec<TelemetryEvent>, u32, u64) {
+    fn envelope_bytes(&self) -> usize {
+        let empty = TelemetryBatch {
+            batch_id: "0".repeat(32),
+            sent_at_ms: i64::MAX,
+            app: self.config.app.clone(),
+            events: Vec::new(),
+        };
+        serde_json::to_vec(&empty).map(|v| v.len()).unwrap_or(512)
+    }
+
+    fn next_batch(&self, st: &mut State) -> (Vec<TelemetryEvent>, u32, tokio::sync::watch::Receiver<u64>) {
         let mut batch = Vec::new();
         let mut dropped = 0u32;
         let max_bytes = self.config.max_batch_bytes as usize;
-        let envelope_bytes = 256usize;
+        let envelope_bytes = self.envelope_bytes();
         let mut bytes = envelope_bytes;
         let mut oversized_ids = HashSet::new();
         for e in st
@@ -539,25 +555,28 @@ impl Telemetry {
         {
             let size = serde_json::to_vec(e).map(|v| v.len()).unwrap_or(usize::MAX);
             if envelope_bytes.saturating_add(size) > max_bytes {
-                // Single event alone exceeds the configured batch byte cap: drop it so it never
-                // violates the cap or blocks the rest of the queue.
+                // Single event plus serialized envelope exceeds the configured batch byte cap:
+                // drop it so it never violates the cap or blocks the rest of the queue.
                 oversized_ids.insert(e.id.clone());
                 dropped += 1;
                 continue;
             }
+            let sep = usize::from(!batch.is_empty());
             if !batch.is_empty()
                 && (batch.len() >= self.config.max_batch_events as usize
-                    || bytes.saturating_add(size + 1) > max_bytes)
+                    || bytes.saturating_add(size + sep) > max_bytes)
             {
                 break;
             }
-            bytes = bytes.saturating_add(size + 1);
+            bytes = bytes.saturating_add(size + sep);
             batch.push(e.clone());
         }
         if !oversized_ids.is_empty() {
             st.events.retain(|e| !oversized_ids.contains(&e.id));
         }
-        (batch, dropped, st.consent_epoch)
+        // Subscribe while still holding `state` so any subsequent `set_consent` marks `consent_rx` changed.
+        let consent_rx = self.consent_tx.subscribe();
+        (batch, dropped, consent_rx)
     }
 
     /// Sends buffered events in batches until the buffer is empty or a send fails. A retryable
@@ -578,7 +597,7 @@ impl Telemetry {
         }
         let mut result = Ok(());
         loop {
-            let (batch_events, oversized_dropped, epoch) = {
+            let (batch_events, oversized_dropped, mut consent_rx) = {
                 let mut st = self.lock();
                 self.next_batch(&mut st)
             };
@@ -593,15 +612,17 @@ impl Telemetry {
                 app: self.config.app.clone(),
                 events: batch_events,
             };
-            // Re-verify consent right before starting network delivery so a concurrent revocation
-            // or narrowing cannot send newly disallowed events.
-            {
-                let st = self.lock();
-                if st.consent_epoch != epoch || !batch.events.iter().all(|e| st.consent.allows(e.kind)) {
+            // Biased select checks consent changes first: if `set_consent` ran after we released
+            // `state`, `consent_rx.changed()` is already ready and `sink.send` is never polled; if
+            // `set_consent` runs mid-flight, the send future is immediately cancelled and dropped.
+            let send_outcome = tokio::select! {
+                biased;
+                _ = consent_rx.changed() => {
                     break;
                 }
-            }
-            match self.sink.send(&batch).await {
+                res = self.sink.send(&batch) => res,
+            };
+            match send_outcome {
                 Ok(()) => {
                     report.sent += ids.len() as u32;
                     self.lock().events.retain(|e| !ids.contains(&e.id));
