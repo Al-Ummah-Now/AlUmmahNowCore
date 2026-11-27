@@ -170,7 +170,8 @@ pub struct Telemetry {
     sink: Arc<dyn TelemetrySink>,
     clock: Arc<dyn Clock>,
     /// Serialises buffer file reads, writes and deletes across `persist` and `set_consent`.
-    /// Lock ordering: `io_lock` → `state` (dropped) → `send_gate` (leaf lock).
+    /// Lock ordering (strict DAG): `send_gate` (read, in poll) → `io_lock` → `state`.
+    /// `send_gate.write()` is only ever acquired with no other locks held.
     io_lock: Mutex<()>,
     state: Mutex<State>,
     /// Monotonically incremented under `state` whenever `set_consent` runs.
@@ -307,47 +308,59 @@ impl Telemetry {
     /// session's breadcrumbs become [`Telemetry::previous_session_breadcrumbs`]). Narrowing it
     /// purges what is no longer allowed, from memory and from disk.
     pub fn set_consent(&self, consent: ConsentState) -> Result<()> {
-        let _io = self.io_lock();
-        let previous = {
-            let mut st = self.lock();
-            let epoch = self.consent_epoch.fetch_add(1, Ordering::AcqRel).wrapping_add(1);
-            let _ = self.consent_tx.send(epoch);
-            std::mem::replace(&mut st.consent, consent)
+        let io_result = {
+            let _io = self.io_lock();
+            let previous = {
+                let mut st = self.lock();
+                let epoch = self.consent_epoch.fetch_add(1, Ordering::AcqRel).wrapping_add(1);
+                let _ = self.consent_tx.send(epoch);
+                std::mem::replace(&mut st.consent, consent)
+            };
+            if !consent.allows_crash() {
+                {
+                    let mut st = self.lock();
+                    st.events.clear();
+                    st.breadcrumbs.clear();
+                    st.previous_breadcrumbs.clear();
+                    st.unsaved = 0;
+                }
+                if let Some(path) = self.path() {
+                    match std::fs::remove_file(&path) {
+                        Ok(()) => Ok(()),
+                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                        Err(e) => Err(e.into()),
+                    }
+                } else {
+                    Ok(())
+                }
+            } else {
+                let load_res = if !previous.allows_crash() {
+                    self.load_persisted_locked()
+                } else {
+                    Ok(())
+                };
+                match load_res {
+                    Err(e) => Err(e),
+                    Ok(()) => {
+                        if !consent.allows_analytics() {
+                            self.lock().events.retain(|e| e.kind == EventKind::Crash);
+                        }
+                        self.persist_locked()
+                    }
+                }
+            }
         };
-        // Barrier: wait for any in-progress single poll step of an older-epoch send on another
-        // thread to finish before returning, ensuring no older-epoch send can start or poll after
-        // this point. Skip when called re-entrantly from inside our own `ConsentGated::poll` on
-        // this thread (which already holds `send_gate.read()`).
+        // Barrier (acquired with ZERO other locks held to preserve strict lock DAG
+        // `send_gate` -> `io_lock` -> `state`): wait for any in-progress single poll step of an
+        // older-epoch send on another thread to finish before returning. Skip when called
+        // re-entrantly from inside our own `ConsentGated::poll` on this thread.
         let self_addr = std::ptr::from_ref(self) as usize;
         let reentrant = ACTIVE_SEND_POLL_OWNER.with(|c| c.get() == self_addr);
         if !reentrant {
             let _barrier = self.send_gate.write().unwrap_or_else(|p| p.into_inner());
             drop(_barrier);
         }
-        if !consent.allows_crash() {
-            {
-                let mut st = self.lock();
-                st.events.clear();
-                st.breadcrumbs.clear();
-                st.previous_breadcrumbs.clear();
-                st.unsaved = 0;
-            }
-            if let Some(path) = self.path() {
-                match std::fs::remove_file(&path) {
-                    Ok(()) => {}
-                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(e) => return Err(e.into()),
-                }
-            }
-            return Ok(());
-        }
-        if !previous.allows_crash() {
-            self.load_persisted_locked()?;
-        }
-        if !consent.allows_analytics() {
-            self.lock().events.retain(|e| e.kind == EventKind::Crash);
-        }
-        self.persist_locked()
+        io_result
     }
 
     fn load_persisted_locked(&self) -> Result<()> {

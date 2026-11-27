@@ -492,8 +492,10 @@ async fn flush_never_starts_send_after_consent_denied_returns() {
     }
 }
 
-#[tokio::test]
-async fn custom_sink_reentrantly_revoking_consent_does_not_deadlock() {
+#[test]
+fn custom_sink_reentrantly_revoking_consent_with_concurrent_caller_does_not_deadlock() {
+    use std::sync::mpsc;
+
     struct ReentrantSink {
         telemetry: std::sync::Mutex<Option<Arc<Telemetry>>>,
     }
@@ -507,19 +509,37 @@ async fn custom_sink_reentrantly_revoking_consent_does_not_deadlock() {
         }
     }
 
-    let sink = Arc::new(ReentrantSink {
-        telemetry: std::sync::Mutex::new(None),
-    });
-    let t = Telemetry::new(TelemetryConfig::default(), sink.clone());
-    *sink.telemetry.lock().unwrap() = Some(t.clone());
-    t.set_consent(ConsentState::Analytics).unwrap();
-    t.track("tap", HashMap::new());
-    t.track("tap", HashMap::new());
+    // Run on a dedicated OS thread with a channel recv_timeout so a synchronous lock deadlock
+    // inside `poll()` fails the test promptly instead of hanging the runtime.
+    let (done_tx, done_rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        for _ in 0..20 {
+            let sink = Arc::new(ReentrantSink {
+                telemetry: std::sync::Mutex::new(None),
+            });
+            let t = Telemetry::new(TelemetryConfig::default(), sink.clone());
+            *sink.telemetry.lock().unwrap() = Some(t.clone());
+            t.set_consent(ConsentState::Analytics).unwrap();
+            t.track("tap", HashMap::new());
+            t.track("tap", HashMap::new());
 
-    let report = tokio::time::timeout(std::time::Duration::from_secs(2), t.flush())
-        .await
-        .expect("re-entrant set_consent inside custom sink deadlocked")
-        .unwrap();
-    assert_eq!(t.consent(), ConsentState::Denied);
-    assert_eq!(report.remaining, 0);
+            let t_ext = t.clone();
+            let ext = std::thread::spawn(move || {
+                let _ = t_ext.set_consent(ConsentState::Denied);
+            });
+            let report = rt.block_on(t.flush()).unwrap();
+            ext.join().unwrap();
+            assert_eq!(t.consent(), ConsentState::Denied);
+            assert_eq!(report.remaining, 0);
+        }
+        let _ = done_tx.send(());
+    });
+    done_rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("re-entrant + concurrent set_consent deadlocked");
 }
