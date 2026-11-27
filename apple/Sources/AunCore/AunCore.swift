@@ -4956,6 +4956,286 @@ public func FfiConverterTypeSyncChangeListener_lower(_ value: SyncChangeListener
 
 
 /**
+ * Consent-gated telemetry and crash reporter. Create one per app and share it.
+ */
+public protocol TelemetryClientProtocol: AnyObject, Sendable {
+    
+    func addBreadcrumb(category: String, message: String, level: TelemetryBreadcrumbLevel) 
+    
+    func breadcrumbs()  -> [TelemetryBreadcrumb]
+    
+    func consent()  -> TelemetryConsentState
+    
+    func flush() async throws  -> TelemetryFlushReport
+    
+    func newSession()  -> String
+    
+    func pendingCount()  -> UInt32
+    
+    func persist() throws 
+    
+    func reportCrash(report: TelemetryCrashReport) throws  -> TelemetryRecordOutcome
+    
+    func sessionId()  -> String
+    
+    func setConsent(consent: TelemetryConsentState) throws 
+    
+    func track(name: String, propertiesJson: String?) throws  -> TelemetryRecordOutcome
+    
+    func trackError(code: String, propertiesJson: String?) throws  -> TelemetryRecordOutcome
+    
+    func trackPlaybackError(videoId: String, code: TelemetryPlaybackErrorCode, fatal: Bool, detail: String)  -> TelemetryRecordOutcome
+    
+    func trackQoe(summary: TelemetryQoeSummary)  -> TelemetryRecordOutcome
+    
+}
+/**
+ * Consent-gated telemetry and crash reporter. Create one per app and share it.
+ */
+open class TelemetryClient: TelemetryClientProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aun_core_fn_clone_telemetryclient(self.handle, $0) }
+    }
+public convenience init(config: TelemetryClientConfig)throws  {
+    let handle =
+        try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_constructor_telemetryclient_new(
+        FfiConverterTypeTelemetryClientConfig_lower(config),$0
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aun_core_fn_free_telemetryclient(handle, $0) }
+    }
+
+    
+
+    
+open func addBreadcrumb(category: String, message: String, level: TelemetryBreadcrumbLevel)  {try! rustCall() {
+    uniffi_aun_core_fn_method_telemetryclient_add_breadcrumb(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(category),
+        FfiConverterString.lower(message),
+        FfiConverterTypeTelemetryBreadcrumbLevel_lower(level),$0
+    )
+}
+}
+    
+open func breadcrumbs() -> [TelemetryBreadcrumb]  {
+    return try!  FfiConverterSequenceTypeTelemetryBreadcrumb.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_telemetryclient_breadcrumbs(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func consent() -> TelemetryConsentState  {
+    return try!  FfiConverterTypeTelemetryConsentState_lift(try! rustCall() {
+    uniffi_aun_core_fn_method_telemetryclient_consent(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func flush()async throws  -> TelemetryFlushReport  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_aun_core_fn_method_telemetryclient_flush(
+                    self.uniffiCloneHandle()
+                    
+                )
+            },
+            pollFunc: ffi_aun_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_aun_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_aun_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeTelemetryFlushReport_lift,
+            errorHandler: FfiConverterTypeAunError_lift
+        )
+}
+    
+open func newSession() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_telemetryclient_new_session(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func pendingCount() -> UInt32  {
+    return try!  FfiConverterUInt32.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_telemetryclient_pending_count(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func persist()throws   {try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_telemetryclient_persist(
+            self.uniffiCloneHandle(),$0
+    )
+}
+}
+    
+open func reportCrash(report: TelemetryCrashReport)throws  -> TelemetryRecordOutcome  {
+    return try  FfiConverterTypeTelemetryRecordOutcome_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_telemetryclient_report_crash(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeTelemetryCrashReport_lower(report),$0
+    )
+})
+}
+    
+open func sessionId() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_aun_core_fn_method_telemetryclient_session_id(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func setConsent(consent: TelemetryConsentState)throws   {try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_telemetryclient_set_consent(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeTelemetryConsentState_lower(consent),$0
+    )
+}
+}
+    
+open func track(name: String, propertiesJson: String?)throws  -> TelemetryRecordOutcome  {
+    return try  FfiConverterTypeTelemetryRecordOutcome_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_telemetryclient_track(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(name),
+        FfiConverterOptionString.lower(propertiesJson),$0
+    )
+})
+}
+    
+open func trackError(code: String, propertiesJson: String?)throws  -> TelemetryRecordOutcome  {
+    return try  FfiConverterTypeTelemetryRecordOutcome_lift(try rustCallWithError(FfiConverterTypeAunError_lift) {
+    uniffi_aun_core_fn_method_telemetryclient_track_error(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(code),
+        FfiConverterOptionString.lower(propertiesJson),$0
+    )
+})
+}
+    
+open func trackPlaybackError(videoId: String, code: TelemetryPlaybackErrorCode, fatal: Bool, detail: String) -> TelemetryRecordOutcome  {
+    return try!  FfiConverterTypeTelemetryRecordOutcome_lift(try! rustCall() {
+    uniffi_aun_core_fn_method_telemetryclient_track_playback_error(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(videoId),
+        FfiConverterTypeTelemetryPlaybackErrorCode_lower(code),
+        FfiConverterBool.lower(fatal),
+        FfiConverterString.lower(detail),$0
+    )
+})
+}
+    
+open func trackQoe(summary: TelemetryQoeSummary) -> TelemetryRecordOutcome  {
+    return try!  FfiConverterTypeTelemetryRecordOutcome_lift(try! rustCall() {
+    uniffi_aun_core_fn_method_telemetryclient_track_qoe(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeTelemetryQoeSummary_lower(summary),$0
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTelemetryClient: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = TelemetryClient
+
+    public static func lift(_ handle: UInt64) throws -> TelemetryClient {
+        return TelemetryClient(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: TelemetryClient) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TelemetryClient {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: TelemetryClient, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTelemetryClient_lift(_ handle: UInt64) throws -> TelemetryClient {
+    return try FfiConverterTypeTelemetryClient.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTelemetryClient_lower(_ value: TelemetryClient) -> UInt64 {
+    return FfiConverterTypeTelemetryClient.lower(value)
+}
+
+
+
+
+
+
+/**
  * Supplies tokens to the API client. `aun-auth`'s `AuthManager` provides one; apps can also
  * implement it natively. Called from a background thread.
  */
@@ -11688,6 +11968,552 @@ public func FfiConverterTypeSyncWatchState_lower(_ value: SyncWatchState) -> Rus
 
 
 /**
+ * Static app and device context attached to every batch (never per-user identifiers).
+ */
+public struct TelemetryAppInfo: Equatable, Hashable {
+    /**
+     * e.g. `ios`, `macos`, `tvos`, `android`, `windows`, `linux`.
+     */
+    public var platform: String
+    public var appVersion: String
+    public var osVersion: String
+    /**
+     * `phone`, `tablet`, `tv`, `desktop`, `car`.
+     */
+    public var deviceClass: String
+    public var locale: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * e.g. `ios`, `macos`, `tvos`, `android`, `windows`, `linux`.
+         */platform: String, appVersion: String, osVersion: String, 
+        /**
+         * `phone`, `tablet`, `tv`, `desktop`, `car`.
+         */deviceClass: String, locale: String) {
+        self.platform = platform
+        self.appVersion = appVersion
+        self.osVersion = osVersion
+        self.deviceClass = deviceClass
+        self.locale = locale
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension TelemetryAppInfo: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTelemetryAppInfo: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TelemetryAppInfo {
+        return
+            try TelemetryAppInfo(
+                platform: FfiConverterString.read(from: &buf), 
+                appVersion: FfiConverterString.read(from: &buf), 
+                osVersion: FfiConverterString.read(from: &buf), 
+                deviceClass: FfiConverterString.read(from: &buf), 
+                locale: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TelemetryAppInfo, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.platform, into: &buf)
+        FfiConverterString.write(value.appVersion, into: &buf)
+        FfiConverterString.write(value.osVersion, into: &buf)
+        FfiConverterString.write(value.deviceClass, into: &buf)
+        FfiConverterString.write(value.locale, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTelemetryAppInfo_lift(_ buf: RustBuffer) throws -> TelemetryAppInfo {
+    return try FfiConverterTypeTelemetryAppInfo.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTelemetryAppInfo_lower(_ value: TelemetryAppInfo) -> RustBuffer {
+    return FfiConverterTypeTelemetryAppInfo.lower(value)
+}
+
+
+/**
+ * One breadcrumb entry in the ring buffer.
+ */
+public struct TelemetryBreadcrumb: Equatable, Hashable {
+    public var timestampMs: Int64
+    public var category: String
+    public var message: String
+    public var level: TelemetryBreadcrumbLevel
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(timestampMs: Int64, category: String, message: String, level: TelemetryBreadcrumbLevel) {
+        self.timestampMs = timestampMs
+        self.category = category
+        self.message = message
+        self.level = level
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension TelemetryBreadcrumb: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTelemetryBreadcrumb: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TelemetryBreadcrumb {
+        return
+            try TelemetryBreadcrumb(
+                timestampMs: FfiConverterInt64.read(from: &buf), 
+                category: FfiConverterString.read(from: &buf), 
+                message: FfiConverterString.read(from: &buf), 
+                level: FfiConverterTypeTelemetryBreadcrumbLevel.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TelemetryBreadcrumb, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.timestampMs, into: &buf)
+        FfiConverterString.write(value.category, into: &buf)
+        FfiConverterString.write(value.message, into: &buf)
+        FfiConverterTypeTelemetryBreadcrumbLevel.write(value.level, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTelemetryBreadcrumb_lift(_ buf: RustBuffer) throws -> TelemetryBreadcrumb {
+    return try FfiConverterTypeTelemetryBreadcrumb.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTelemetryBreadcrumb_lower(_ value: TelemetryBreadcrumb) -> RustBuffer {
+    return FfiConverterTypeTelemetryBreadcrumb.lower(value)
+}
+
+
+/**
+ * Configuration for [`TelemetryClient`].
+ */
+public struct TelemetryClientConfig: Equatable, Hashable {
+    public var app: TelemetryAppInfo
+    /**
+     * HTTPS ingest endpoint (e.g. `https://videos.api.alummahnow.net/api/telemetry/batches`).
+     * When `None`, events are discarded by a no-op sink.
+     */
+    public var ingestUrl: String?
+    /**
+     * Optional User-Agent header for HTTP delivery.
+     */
+    public var userAgent: String?
+    /**
+     * Optional `X-AUN-Client` header value (e.g. `aun-ios/1.2.0 (iOS 18.2)`).
+     */
+    public var clientHeader: String?
+    /**
+     * Path to the persistent JSON buffer file (e.g. inside the app's cache/support directory).
+     */
+    public var bufferPath: String?
+    /**
+     * Fraction of sessions whose analytics/QoE/error events are kept (0.0–1.0). Default `1.0`.
+     * Crash reports are never sampled out.
+     */
+    public var sampleRate: Double?
+    /**
+     * Maximum JSON batch size in bytes (4 096–240 000). Defaults to 200 000 when `ingest_url` is set.
+     */
+    public var maxBatchBytes: UInt32?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(app: TelemetryAppInfo, 
+        /**
+         * HTTPS ingest endpoint (e.g. `https://videos.api.alummahnow.net/api/telemetry/batches`).
+         * When `None`, events are discarded by a no-op sink.
+         */ingestUrl: String? = nil, 
+        /**
+         * Optional User-Agent header for HTTP delivery.
+         */userAgent: String? = nil, 
+        /**
+         * Optional `X-AUN-Client` header value (e.g. `aun-ios/1.2.0 (iOS 18.2)`).
+         */clientHeader: String? = nil, 
+        /**
+         * Path to the persistent JSON buffer file (e.g. inside the app's cache/support directory).
+         */bufferPath: String? = nil, 
+        /**
+         * Fraction of sessions whose analytics/QoE/error events are kept (0.0–1.0). Default `1.0`.
+         * Crash reports are never sampled out.
+         */sampleRate: Double? = nil, 
+        /**
+         * Maximum JSON batch size in bytes (4 096–240 000). Defaults to 200 000 when `ingest_url` is set.
+         */maxBatchBytes: UInt32? = nil) {
+        self.app = app
+        self.ingestUrl = ingestUrl
+        self.userAgent = userAgent
+        self.clientHeader = clientHeader
+        self.bufferPath = bufferPath
+        self.sampleRate = sampleRate
+        self.maxBatchBytes = maxBatchBytes
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension TelemetryClientConfig: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTelemetryClientConfig: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TelemetryClientConfig {
+        return
+            try TelemetryClientConfig(
+                app: FfiConverterTypeTelemetryAppInfo.read(from: &buf), 
+                ingestUrl: FfiConverterOptionString.read(from: &buf), 
+                userAgent: FfiConverterOptionString.read(from: &buf), 
+                clientHeader: FfiConverterOptionString.read(from: &buf), 
+                bufferPath: FfiConverterOptionString.read(from: &buf), 
+                sampleRate: FfiConverterOptionDouble.read(from: &buf), 
+                maxBatchBytes: FfiConverterOptionUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TelemetryClientConfig, into buf: inout [UInt8]) {
+        FfiConverterTypeTelemetryAppInfo.write(value.app, into: &buf)
+        FfiConverterOptionString.write(value.ingestUrl, into: &buf)
+        FfiConverterOptionString.write(value.userAgent, into: &buf)
+        FfiConverterOptionString.write(value.clientHeader, into: &buf)
+        FfiConverterOptionString.write(value.bufferPath, into: &buf)
+        FfiConverterOptionDouble.write(value.sampleRate, into: &buf)
+        FfiConverterOptionUInt32.write(value.maxBatchBytes, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTelemetryClientConfig_lift(_ buf: RustBuffer) throws -> TelemetryClientConfig {
+    return try FfiConverterTypeTelemetryClientConfig.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTelemetryClientConfig_lower(_ value: TelemetryClientConfig) -> RustBuffer {
+    return FfiConverterTypeTelemetryClientConfig.lower(value)
+}
+
+
+/**
+ * A crash report captured by the native platform layer.
+ */
+public struct TelemetryCrashReport: Equatable, Hashable {
+    /**
+     * Exception or signal type, e.g. `SIGSEGV`, `NSInvalidArgumentException`.
+     */
+    public var kind: String
+    public var message: String
+    /**
+     * Symbolicated or raw stack trace, if available (scrubbed and truncated in core).
+     */
+    public var stack: String?
+    /**
+     * Unix timestamp in milliseconds when the crash occurred; `0` if unknown.
+     */
+    public var occurredAtMs: Int64
+    /**
+     * True when reported on the next launch: attaches the previous session's persisted breadcrumbs.
+     */
+    public var fromPreviousSession: Bool
+    /**
+     * Optional JSON object of flat primitive properties (`string`, `number`, `bool`).
+     */
+    public var propertiesJson: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Exception or signal type, e.g. `SIGSEGV`, `NSInvalidArgumentException`.
+         */kind: String, message: String, 
+        /**
+         * Symbolicated or raw stack trace, if available (scrubbed and truncated in core).
+         */stack: String? = nil, 
+        /**
+         * Unix timestamp in milliseconds when the crash occurred; `0` if unknown.
+         */occurredAtMs: Int64 = Int64(0), 
+        /**
+         * True when reported on the next launch: attaches the previous session's persisted breadcrumbs.
+         */fromPreviousSession: Bool = false, 
+        /**
+         * Optional JSON object of flat primitive properties (`string`, `number`, `bool`).
+         */propertiesJson: String? = nil) {
+        self.kind = kind
+        self.message = message
+        self.stack = stack
+        self.occurredAtMs = occurredAtMs
+        self.fromPreviousSession = fromPreviousSession
+        self.propertiesJson = propertiesJson
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension TelemetryCrashReport: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTelemetryCrashReport: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TelemetryCrashReport {
+        return
+            try TelemetryCrashReport(
+                kind: FfiConverterString.read(from: &buf), 
+                message: FfiConverterString.read(from: &buf), 
+                stack: FfiConverterOptionString.read(from: &buf), 
+                occurredAtMs: FfiConverterInt64.read(from: &buf), 
+                fromPreviousSession: FfiConverterBool.read(from: &buf), 
+                propertiesJson: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TelemetryCrashReport, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterString.write(value.message, into: &buf)
+        FfiConverterOptionString.write(value.stack, into: &buf)
+        FfiConverterInt64.write(value.occurredAtMs, into: &buf)
+        FfiConverterBool.write(value.fromPreviousSession, into: &buf)
+        FfiConverterOptionString.write(value.propertiesJson, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTelemetryCrashReport_lift(_ buf: RustBuffer) throws -> TelemetryCrashReport {
+    return try FfiConverterTypeTelemetryCrashReport.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTelemetryCrashReport_lower(_ value: TelemetryCrashReport) -> RustBuffer {
+    return FfiConverterTypeTelemetryCrashReport.lower(value)
+}
+
+
+/**
+ * Result of flushing buffered telemetry batches.
+ */
+public struct TelemetryFlushReport: Equatable, Hashable {
+    public var sent: UInt32
+    public var dropped: UInt32
+    public var unsupported: UInt32
+    public var remaining: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(sent: UInt32, dropped: UInt32, unsupported: UInt32, remaining: UInt32) {
+        self.sent = sent
+        self.dropped = dropped
+        self.unsupported = unsupported
+        self.remaining = remaining
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension TelemetryFlushReport: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTelemetryFlushReport: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TelemetryFlushReport {
+        return
+            try TelemetryFlushReport(
+                sent: FfiConverterUInt32.read(from: &buf), 
+                dropped: FfiConverterUInt32.read(from: &buf), 
+                unsupported: FfiConverterUInt32.read(from: &buf), 
+                remaining: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TelemetryFlushReport, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.sent, into: &buf)
+        FfiConverterUInt32.write(value.dropped, into: &buf)
+        FfiConverterUInt32.write(value.unsupported, into: &buf)
+        FfiConverterUInt32.write(value.remaining, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTelemetryFlushReport_lift(_ buf: RustBuffer) throws -> TelemetryFlushReport {
+    return try FfiConverterTypeTelemetryFlushReport.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTelemetryFlushReport_lower(_ value: TelemetryFlushReport) -> RustBuffer {
+    return FfiConverterTypeTelemetryFlushReport.lower(value)
+}
+
+
+/**
+ * End-of-session playback QoE metrics.
+ */
+public struct TelemetryQoeSummary: Equatable, Hashable {
+    public var videoId: String
+    /**
+     * `vod`, `live`, or `offline`.
+     */
+    public var playbackType: String
+    public var startupTimeMs: UInt64?
+    public var playedMs: UInt64
+    public var rebufferCount: UInt32
+    public var rebufferMs: UInt64
+    public var rebufferRatio: Double
+    public var seekCount: UInt32
+    public var seekBufferMs: UInt64
+    public var bitrateSwitches: UInt32
+    public var avgBitrateBps: UInt64?
+    public var maxBitrateBps: UInt64?
+    public var errorCount: UInt32
+    public var fatalError: TelemetryPlaybackErrorCode?
+    public var exitedBeforeStart: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(videoId: String, 
+        /**
+         * `vod`, `live`, or `offline`.
+         */playbackType: String, startupTimeMs: UInt64? = nil, playedMs: UInt64, rebufferCount: UInt32, rebufferMs: UInt64, rebufferRatio: Double, seekCount: UInt32, seekBufferMs: UInt64, bitrateSwitches: UInt32, avgBitrateBps: UInt64? = nil, maxBitrateBps: UInt64? = nil, errorCount: UInt32, fatalError: TelemetryPlaybackErrorCode? = nil, exitedBeforeStart: Bool) {
+        self.videoId = videoId
+        self.playbackType = playbackType
+        self.startupTimeMs = startupTimeMs
+        self.playedMs = playedMs
+        self.rebufferCount = rebufferCount
+        self.rebufferMs = rebufferMs
+        self.rebufferRatio = rebufferRatio
+        self.seekCount = seekCount
+        self.seekBufferMs = seekBufferMs
+        self.bitrateSwitches = bitrateSwitches
+        self.avgBitrateBps = avgBitrateBps
+        self.maxBitrateBps = maxBitrateBps
+        self.errorCount = errorCount
+        self.fatalError = fatalError
+        self.exitedBeforeStart = exitedBeforeStart
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension TelemetryQoeSummary: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTelemetryQoeSummary: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TelemetryQoeSummary {
+        return
+            try TelemetryQoeSummary(
+                videoId: FfiConverterString.read(from: &buf), 
+                playbackType: FfiConverterString.read(from: &buf), 
+                startupTimeMs: FfiConverterOptionUInt64.read(from: &buf), 
+                playedMs: FfiConverterUInt64.read(from: &buf), 
+                rebufferCount: FfiConverterUInt32.read(from: &buf), 
+                rebufferMs: FfiConverterUInt64.read(from: &buf), 
+                rebufferRatio: FfiConverterDouble.read(from: &buf), 
+                seekCount: FfiConverterUInt32.read(from: &buf), 
+                seekBufferMs: FfiConverterUInt64.read(from: &buf), 
+                bitrateSwitches: FfiConverterUInt32.read(from: &buf), 
+                avgBitrateBps: FfiConverterOptionUInt64.read(from: &buf), 
+                maxBitrateBps: FfiConverterOptionUInt64.read(from: &buf), 
+                errorCount: FfiConverterUInt32.read(from: &buf), 
+                fatalError: FfiConverterOptionTypeTelemetryPlaybackErrorCode.read(from: &buf), 
+                exitedBeforeStart: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TelemetryQoeSummary, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.videoId, into: &buf)
+        FfiConverterString.write(value.playbackType, into: &buf)
+        FfiConverterOptionUInt64.write(value.startupTimeMs, into: &buf)
+        FfiConverterUInt64.write(value.playedMs, into: &buf)
+        FfiConverterUInt32.write(value.rebufferCount, into: &buf)
+        FfiConverterUInt64.write(value.rebufferMs, into: &buf)
+        FfiConverterDouble.write(value.rebufferRatio, into: &buf)
+        FfiConverterUInt32.write(value.seekCount, into: &buf)
+        FfiConverterUInt64.write(value.seekBufferMs, into: &buf)
+        FfiConverterUInt32.write(value.bitrateSwitches, into: &buf)
+        FfiConverterOptionUInt64.write(value.avgBitrateBps, into: &buf)
+        FfiConverterOptionUInt64.write(value.maxBitrateBps, into: &buf)
+        FfiConverterUInt32.write(value.errorCount, into: &buf)
+        FfiConverterOptionTypeTelemetryPlaybackErrorCode.write(value.fatalError, into: &buf)
+        FfiConverterBool.write(value.exitedBeforeStart, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTelemetryQoeSummary_lift(_ buf: RustBuffer) throws -> TelemetryQoeSummary {
+    return try FfiConverterTypeTelemetryQoeSummary.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTelemetryQoeSummary_lower(_ value: TelemetryQoeSummary) -> RustBuffer {
+    return FfiConverterTypeTelemetryQoeSummary.lower(value)
+}
+
+
+/**
  * A half-open range of UTF-16 code units, the unit `NSString`, Kotlin and C# strings index by.
  */
 public struct TextRange: Equatable, Hashable {
@@ -14879,6 +15705,396 @@ public func FfiConverterTypeSyncChangeKind_lower(_ value: SyncChangeKind) -> Rus
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Breadcrumb severity level.
+ */
+
+public enum TelemetryBreadcrumbLevel: Equatable, Hashable {
+    
+    case debug
+    case info
+    case warning
+    case error
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension TelemetryBreadcrumbLevel: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTelemetryBreadcrumbLevel: FfiConverterRustBuffer {
+    typealias SwiftType = TelemetryBreadcrumbLevel
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TelemetryBreadcrumbLevel {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .debug
+        
+        case 2: return .info
+        
+        case 3: return .warning
+        
+        case 4: return .error
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: TelemetryBreadcrumbLevel, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .debug:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .info:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .warning:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .error:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTelemetryBreadcrumbLevel_lift(_ buf: RustBuffer) throws -> TelemetryBreadcrumbLevel {
+    return try FfiConverterTypeTelemetryBreadcrumbLevel.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTelemetryBreadcrumbLevel_lower(_ value: TelemetryBreadcrumbLevel) -> RustBuffer {
+    return FfiConverterTypeTelemetryBreadcrumbLevel.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * The user's telemetry consent choice. Defaults to [`TelemetryConsentState::Unknown`] (off).
+ */
+
+public enum TelemetryConsentState: Equatable, Hashable {
+    
+    /**
+     * Not asked yet: nothing is recorded, stored or sent.
+     */
+    case unknown
+    /**
+     * Declined: nothing is recorded, stored or sent.
+     */
+    case denied
+    /**
+     * Crash reports and their breadcrumbs only.
+     */
+    case crashOnly
+    /**
+     * Product analytics, QoE and handled errors, plus crash reports.
+     */
+    case analytics
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension TelemetryConsentState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTelemetryConsentState: FfiConverterRustBuffer {
+    typealias SwiftType = TelemetryConsentState
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TelemetryConsentState {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .unknown
+        
+        case 2: return .denied
+        
+        case 3: return .crashOnly
+        
+        case 4: return .analytics
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: TelemetryConsentState, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .unknown:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .denied:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .crashOnly:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .analytics:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTelemetryConsentState_lift(_ buf: RustBuffer) throws -> TelemetryConsentState {
+    return try FfiConverterTypeTelemetryConsentState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTelemetryConsentState_lower(_ value: TelemetryConsentState) -> RustBuffer {
+    return FfiConverterTypeTelemetryConsentState.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Stable playback error codes (`playback_error.code`).
+ */
+
+public enum TelemetryPlaybackErrorCode: Equatable, Hashable {
+    
+    case network
+    case timeout
+    case sourceNotFound
+    case forbidden
+    case decode
+    case drm
+    case unsupportedFormat
+    case renderer
+    case unknown
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension TelemetryPlaybackErrorCode: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTelemetryPlaybackErrorCode: FfiConverterRustBuffer {
+    typealias SwiftType = TelemetryPlaybackErrorCode
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TelemetryPlaybackErrorCode {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .network
+        
+        case 2: return .timeout
+        
+        case 3: return .sourceNotFound
+        
+        case 4: return .forbidden
+        
+        case 5: return .decode
+        
+        case 6: return .drm
+        
+        case 7: return .unsupportedFormat
+        
+        case 8: return .renderer
+        
+        case 9: return .unknown
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: TelemetryPlaybackErrorCode, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .network:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .timeout:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .sourceNotFound:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .forbidden:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .decode:
+            writeInt(&buf, Int32(5))
+        
+        
+        case .drm:
+            writeInt(&buf, Int32(6))
+        
+        
+        case .unsupportedFormat:
+            writeInt(&buf, Int32(7))
+        
+        
+        case .renderer:
+            writeInt(&buf, Int32(8))
+        
+        
+        case .unknown:
+            writeInt(&buf, Int32(9))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTelemetryPlaybackErrorCode_lift(_ buf: RustBuffer) throws -> TelemetryPlaybackErrorCode {
+    return try FfiConverterTypeTelemetryPlaybackErrorCode.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTelemetryPlaybackErrorCode_lower(_ value: TelemetryPlaybackErrorCode) -> RustBuffer {
+    return FfiConverterTypeTelemetryPlaybackErrorCode.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Outcome of recording a telemetry event or crash report.
+ */
+
+public enum TelemetryRecordOutcome: Equatable, Hashable {
+    
+    case recorded
+    case noConsent
+    case sampledOut
+    case tooLarge
+    case invalidName
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension TelemetryRecordOutcome: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTelemetryRecordOutcome: FfiConverterRustBuffer {
+    typealias SwiftType = TelemetryRecordOutcome
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TelemetryRecordOutcome {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .recorded
+        
+        case 2: return .noConsent
+        
+        case 3: return .sampledOut
+        
+        case 4: return .tooLarge
+        
+        case 5: return .invalidName
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: TelemetryRecordOutcome, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .recorded:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .noConsent:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .sampledOut:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .tooLarge:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .invalidName:
+            writeInt(&buf, Int32(5))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTelemetryRecordOutcome_lift(_ buf: RustBuffer) throws -> TelemetryRecordOutcome {
+    return try FfiConverterTypeTelemetryRecordOutcome.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTelemetryRecordOutcome_lower(_ value: TelemetryRecordOutcome) -> RustBuffer {
+    return FfiConverterTypeTelemetryRecordOutcome.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
 public enum UpdatePromptKind: Equatable, Hashable {
     
@@ -15696,6 +16912,30 @@ fileprivate struct FfiConverterOptionTypeShortLinkTarget: FfiConverterRustBuffer
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeShortLinkTarget.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeTelemetryPlaybackErrorCode: FfiConverterRustBuffer {
+    typealias SwiftType = TelemetryPlaybackErrorCode?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeTelemetryPlaybackErrorCode.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeTelemetryPlaybackErrorCode.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -16669,6 +17909,31 @@ fileprivate struct FfiConverterSequenceTypeSyncNote: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeSyncNote.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeTelemetryBreadcrumb: FfiConverterRustBuffer {
+    typealias SwiftType = [TelemetryBreadcrumb]
+
+    public static func write(_ value: [TelemetryBreadcrumb], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeTelemetryBreadcrumb.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [TelemetryBreadcrumb] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [TelemetryBreadcrumb]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeTelemetryBreadcrumb.read(from: &buf))
         }
         return seq
     }
@@ -18274,6 +19539,48 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aun_core_checksum_method_syncchangelistener_on_changed() != 55964) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aun_core_checksum_method_telemetryclient_add_breadcrumb() != 22204) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_telemetryclient_breadcrumbs() != 55411) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_telemetryclient_consent() != 41940) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_telemetryclient_flush() != 44399) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_telemetryclient_new_session() != 37080) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_telemetryclient_pending_count() != 22500) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_telemetryclient_persist() != 63625) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_telemetryclient_report_crash() != 45689) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_telemetryclient_session_id() != 10437) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_telemetryclient_set_consent() != 3877) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_telemetryclient_track() != 13559) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_telemetryclient_track_error() != 28144) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_telemetryclient_track_playback_error() != 42350) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_method_telemetryclient_track_qoe() != 1415) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aun_core_checksum_method_updatechecker_allowed_download_url() != 6449) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -18404,6 +19711,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_constructor_offlinesyncengine_open() != 16548) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aun_core_checksum_constructor_telemetryclient_new() != 38006) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aun_core_checksum_constructor_updatechecker_new() != 62479) {

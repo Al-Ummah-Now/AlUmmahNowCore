@@ -35,6 +35,7 @@ aun-player.workspace = true
 aun-sync.workspace = true
 aun-media = { workspace = true, features = ["http-download"] }
 aun-search.workspace = true
+aun-telemetry.workspace = true
 aun-updates.workspace = true
 serde.workspace = true
 tracing.workspace = true

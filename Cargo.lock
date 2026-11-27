@@ -199,6 +199,7 @@ dependencies = [
  "aun-player",
  "aun-search",
  "aun-sync",
+ "aun-telemetry",
  "aun-updates",
  "aun-upload",
  "reqwest 0.13.5",
