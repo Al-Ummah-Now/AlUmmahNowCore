@@ -494,17 +494,27 @@ async fn flush_never_starts_send_after_consent_denied_returns() {
 
 #[test]
 fn custom_sink_reentrantly_revoking_consent_with_concurrent_caller_does_not_deadlock() {
+    use std::sync::atomic::AtomicBool;
     use std::sync::mpsc;
 
     struct ReentrantSink {
         telemetry: std::sync::Mutex<Option<Arc<Telemetry>>>,
+        entered_tx: std::sync::Mutex<Option<mpsc::Sender<()>>>,
+        reentered: Arc<AtomicBool>,
     }
 
     #[async_trait::async_trait]
     impl TelemetrySink for ReentrantSink {
         async fn send(&self, _batch: &TelemetryBatch) -> aun_common::Result<()> {
+            if let Some(tx) = self.entered_tx.lock().unwrap().take() {
+                let _ = tx.send(());
+            }
+            // Give the external thread time to enter `set_consent(Denied)` and contend on
+            // `io_lock` / `send_gate` while this poll holds `send_gate.read()`.
+            std::thread::sleep(std::time::Duration::from_millis(5));
             let t = self.telemetry.lock().unwrap().clone().unwrap();
             t.set_consent(ConsentState::Denied).unwrap();
+            self.reentered.store(true, Ordering::SeqCst);
             Ok(())
         }
     }
@@ -518,9 +528,13 @@ fn custom_sink_reentrantly_revoking_consent_with_concurrent_caller_does_not_dead
             .enable_all()
             .build()
             .unwrap();
-        for _ in 0..20 {
+        for _ in 0..10 {
+            let (entered_tx, entered_rx) = mpsc::channel();
+            let reentered = Arc::new(AtomicBool::new(false));
             let sink = Arc::new(ReentrantSink {
                 telemetry: std::sync::Mutex::new(None),
+                entered_tx: std::sync::Mutex::new(Some(entered_tx)),
+                reentered: reentered.clone(),
             });
             let t = Telemetry::new(TelemetryConfig::default(), sink.clone());
             *sink.telemetry.lock().unwrap() = Some(t.clone());
@@ -530,10 +544,17 @@ fn custom_sink_reentrantly_revoking_consent_with_concurrent_caller_does_not_dead
 
             let t_ext = t.clone();
             let ext = std::thread::spawn(move || {
-                let _ = t_ext.set_consent(ConsentState::Denied);
+                // Only revoke externally once `ReentrantSink::send` is actively inside `poll()`
+                // holding `send_gate.read()`, deterministically exercising the contested lock order.
+                entered_rx.recv().unwrap();
+                t_ext.set_consent(ConsentState::Denied).unwrap();
             });
             let report = rt.block_on(t.flush()).unwrap();
             ext.join().unwrap();
+            assert!(
+                reentered.load(Ordering::SeqCst),
+                "sink must have been polled and re-entered set_consent"
+            );
             assert_eq!(t.consent(), ConsentState::Denied);
             assert_eq!(report.remaining, 0);
         }
