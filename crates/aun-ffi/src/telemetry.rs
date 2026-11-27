@@ -343,13 +343,15 @@ impl TelemetryClient {
             }
             None => Arc::new(NoopSink),
         };
+        let clean_meta =
+            |s: &str| aun_telemetry::scrub::truncate(&aun_telemetry::scrub::scrub_text(s.trim()), 64);
         let mut cfg = TelemetryConfig {
             app: AppInfo {
-                platform: config.app.platform,
-                app_version: config.app.app_version,
-                os_version: config.app.os_version,
-                device_class: config.app.device_class,
-                locale: config.app.locale,
+                platform: clean_meta(&config.app.platform),
+                app_version: clean_meta(&config.app.app_version),
+                os_version: clean_meta(&config.app.os_version),
+                device_class: clean_meta(&config.app.device_class),
+                locale: clean_meta(&config.app.locale),
                 core_version: String::new(),
             },
             buffer_path: config.buffer_path,
