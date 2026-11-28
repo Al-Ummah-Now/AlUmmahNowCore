@@ -415,7 +415,7 @@ impl Telemetry {
         let parent = path
             .parent()
             .ok_or_else(|| Error::Storage("telemetry buffer path has no parent".into()))?;
-        std::fs::create_dir_all(parent)?;
+        create_private_dir_all(parent)?;
         let base_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("telemetry");
         let tmp = write_private_temp_file(parent, base_name, &bytes)?;
         if let Err(e) = std::fs::rename(&tmp, &path) {
@@ -734,8 +734,35 @@ impl Telemetry {
     }
 }
 
+fn create_private_dir_all(path: &std::path::Path) -> std::io::Result<()> {
+    let mut builder = std::fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(path)
+}
+
 fn is_name_too_long(err: &std::io::Error) -> bool {
     err.kind() == std::io::ErrorKind::InvalidFilename || matches!(err.raw_os_error(), Some(36 | 63 | 78))
+}
+
+fn format_temp_name(base_name: &str, pid: u32, seq: u64, tier: u8) -> String {
+    match tier {
+        0 => {
+            let suffix = format!(".{pid}.{seq:x}.tmp");
+            if base_name.len() + 1 + suffix.len() <= 255 {
+                format!(".{base_name}{suffix}")
+            } else {
+                format!(".aun-tel{suffix}")
+            }
+        }
+        1 => format!(".aun-tel.{pid}.{seq:x}.tmp"),
+        // Fits even POSIX NAME_MAX = 14 filesystems (e.g. ".t0" is 3 bytes).
+        _ => format!(".t{seq:x}"),
+    }
 }
 
 fn write_private_temp_file(
@@ -749,16 +776,10 @@ fn write_private_temp_file(
     static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
 
     let pid = std::process::id();
-    let mut use_short_prefix = false;
-    for _ in 0..16 {
+    let mut tier: u8 = 0;
+    for _ in 0..24 {
         let seq = TMP_SEQ.fetch_add(1, Ordering::Relaxed);
-        let suffix = format!(".{pid}.{seq:x}.tmp");
-        let file_name = if !use_short_prefix && base_name.len() + 1 + suffix.len() <= 255 {
-            format!(".{base_name}{suffix}")
-        } else {
-            use_short_prefix = true;
-            format!(".aun-tel{suffix}")
-        };
+        let file_name = format_temp_name(base_name, pid, seq, tier);
         let tmp = parent.join(file_name);
         let mut opts = std::fs::OpenOptions::new();
         opts.write(true).create_new(true);
@@ -777,8 +798,8 @@ fn write_private_temp_file(
                 return Ok(tmp);
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(e) if !use_short_prefix && is_name_too_long(&e) => {
-                use_short_prefix = true;
+            Err(e) if tier < 2 && is_name_too_long(&e) => {
+                tier += 1;
                 continue;
             }
             Err(e) => return Err(e),
@@ -842,6 +863,11 @@ mod tests {
         let c = write_private_temp_file(&dir, &long_name, b"{}").unwrap();
         assert!(c.exists());
         assert!(c.file_name().unwrap().len() <= 255);
+        let compact = format_temp_name("telemetry.json", 12345, 0, 2);
+        assert!(
+            compact.len() <= 14,
+            "compact fallback must fit NAME_MAX=14: {compact}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
