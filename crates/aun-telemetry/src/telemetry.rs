@@ -421,7 +421,7 @@ impl Telemetry {
             path.file_name().and_then(|n| n.to_str()).unwrap_or("telemetry"),
             std::process::id()
         ));
-        std::fs::write(&tmp, &bytes)?;
+        write_private_file(&tmp, &bytes)?;
         if let Err(e) = std::fs::rename(&tmp, &path) {
             let _ = std::fs::remove_file(&tmp);
             return Err(e.into());
@@ -738,6 +738,22 @@ impl Telemetry {
     }
 }
 
+fn write_private_file(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let _ = std::fs::remove_file(path);
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut file = opts.open(path)?;
+    file.write_all(bytes)?;
+    file.sync_data()?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -770,5 +786,18 @@ mod tests {
         assert!(!valid_name("Screen View"));
         assert!(!valid_name(""));
         assert!(!valid_name(&"a".repeat(65)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_private_file_uses_owner_only_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("aun-tel-mode-{}", random_id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("buf.tmp");
+        write_private_file(&file, b"{}").unwrap();
+        let mode = std::fs::metadata(&file).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

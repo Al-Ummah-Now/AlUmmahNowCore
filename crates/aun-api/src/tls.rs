@@ -35,15 +35,10 @@ fn client_headers(config: &ApiConfig) -> reqwest::header::HeaderMap {
 
 /// Shared HTTP client used by every module that talks to our servers.
 pub fn http_client(config: &ApiConfig) -> Result<reqwest::Client> {
-    reqwest::Client::builder()
-        .tls_backend_preconfigured(rustls_config()?)
-        .user_agent(config.user_agent.clone())
-        .default_headers(client_headers(config))
-        .timeout(config.timeout)
-        .connect_timeout(std::time::Duration::from_secs(15))
-        .pool_idle_timeout(std::time::Duration::from_secs(60))
+    http_client_with_redirect(
+        config,
         // Follow at most 5 redirects and never to a cleartext URL (no https -> http downgrade).
-        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+        reqwest::redirect::Policy::custom(|attempt| {
             if attempt.previous().len() >= 5 {
                 attempt.error("too many redirects")
             } else if aun_common::security::is_secure(attempt.url()) {
@@ -51,7 +46,28 @@ pub fn http_client(config: &ApiConfig) -> Result<reqwest::Client> {
             } else {
                 attempt.error("refusing redirect to an insecure URL")
             }
-        }))
+        }),
+    )
+}
+
+/// Shared HTTP client that refuses all HTTP redirects (used by telemetry ingest POSTs so a
+/// 307/308 redirect cannot forward diagnostic batches to a different origin).
+pub fn http_client_no_redirects(config: &ApiConfig) -> Result<reqwest::Client> {
+    http_client_with_redirect(config, reqwest::redirect::Policy::none())
+}
+
+fn http_client_with_redirect(
+    config: &ApiConfig,
+    policy: reqwest::redirect::Policy,
+) -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .tls_backend_preconfigured(rustls_config()?)
+        .user_agent(config.user_agent.clone())
+        .default_headers(client_headers(config))
+        .timeout(config.timeout)
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .pool_idle_timeout(std::time::Duration::from_secs(60))
+        .redirect(policy)
         .build()
         .map_err(|e| Error::Internal(format!("HTTP client: {e}")))
 }

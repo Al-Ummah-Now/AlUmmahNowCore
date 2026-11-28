@@ -14,5 +14,5 @@ mod visibility;
 pub use aun_common::{Error, Result};
 pub use client::{ApiClient, ApiConfig, AuthMode, AuthProvider, Body, RawResponse, RequestSpec, RetryPolicy};
 pub use generated::*;
-pub use tls::http_client;
+pub use tls::{http_client, http_client_no_redirects};
 pub use visibility::Visibility;
