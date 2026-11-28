@@ -410,17 +410,24 @@ fn segment_end(s: &str, spaces: bool) -> usize {
         .unwrap_or(s.len())
 }
 
-/// Whether a path at `idx` is inside a web URL (`https://host/home/x`): those paths name pages,
-/// not accounts. `file://` URLs are local and do not count.
+/// Whether a path at `idx` is inside an http(s) URL (`https://host/home/x`): those paths name
+/// pages, not accounts. The URL must run straight up to `idx`: a terminator, a backslash or a colon
+/// in its path (`https://a/C:\Users\…`) means a local path follows, which is redacted.
 fn in_web_url(text: &str, idx: usize) -> bool {
     let word_start = text[..idx]
-        .rfind(|c: char| c.is_whitespace() || matches!(c, '\'' | '"' | '(' | '[' | '<' | '='))
+        .rfind(|c: char| c.is_whitespace() || (ends_segment(c) && c != ':'))
         .map_or(0, |j| j + 1);
     let word = &text[word_start..idx];
-    word.find("://").is_some_and(|k| {
-        !word[..k].to_ascii_lowercase().ends_with("file")
-            && word[k + 3..].starts_with(|c: char| c.is_alphanumeric())
-    })
+    let Some(k) = word.find("://") else {
+        return false;
+    };
+    let scheme = word[..k].to_ascii_lowercase();
+    if scheme != "http" && scheme != "https" {
+        return false;
+    }
+    let after = &word[k + 3..];
+    let path = after.find('/').map_or("", |j| &after[j..]);
+    after.starts_with(|c: char| c.is_alphanumeric()) && !after.contains('\\') && !path.contains(':')
 }
 
 /// Replaces account names in local paths with `[user]` and UNC hosts/shares with `[host]`/`[share]`.
@@ -750,6 +757,19 @@ mod tests {
                 "/System/Volumes/Data/Users/[user]/x",
             ),
             ("/var/home/alice/x", "/var/home/[user]/x"),
+            (
+                r"https://x.example,C:\Users\alice\a",
+                r"https://x.example,C:\Users\[user]\a",
+            ),
+            (
+                r"https://x.example/C:\Users\alice",
+                r"https://x.example/C:\Users\[user]",
+            ),
+            ("ftp://host/home/alice/a", "ftp://host/home/[user]/a"),
+            (
+                "https://x.example/a:b/home/alice",
+                "https://x.example/a:b/home/[user]",
+            ),
             (
                 "file:///Users/alice/Movies/a.mp4",
                 "file:///Users/[user]/Movies/a.mp4",
