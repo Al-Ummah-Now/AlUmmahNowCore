@@ -7,6 +7,8 @@ FFI; such changes are listed under **Breaking**.
 
 ## [Unreleased]
 
+## [0.4.0-rc.14] - 2026-11-28
+
 ### Fixed
 
 - Telemetry scrubbing replaces account names in local file paths (`/Users/…`, `/home/…`, `C:\Users\…`, `file:///…`) with `[user]`, and UNC hosts and shares with `[host]`/`[share]`.
