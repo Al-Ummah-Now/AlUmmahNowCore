@@ -232,7 +232,10 @@ mod tests {
             events: Vec::new(),
         };
         let err = sink.send(&batch).await.unwrap_err();
-        assert!(!err.to_string().is_empty());
+        assert!(
+            matches!(err, Error::Http { status: 307, .. }),
+            "expected HTTP 307 error, got {err:?}"
+        );
         assert_eq!(target_hits.load(Ordering::SeqCst), 0);
 
         redirect_task.abort();
