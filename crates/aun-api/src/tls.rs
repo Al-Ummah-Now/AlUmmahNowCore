@@ -37,14 +37,21 @@ fn client_headers(config: &ApiConfig) -> reqwest::header::HeaderMap {
 pub fn http_client(config: &ApiConfig) -> Result<reqwest::Client> {
     http_client_with_redirect(
         config,
-        // Follow at most 5 redirects and never to a cleartext URL (no https -> http downgrade).
+        // Follow at most 5 same-origin secure redirects (no https -> http downgrade and no
+        // cross-origin redirects that could leak headers or turn API/OAuth calls into SSRF).
         reqwest::redirect::Policy::custom(|attempt| {
             if attempt.previous().len() >= 5 {
                 attempt.error("too many redirects")
-            } else if aun_common::security::is_secure(attempt.url()) {
-                attempt.follow()
-            } else {
+            } else if !aun_common::security::is_secure(attempt.url()) {
                 attempt.error("refusing redirect to an insecure URL")
+            } else if attempt
+                .previous()
+                .first()
+                .is_some_and(|origin| origin.origin() != attempt.url().origin())
+            {
+                attempt.error("refusing cross-origin redirect")
+            } else {
+                attempt.follow()
             }
         }),
     )

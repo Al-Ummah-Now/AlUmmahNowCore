@@ -278,6 +278,46 @@ impl RawResponse {
     }
 }
 
+/// Headers managed exclusively by the client; callers may not override them.
+pub fn is_reserved_header(name: &str) -> bool {
+    matches!(
+        name.trim().to_ascii_lowercase().as_str(),
+        "authorization"
+            | "proxy-authorization"
+            | "cookie"
+            | "host"
+            | "content-length"
+            | "transfer-encoding"
+            | "x-aun-client"
+    )
+}
+
+/// Joins a relative API `path` onto `base_url` and guarantees the resulting URL remains on the
+/// exact same origin as `base_url` (preventing authority injection such as `@evil.example` or
+/// scheme-relative `//evil.example` from receiving bearer tokens).
+pub(crate) fn resolve_request_url(base_url: &str, path: &str) -> Result<reqwest::Url> {
+    if !path.starts_with('/') || path.starts_with("//") || path.contains(['\\', '\r', '\n', '\0']) {
+        return Err(Error::invalid_input(format!(
+            "request path must start with a single '/': {path:?}"
+        )));
+    }
+    let base = reqwest::Url::parse(base_url)
+        .map_err(|_| Error::invalid_input(format!("invalid base_url: {base_url:?}")))?;
+    let combined = format!("{}{}", base_url.trim_end_matches('/'), path);
+    let url = reqwest::Url::parse(&combined)
+        .map_err(|_| Error::invalid_input(format!("invalid request path: {path:?}")))?;
+    if !aun_common::security::is_secure(&url)
+        || url.origin() != base.origin()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err(Error::invalid_input(format!(
+            "request path escaped base origin: {path:?}"
+        )));
+    }
+    Ok(url)
+}
+
 impl ApiClient {
     pub fn new(config: ApiConfig) -> Result<Self> {
         aun_common::security::ensure_secure_url(&config.base_url)?;
@@ -408,12 +448,18 @@ impl ApiClient {
         req: &RequestSpec,
         token: Option<&str>,
     ) -> std::result::Result<RawResponse, (Error, Option<Duration>)> {
-        let url = format!("{}{}", self.config.base_url, req.path);
-        let mut rb = self.http.request(req.method.clone(), &url);
+        let url = resolve_request_url(&self.config.base_url, &req.path).map_err(|e| (e, None))?;
+        let mut rb = self.http.request(req.method.clone(), url);
         if !req.query.is_empty() {
             rb = rb.query(&req.query);
         }
         for (k, v) in &req.headers {
+            if is_reserved_header(k) {
+                return Err((
+                    Error::invalid_input(format!("header {k} is managed by the client")),
+                    None,
+                ));
+            }
             rb = rb.header(k, v);
         }
         if let Some(t) = token {

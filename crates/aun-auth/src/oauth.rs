@@ -71,13 +71,36 @@ impl OAuthConfig {
             ));
         }
         let m: Metadata = resp.json().await.map_err(net)?;
-        ensure_secure_url(&m.authorization_endpoint)?;
-        ensure_secure_url(&m.token_endpoint)?;
+        // RFC 8414 §3.3: returned issuer must match the requested issuer, and endpoints must be
+        // secure and stay on the issuer's origin so discovery cannot redirect tokens elsewhere.
+        let expected_issuer = issuer.trim_end_matches('/');
+        if m.issuer.trim_end_matches('/') != expected_issuer {
+            return Err(Error::invalid_input(format!(
+                "discovery issuer mismatch: expected {expected_issuer:?}, got {:?}",
+                m.issuer
+            )));
+        }
+        let issuer_origin = reqwest::Url::parse(expected_issuer)
+            .map_err(|_| Error::invalid_input(format!("invalid issuer: {issuer:?}")))?
+            .origin();
+        let check_endpoint = |endpoint: &str, name: &str| -> Result<()> {
+            ensure_secure_url(endpoint)?;
+            let parsed = reqwest::Url::parse(endpoint)
+                .map_err(|_| Error::invalid_input(format!("invalid {name}: {endpoint:?}")))?;
+            if parsed.origin() != issuer_origin {
+                return Err(Error::invalid_input(format!(
+                    "discovery {name} does not match issuer origin: {endpoint:?}"
+                )));
+            }
+            Ok(())
+        };
+        check_endpoint(&m.authorization_endpoint, "authorization_endpoint")?;
+        check_endpoint(&m.token_endpoint, "token_endpoint")?;
         if let Some(d) = &m.device_authorization_endpoint {
-            ensure_secure_url(d)?;
+            check_endpoint(d, "device_authorization_endpoint")?;
         }
         if let Some(r) = &m.revocation_endpoint {
-            ensure_secure_url(r)?;
+            check_endpoint(r, "revocation_endpoint")?;
         }
         Ok(Self {
             issuer: m.issuer,
@@ -303,18 +326,28 @@ impl OAuthClient {
     ) -> Result<TokenSet> {
         let url =
             reqwest::Url::parse(redirect_url).map_err(|e| Error::invalid_input(format!("redirect: {e}")))?;
-        let expected = reqwest::Url::parse(&pending.redirect_uri).ok();
-        if let Some(exp) = expected
-            && (exp.scheme() != url.scheme()
-                || exp.host_str() != url.host_str()
-                || exp.port() != url.port()
-                || exp.path() != url.path())
+        let exp = reqwest::Url::parse(&pending.redirect_uri)
+            .map_err(|e| Error::invalid_input(format!("registered redirect_uri: {e}")))?;
+        if exp.scheme() != url.scheme()
+            || exp.host_str() != url.host_str()
+            || exp.port() != url.port()
+            || exp.path() != url.path()
         {
             return Err(Error::invalid_input(
                 "redirect does not match the registered redirect_uri".into(),
             ));
         }
-        let q: std::collections::HashMap<String, String> = url.query_pairs().into_owned().collect();
+        let mut q: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        for (k, v) in url.query_pairs() {
+            let k = k.into_owned();
+            if matches!(k.as_str(), "state" | "code" | "error") && q.contains_key(&k) {
+                return Err(Error::invalid_input(format!("duplicate OAuth parameter {k:?}")));
+            }
+            q.insert(k, v.into_owned());
+        }
+        if q.get("state") != Some(&pending.state) {
+            return Err(Error::invalid_input("state mismatch (possible CSRF)".into()));
+        }
         if let Some(err) = q.get("error") {
             let desc = q.get("error_description").cloned().unwrap_or_default();
             return Err(if err == "access_denied" {
@@ -322,9 +355,6 @@ impl OAuthClient {
             } else {
                 Error::unauthorized(format!("{err}: {desc}"))
             });
-        }
-        if q.get("state") != Some(&pending.state) {
-            return Err(Error::invalid_input("state mismatch (possible CSRF)".into()));
         }
         let code = q
             .get("code")

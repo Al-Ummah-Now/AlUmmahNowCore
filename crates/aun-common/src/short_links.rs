@@ -72,6 +72,19 @@ pub fn is_valid_short_link_handle(handle: &str) -> bool {
         .all(|b| b.is_ascii_alphanumeric() || *b == b'.' || *b == b'_' || *b == b'-')
 }
 
+fn is_valid_hostname(host: &str) -> bool {
+    if host.is_empty() || host.len() > 253 || host.starts_with('.') || host.ends_with('.') {
+        return false;
+    }
+    host.split('.').all(|label| {
+        !label.is_empty()
+            && label.len() <= 63
+            && !label.starts_with('-')
+            && !label.ends_with('-')
+            && label.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    })
+}
+
 fn extract_host(site_host_or_origin: &str) -> Option<String> {
     let trimmed = site_host_or_origin.trim();
     if trimmed.is_empty() {
@@ -87,7 +100,11 @@ fn extract_host(site_host_or_origin: &str) -> Option<String> {
         return None;
     }
     let host = authority.split(':').next()?.to_ascii_lowercase();
-    if host.is_empty() { None } else { Some(host) }
+    if is_valid_hostname(&host) {
+        Some(host)
+    } else {
+        None
+    }
 }
 
 fn is_preview_label(label: &str) -> bool {
@@ -281,6 +298,15 @@ mod tests {
             short_link_origin_for("https://pr-1813.videos.alummahnow.net"),
             None
         );
+        for bad in [
+            "https://evil\r\n.alummahnow.link",
+            "https://a b.alummahnow.link",
+            "https://foo..alummahnow.link",
+            "https://.alummahnow.link",
+            "https://-bad.alummahnow.link",
+        ] {
+            assert_eq!(short_link_origin_for(bad), None, "{bad:?}");
+        }
     }
 
     #[test]

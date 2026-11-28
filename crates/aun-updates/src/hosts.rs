@@ -10,9 +10,31 @@ pub const ASSET_HOSTS: [&str; 2] = [
     "release-assets.githubusercontent.com",
 ];
 
+fn is_safe_repo_name(repo: &str) -> bool {
+    !repo.is_empty()
+        && repo != "."
+        && repo != ".."
+        && repo
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+}
+
 /// Whether `url` may be fetched while downloading an update of `repo`: HTTPS on the default port,
 /// no user info, and either this repo's GitHub release downloads or GitHub's asset hosts.
 pub fn allowed_download_url(url: &str, repo: &str) -> bool {
+    if !is_safe_repo_name(repo) {
+        return false;
+    }
+    let raw_before_query = url.split(['?', '#']).next().unwrap_or(url);
+    let lower_raw = raw_before_query.to_ascii_lowercase();
+    if lower_raw.contains("%2e")
+        || lower_raw.contains("%2f")
+        || lower_raw.contains("%5c")
+        || lower_raw.contains('\\')
+        || raw_before_query.split('/').any(|seg| seg == "." || seg == "..")
+    {
+        return false;
+    }
     let Ok(u) = Url::parse(url) else { return false };
     if u.scheme() != "https" || u.port().is_some() || !u.username().is_empty() || u.password().is_some() {
         return false;
@@ -51,6 +73,7 @@ mod tests {
             "https://github.com/evil/AlUmmahNowTools/releases/download/v1/x",
             "https://github.com:8443/Al-Ummah-Now/AlUmmahNowTools/releases/download/v1/x",
             "https://user@github.com/Al-Ummah-Now/AlUmmahNowTools/releases/download/v1/x",
+            "https://github.com/Al-Ummah-Now/AlUmmahNowTools/releases/download/v1/%2e%2e/x",
             "https://evil.example/x",
             "https://release-assets.githubusercontent.com.evil.example/x",
             "r2://app-releases/AlUmmahNowTools/v1/x",
@@ -58,5 +81,13 @@ mod tests {
         ] {
             assert!(!allowed_download_url(bad, repo), "{bad}");
         }
+        assert!(!allowed_download_url(
+            "https://github.com/Al-Ummah-Now/../releases/download/v1/x",
+            ".."
+        ));
+        assert!(!allowed_download_url(
+            "https://github.com/Al-Ummah-Now/a/b/releases/download/v1/x",
+            "a/b"
+        ));
     }
 }

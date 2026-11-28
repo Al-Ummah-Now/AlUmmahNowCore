@@ -10,6 +10,7 @@ FFI; such changes are listed under **Breaking**.
 ### Fixed
 
 - Telemetry scrubbing replaces account names in local file paths (`/Users/…`, `/home/…`, `C:\Users\…`, `file:///…`) with `[user]`, and UNC hosts and shares with `[host]`/`[share]`.
+- Hardened URL construction, redirect handling, OAuth discovery/callback validation, TUS upload metadata/resume paths, WebVTT caption escaping, model download security, and update artifact URL checks against injection and cross-origin token leakage (see `docs/security/injection-audit.md`).
 
 ## [0.4.0-rc.13] - 2026-11-27
 

@@ -296,6 +296,14 @@ impl ChunkSink for FileSink<'_> {
     }
 }
 
+fn is_safe_model_filename(name: &str) -> bool {
+    !name.is_empty()
+        && name != "."
+        && name != ".."
+        && !name.contains(['/', '\\', '\0'])
+        && !name.starts_with('.')
+}
+
 fn file_len(path: &Path) -> Result<u64> {
     match fs::metadata(path) {
         Ok(meta) => Ok(meta.len()),
@@ -346,10 +354,18 @@ impl ModelManager {
     }
 
     fn descriptor(&self, id: &str) -> Result<&ModelDescriptor> {
-        self.catalog
+        let d = self
+            .catalog
             .iter()
             .find(|d| d.id == id)
-            .ok_or_else(|| Error::not_found(format!("model {id}")))
+            .ok_or_else(|| Error::not_found(format!("model {id}")))?;
+        if !is_safe_model_filename(&d.file_name) {
+            return Err(Error::invalid_input(format!(
+                "invalid model filename {:?}",
+                d.file_name
+            )));
+        }
+        Ok(d)
     }
 
     fn final_path(&self, d: &ModelDescriptor) -> PathBuf {
@@ -506,15 +522,33 @@ mod http {
         Error::Network(e.without_url().to_string())
     }
 
-    /// A [`ModelFetcher`] over `reqwest`.
-    #[derive(Debug, Clone, Default)]
+    /// A [`ModelFetcher`] over `reqwest` that refuses cleartext URLs and insecure redirects.
+    #[derive(Debug, Clone)]
     pub struct HttpModelFetcher {
         client: reqwest::Client,
     }
 
+    impl Default for HttpModelFetcher {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
     impl HttpModelFetcher {
         pub fn new() -> Self {
-            Self::default()
+            let client = reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                    if attempt.previous().len() >= 10 {
+                        attempt.error("too many redirects")
+                    } else if aun_common::security::is_secure(attempt.url()) {
+                        attempt.follow()
+                    } else {
+                        attempt.error("refusing redirect to an insecure URL")
+                    }
+                }))
+                .build()
+                .unwrap_or_default();
+            Self { client }
         }
     }
 
@@ -527,6 +561,7 @@ mod http {
             sink: &mut dyn ChunkSink,
             cancel: &CancellationToken,
         ) -> Result<()> {
+            aun_common::security::ensure_secure_url(url)?;
             let mut request = self.client.get(url);
             if offset > 0 {
                 request = request.header(reqwest::header::RANGE, format!("bytes={offset}-"));
@@ -571,6 +606,11 @@ mod tests {
     fn catalogue_is_well_formed() {
         let catalog = model_catalog();
         assert_eq!(catalog.len(), 15);
+        assert!(!is_safe_model_filename("../escape.bin"));
+        assert!(!is_safe_model_filename("a/b.bin"));
+        assert!(!is_safe_model_filename("a\\b.bin"));
+        assert!(!is_safe_model_filename(".hidden"));
+        assert!(is_safe_model_filename("ggml-tiny.bin"));
         let mut ids = HashSet::new();
         for d in &catalog {
             assert!(ids.insert(d.id.clone()), "duplicate {}", d.id);

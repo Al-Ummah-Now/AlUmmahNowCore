@@ -170,6 +170,12 @@ fn finish_request(
     body_json: Option<String>,
     idempotency_key: Option<String>,
 ) -> Result<RequestSpec, AunError> {
+    if let Some(h) = headers.keys().find(|h| aun_api::client::is_reserved_header(h)) {
+        return Err(AunError::InvalidInput {
+            code: None,
+            detail: format!("header {h} is set by the client"),
+        });
+    }
     let mut query: Vec<_> = query.into_iter().collect();
     query.sort();
     req.query = query;
@@ -443,6 +449,17 @@ mod tests {
             ..Default::default()
         };
         assert!(matches!(build_request(call), Err(AunError::InvalidInput { .. })));
+        let mut reserved = ApiCall {
+            operation_id: "post_UploadInitiateEndpoint".into(),
+            ..Default::default()
+        };
+        reserved
+            .headers
+            .insert("Authorization".into(), "Bearer injected".into());
+        assert!(matches!(
+            build_request(reserved),
+            Err(AunError::InvalidInput { .. })
+        ));
     }
 
     #[test]

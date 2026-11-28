@@ -975,3 +975,42 @@ async fn stream_metadata_is_checked_at_chunk_boundaries() {
         engine.shutdown();
     }
 }
+
+#[tokio::test]
+async fn reauthorise_rejects_traversal_in_tus_upload_id() {
+    let server = MockServer::start().await;
+    mount_api(&server, 1).await;
+    // First TUS POST returns 404 so engine calls /upload/resume/{videoId}
+    Mock::given(method("POST"))
+        .and(path("/api/videos/tus"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+    // Resume returns a path-traversal tusUploadId
+    Mock::given(method("GET"))
+        .and(path_regex("^/api/videos/upload/resume/"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "success": true,
+            "result": {
+                "tusSessionId": "s2",
+                "tusUploadId": "..",
+                "chunkSize": 262144
+            }
+        })))
+        .mount(&server)
+        .await;
+    let dir = tempfile::tempdir().unwrap();
+    let file = video(dir.path(), "a.mp4", 10 * KIB);
+    let engine = UploadEngine::open(api(&server), dir.path().join("q"), "u1", cfg()).unwrap();
+    let id = engine.enqueue(request(&file)).unwrap();
+    engine.start();
+    let failed = wait_for(&engine, &id, UploadState::Failed).await;
+    assert_eq!(failed.upload_url, None);
+    let reqs = server.received_requests().await.unwrap();
+    assert!(
+        !reqs
+            .iter()
+            .any(|r| r.method.as_str() == "HEAD" || r.method.as_str() == "PATCH")
+    );
+    engine.shutdown();
+}
