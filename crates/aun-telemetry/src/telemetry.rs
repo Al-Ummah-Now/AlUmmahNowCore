@@ -767,16 +767,27 @@ fn format_temp_name(base_name: &str, pid: u32, seq: u64, tier: u8) -> String {
 
 static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+fn random_temp_seq() -> u64 {
+    use std::sync::atomic::Ordering;
+
+    let n = TMP_SEQ.fetch_add(1, Ordering::Relaxed);
+    let t = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+    h.write_u64(n);
+    h.write_u128(t);
+    h.finish()
+}
+
 fn write_private_temp_file(
     parent: &std::path::Path,
     dest: &std::path::Path,
     base_name: &str,
     bytes: &[u8],
 ) -> std::io::Result<std::path::PathBuf> {
-    use std::sync::atomic::Ordering;
-    write_private_temp_file_with_seq(parent, dest, base_name, bytes, 0, || {
-        TMP_SEQ.fetch_add(1, Ordering::Relaxed)
-    })
+    write_private_temp_file_with_seq(parent, dest, base_name, bytes, 0, random_temp_seq)
 }
 
 fn write_private_temp_file_with_seq(
@@ -927,6 +938,17 @@ mod tests {
         assert_eq!(tmp2, dir.join(".t2"));
         assert!(!upper_dest.exists());
         assert!(tmp2.exists());
+
+        // Pre-populating stale sequential .t0..=.t1f files must not exhaust random compact allocation.
+        for i in 0..32_u64 {
+            let _ = std::fs::write(dir.join(format!(".t{i:x}")), b"stale");
+        }
+        let fresh_dest = dir.join("buffer.json");
+        let tmp3 =
+            write_private_temp_file_with_seq(&dir, &fresh_dest, "buffer.json", b"{}", 2, random_temp_seq)
+                .unwrap();
+        assert!(tmp3.exists());
+        assert!(tmp3.file_name().unwrap().len() <= 14);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
