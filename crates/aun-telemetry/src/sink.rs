@@ -58,7 +58,7 @@ impl HttpSink {
         }
         Ok(Self {
             url: url.to_owned(),
-            client: aun_api::http_client(&cfg)?,
+            client: aun_api::http_client_no_redirects(&cfg)?,
             headers: Vec::new(),
         })
     }
@@ -173,5 +173,69 @@ impl TelemetrySink for ApiPerformanceSink {
 
     fn accepts(&self, kind: EventKind) -> bool {
         matches!(kind, EventKind::Qoe | EventKind::Error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    use super::*;
+    use crate::event::AppInfo;
+
+    #[tokio::test]
+    async fn http_sink_does_not_follow_307_redirects() {
+        let target_hits = Arc::new(AtomicUsize::new(0));
+        let target_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let target_addr = target_listener.local_addr().unwrap();
+        let hits_clone = target_hits.clone();
+        let target_task = tokio::spawn(async move {
+            if let Ok((mut sock, _)) = target_listener.accept().await {
+                hits_clone.fetch_add(1, Ordering::SeqCst);
+                let mut buf = [0u8; 512];
+                let _ = sock.read(&mut buf).await;
+                let _ = sock
+                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+                    .await;
+            }
+        });
+
+        let redirect_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let redirect_addr = redirect_listener.local_addr().unwrap();
+        let redirect_task = tokio::spawn(async move {
+            if let Ok((mut sock, _)) = redirect_listener.accept().await {
+                let mut buf = [0u8; 1024];
+                let _ = sock.read(&mut buf).await;
+                let resp = format!(
+                    "HTTP/1.1 307 Temporary Redirect\r\nLocation: http://{target_addr}/steal\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                );
+                let _ = sock.write_all(resp.as_bytes()).await;
+            }
+        });
+
+        let sink = HttpSink::new(&format!("http://{redirect_addr}/api/v1/telemetry/batches"), None).unwrap();
+        let batch = TelemetryBatch {
+            batch_id: "b1".into(),
+            sent_at_ms: 1,
+            app: AppInfo {
+                platform: "linux".into(),
+                app_version: "1.0.0".into(),
+                core_version: "0.4.0".into(),
+                os_version: "Linux".into(),
+                device_class: "desktop".into(),
+                locale: "en".into(),
+            },
+            events: Vec::new(),
+        };
+        let err = sink.send(&batch).await.unwrap_err();
+        assert!(!err.to_string().is_empty());
+        assert_eq!(target_hits.load(Ordering::SeqCst), 0);
+
+        redirect_task.abort();
+        target_task.abort();
     }
 }
