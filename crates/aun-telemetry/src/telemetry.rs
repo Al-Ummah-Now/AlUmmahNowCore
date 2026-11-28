@@ -417,7 +417,7 @@ impl Telemetry {
             .ok_or_else(|| Error::Storage("telemetry buffer path has no parent".into()))?;
         create_private_dir_all(parent)?;
         let base_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("telemetry");
-        let tmp = write_private_temp_file(parent, base_name, &bytes)?;
+        let tmp = write_private_temp_file(parent, &path, base_name, &bytes)?;
         if let Err(e) = std::fs::rename(&tmp, &path) {
             let _ = std::fs::remove_file(&tmp);
             return Err(e.into());
@@ -765,22 +765,42 @@ fn format_temp_name(base_name: &str, pid: u32, seq: u64, tier: u8) -> String {
     }
 }
 
+static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 fn write_private_temp_file(
     parent: &std::path::Path,
+    dest: &std::path::Path,
     base_name: &str,
     bytes: &[u8],
 ) -> std::io::Result<std::path::PathBuf> {
-    use std::io::Write;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    write_private_temp_file_from_tier(parent, dest, base_name, bytes, 0)
+}
 
-    static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
+fn write_private_temp_file_from_tier(
+    parent: &std::path::Path,
+    dest: &std::path::Path,
+    base_name: &str,
+    bytes: &[u8],
+    initial_tier: u8,
+) -> std::io::Result<std::path::PathBuf> {
+    use std::io::Write;
+    use std::sync::atomic::Ordering;
 
     let pid = std::process::id();
-    let mut tier: u8 = 0;
+    let dest_name = dest.file_name();
+    let mut tier: u8 = initial_tier;
     for _ in 0..24 {
         let seq = TMP_SEQ.fetch_add(1, Ordering::Relaxed);
         let file_name = format_temp_name(base_name, pid, seq, tier);
+        if file_name.eq_ignore_ascii_case(base_name)
+            || dest_name.is_some_and(|d| d == std::ffi::OsStr::new(&file_name))
+        {
+            continue;
+        }
         let tmp = parent.join(file_name);
+        if tmp == dest {
+            continue;
+        }
         let mut opts = std::fs::OpenOptions::new();
         opts.write(true).create_new(true);
         #[cfg(unix)]
@@ -851,8 +871,9 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let dir = std::env::temp_dir().join(format!("aun-tel-mode-{}", random_id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let a = write_private_temp_file(&dir, "telemetry-buffer.json", b"{}").unwrap();
-        let b = write_private_temp_file(&dir, "telemetry-buffer.json", b"{}").unwrap();
+        let dest = dir.join("telemetry-buffer.json");
+        let a = write_private_temp_file(&dir, &dest, "telemetry-buffer.json", b"{}").unwrap();
+        let b = write_private_temp_file(&dir, &dest, "telemetry-buffer.json", b"{}").unwrap();
         assert_ne!(a, b);
         assert!(a.exists() && b.exists());
         let mode_a = std::fs::metadata(&a).unwrap().permissions().mode() & 0o777;
@@ -860,7 +881,8 @@ mod tests {
         assert_eq!(mode_a, 0o600);
         assert_eq!(mode_b, 0o600);
         let long_name = "a".repeat(240);
-        let c = write_private_temp_file(&dir, &long_name, b"{}").unwrap();
+        let long_dest = dir.join(&long_name);
+        let c = write_private_temp_file(&dir, &long_dest, &long_name, b"{}").unwrap();
         assert!(c.exists());
         assert!(c.file_name().unwrap().len() <= 255);
         let compact = format_temp_name("telemetry.json", 12345, 0, 2);
@@ -868,6 +890,28 @@ mod tests {
             compact.len() <= 14,
             "compact fallback must fit NAME_MAX=14: {compact}"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_private_temp_file_skips_destination_collision() {
+        use std::sync::atomic::Ordering;
+        let dir = std::env::temp_dir().join(format!("aun-tel-collide-{}", random_id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let next_seq = TMP_SEQ.load(Ordering::Relaxed);
+        let colliding_name = format_temp_name("telemetry.json", 12345, next_seq, 2);
+        let dest = dir.join(&colliding_name);
+        let tmp = write_private_temp_file_from_tier(&dir, &dest, &colliding_name, b"{}", 2).unwrap();
+        assert_ne!(tmp, dest);
+        assert!(!dest.exists(), "destination must remain untouched before rename");
+        assert!(tmp.exists());
+
+        let upper_next = format!(".T{:x}", TMP_SEQ.load(Ordering::Relaxed));
+        let upper_dest = dir.join(&upper_next);
+        let tmp2 = write_private_temp_file_from_tier(&dir, &upper_dest, &upper_next, b"{}", 2).unwrap();
+        assert_ne!(tmp2, upper_dest);
+        assert!(!upper_dest.exists());
+        assert!(tmp2.exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
