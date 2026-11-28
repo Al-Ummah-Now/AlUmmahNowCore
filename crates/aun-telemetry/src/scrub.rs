@@ -401,40 +401,26 @@ fn separator_len(s: &str) -> usize {
     }
 }
 
-/// End (byte index into `s`) of the path segment starting at `s[0]`. A space is kept inside the
-/// segment only when another separator follows before the segment would otherwise end
-/// (`John Smith\AppData`), so `C:\Users\alice could not open` stops at `alice`.
-fn segment_end(s: &str) -> usize {
-    let mut end = 0;
-    for (i, c) in s.char_indices() {
-        if is_separator(c) || ends_segment(c) {
-            return i;
-        }
-        if c == ' ' {
-            let rest = &s[i..];
-            let next_stop = rest.find(|ch: char| is_separator(ch) || ends_segment(ch));
-            return match next_stop {
-                Some(j)
-                    if j <= 64
-                        && rest[..j].chars().any(|ch| ch != ' ')
-                        && is_separator(rest[j..].chars().next().unwrap_or(' ')) =>
-                {
-                    i + j
-                }
-                _ => i,
-            };
-        }
-        end = i + c.len_utf8();
-    }
-    end
+/// End (byte index into `s`) of the path segment starting at `s[0]`: the next separator or
+/// terminator. With `spaces` (Windows account names may contain them) a space does not end it, so
+/// `John Smith\AppData` and an unquoted trailing `C:\Users\John Smith` are both covered; that can
+/// take a following word too, which the conservative rule accepts.
+fn segment_end(s: &str, spaces: bool) -> usize {
+    s.find(|c: char| is_separator(c) || ends_segment(c) || (!spaces && c.is_whitespace()))
+        .unwrap_or(s.len())
 }
 
-/// Whether the text before `idx` lets a path start there (not in the middle of a word).
-fn path_can_start(text: &str, idx: usize) -> bool {
-    text[..idx]
-        .chars()
-        .next_back()
-        .is_none_or(|c| !c.is_alphanumeric() && c != '_' && c != '.' && c != '-')
+/// Whether a path at `idx` is inside a web URL (`https://host/home/x`): those paths name pages,
+/// not accounts. `file://` URLs are local and do not count.
+fn in_web_url(text: &str, idx: usize) -> bool {
+    let word_start = text[..idx]
+        .rfind(|c: char| c.is_whitespace() || matches!(c, '\'' | '"' | '(' | '[' | '<' | '='))
+        .map_or(0, |j| j + 1);
+    let word = &text[word_start..idx];
+    word.find("://").is_some_and(|k| {
+        !word[..k].to_ascii_lowercase().ends_with("file")
+            && word[k + 3..].starts_with(|c: char| c.is_alphanumeric())
+    })
 }
 
 /// Replaces account names in local paths with `[user]` and UNC hosts/shares with `[host]`/`[share]`.
@@ -455,13 +441,13 @@ fn redact_local_paths(text: &str) -> String {
             let before = text[..i].chars().next_back();
             let unc_ok =
                 before.is_none_or(|c| c.is_whitespace() || matches!(c, '\'' | '"' | '(' | '[' | '=' | '<'));
-            let host_end = 2 + segment_end(&rest[2..]);
+            let host_end = 2 + segment_end(&rest[2..], false);
             if unc_ok && host_end > 2 && !rest[2..host_end].contains(' ') {
                 out.push_str("\\\\[host]");
                 let after_host = &rest[host_end..];
                 let share_sep = separator_len(after_host);
                 if share_sep > 0 {
-                    let share_end = share_sep + segment_end(&after_host[share_sep..]);
+                    let share_end = share_sep + segment_end(&after_host[share_sep..], true);
                     if share_end > share_sep {
                         out.push_str(&after_host[..share_sep]);
                         out.push_str("[share]");
@@ -486,12 +472,13 @@ fn redact_local_paths(text: &str) -> String {
         } else {
             0
         };
-        if dir_len > 0 && path_can_start(text, i) {
+        if dir_len > 0 && !in_web_url(text, i) {
             let after_dir = &after_sep[dir_len..];
             let name_sep = separator_len(after_dir);
             if name_sep > 0 {
                 let name_start = &after_dir[name_sep..];
-                let name_end = segment_end(name_start);
+                let windows = rest.starts_with('\\') || text[..i].ends_with(':');
+                let name_end = segment_end(name_start, windows);
                 let name = &name_start[..name_end];
                 let shared = SHARED_HOME_DIRS.iter().any(|d| name.eq_ignore_ascii_case(d));
                 if name_end > 0 && !shared {
@@ -754,10 +741,15 @@ mod tests {
                 r"in C:\Users\John Smith\AppData\x.dll",
                 r"in C:\Users\[user]\AppData\x.dll",
             ),
+            (r"C:\Users\alice could not open", r"C:\Users\[user]"),
+            (r"C:\Users\John Smith", r"C:\Users\[user]"),
+            ("/home/alice failed", "/home/[user] failed"),
+            ("/mnt/c/Users/alice/a.txt", "/mnt/c/Users/[user]/a.txt"),
             (
-                r"C:\Users\alice could not open",
-                r"C:\Users\[user] could not open",
+                "/System/Volumes/Data/Users/alice/x",
+                "/System/Volumes/Data/Users/[user]/x",
             ),
+            ("/var/home/alice/x", "/var/home/[user]/x"),
             (
                 "file:///Users/alice/Movies/a.mp4",
                 "file:///Users/[user]/Movies/a.mp4",
