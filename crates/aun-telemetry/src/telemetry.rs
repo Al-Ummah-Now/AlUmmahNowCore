@@ -325,11 +325,13 @@ impl Telemetry {
                     st.unsaved = 0;
                 }
                 if let Some(path) = self.path() {
-                    match std::fs::remove_file(&path) {
+                    let main_res = match std::fs::remove_file(&path) {
                         Ok(()) => Ok(()),
                         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-                        Err(e) => Err(e.into()),
-                    }
+                        Err(e) => Err(e),
+                    };
+                    let temps_res = remove_sibling_temp_files(&path);
+                    main_res.and(temps_res).map_err(Into::into)
                 } else {
                     Ok(())
                 }
@@ -734,6 +736,77 @@ impl Telemetry {
     }
 }
 
+fn is_telemetry_temp_file(name: &str, base_name: &str) -> bool {
+    if name == base_name {
+        return false;
+    }
+    if name.ends_with(".tmp")
+        && (name
+            .strip_prefix('.')
+            .and_then(|rest| rest.strip_prefix(base_name))
+            .is_some_and(|rest| rest.starts_with('.'))
+            || name.starts_with(".aun-tel."))
+    {
+        return true;
+    }
+    if let Some(hex) = name.strip_prefix(".t") {
+        return (1..=12).contains(&hex.len())
+            && hex
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+    }
+    false
+}
+
+fn remove_sibling_temp_files(path: &std::path::Path) -> std::io::Result<()> {
+    let Some(parent) = path.parent() else {
+        return Ok(());
+    };
+    let dir = if parent.as_os_str().is_empty() {
+        std::path::Path::new(".")
+    } else {
+        parent
+    };
+    let base_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("telemetry");
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    let mut first_err: Option<std::io::Error> = None;
+    for entry in entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(e) => {
+                if first_err.is_none() {
+                    first_err = Some(e);
+                }
+                continue;
+            }
+        };
+        let file_name = entry.file_name();
+        let Some(name) = file_name.to_str() else {
+            continue;
+        };
+        if !is_telemetry_temp_file(name, base_name) {
+            continue;
+        }
+        match std::fs::remove_file(entry.path()) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                if first_err.is_none() {
+                    first_err = Some(e);
+                }
+            }
+        }
+    }
+    match first_err {
+        Some(e) => Err(e),
+        None => Ok(()),
+    }
+}
+
 fn create_private_dir_all(path: &std::path::Path) -> std::io::Result<()> {
     let mut builder = std::fs::DirBuilder::new();
     builder.recursive(true);
@@ -949,6 +1022,36 @@ mod tests {
                 .unwrap();
         assert!(tmp3.exists());
         assert!(tmp3.file_name().unwrap().len() <= 14);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn deny_consent_purges_orphaned_temp_files_across_all_tiers() {
+        let dir = std::env::temp_dir().join(format!("aun-tel-orphan-{}", random_id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let buffer = dir.join("telemetry-buffer.json");
+        let tier0 = dir.join(".telemetry-buffer.json.1234.a1b2.tmp");
+        let tier1 = dir.join(".aun-tel.1234.c3d4.tmp");
+        let tier2 = dir.join(".t1234abcd5678");
+        let unrelated = dir.join("other.json");
+        let other_tmp = dir.join(".other.json.1234.e5f6.tmp");
+        for file in [&buffer, &tier0, &tier1, &tier2, &unrelated, &other_tmp] {
+            std::fs::write(file, b"{}").unwrap();
+        }
+        let telemetry = Telemetry::new(
+            TelemetryConfig {
+                buffer_path: Some(buffer.to_string_lossy().into_owned()),
+                ..TelemetryConfig::default()
+            },
+            Arc::new(crate::sink::NoopSink),
+        );
+        telemetry.set_consent(ConsentState::Denied).unwrap();
+        assert!(!buffer.exists());
+        assert!(!tier0.exists());
+        assert!(!tier1.exists());
+        assert!(!tier2.exists());
+        assert!(unrelated.exists());
+        assert!(other_tmp.exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
