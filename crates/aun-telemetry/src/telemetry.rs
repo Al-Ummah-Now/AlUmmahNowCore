@@ -760,8 +760,8 @@ fn format_temp_name(base_name: &str, pid: u32, seq: u64, tier: u8) -> String {
             }
         }
         1 => format!(".aun-tel.{pid}.{seq:x}.tmp"),
-        // Fits even POSIX NAME_MAX = 14 filesystems (e.g. ".t0" is 3 bytes).
-        _ => format!(".t{seq:x}"),
+        // Fits even POSIX NAME_MAX = 14 filesystems (".t" + up to 12 hex digits <= 14 bytes).
+        _ => format!(".t{:x}", seq & 0xFFFF_FFFF_FFFF),
     }
 }
 
@@ -773,24 +773,27 @@ fn write_private_temp_file(
     base_name: &str,
     bytes: &[u8],
 ) -> std::io::Result<std::path::PathBuf> {
-    write_private_temp_file_from_tier(parent, dest, base_name, bytes, 0)
+    use std::sync::atomic::Ordering;
+    write_private_temp_file_with_seq(parent, dest, base_name, bytes, 0, || {
+        TMP_SEQ.fetch_add(1, Ordering::Relaxed)
+    })
 }
 
-fn write_private_temp_file_from_tier(
+fn write_private_temp_file_with_seq(
     parent: &std::path::Path,
     dest: &std::path::Path,
     base_name: &str,
     bytes: &[u8],
     initial_tier: u8,
+    mut next_seq: impl FnMut() -> u64,
 ) -> std::io::Result<std::path::PathBuf> {
     use std::io::Write;
-    use std::sync::atomic::Ordering;
 
     let pid = std::process::id();
     let dest_name = dest.file_name();
     let mut tier: u8 = initial_tier;
     for _ in 0..24 {
-        let seq = TMP_SEQ.fetch_add(1, Ordering::Relaxed);
+        let seq = next_seq();
         let file_name = format_temp_name(base_name, pid, seq, tier);
         if file_name.eq_ignore_ascii_case(base_name)
             || dest_name.is_some_and(|d| d == std::ffi::OsStr::new(&file_name))
@@ -885,31 +888,43 @@ mod tests {
         let c = write_private_temp_file(&dir, &long_dest, &long_name, b"{}").unwrap();
         assert!(c.exists());
         assert!(c.file_name().unwrap().len() <= 255);
-        let compact = format_temp_name("telemetry.json", 12345, 0, 2);
-        assert!(
-            compact.len() <= 14,
-            "compact fallback must fit NAME_MAX=14: {compact}"
-        );
+        for seq in [0_u64, 1_u64 << 48, u64::MAX] {
+            let compact = format_temp_name("telemetry.json", 12345, seq, 2);
+            assert!(
+                compact.len() <= 14,
+                "compact fallback must fit NAME_MAX=14 for seq {seq}: {compact}"
+            );
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn write_private_temp_file_skips_destination_collision() {
-        use std::sync::atomic::Ordering;
         let dir = std::env::temp_dir().join(format!("aun-tel-collide-{}", random_id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let next_seq = TMP_SEQ.load(Ordering::Relaxed);
-        let colliding_name = format_temp_name("telemetry.json", 12345, next_seq, 2);
-        let dest = dir.join(&colliding_name);
-        let tmp = write_private_temp_file_from_tier(&dir, &dest, &colliding_name, b"{}", 2).unwrap();
-        assert_ne!(tmp, dest);
+
+        let mut seq = 0_u64;
+        let dest = dir.join(".t0");
+        let tmp = write_private_temp_file_with_seq(&dir, &dest, ".t0", b"{}", 2, || {
+            let cur = seq;
+            seq += 1;
+            cur
+        })
+        .unwrap();
+        assert_eq!(tmp, dir.join(".t1"));
         assert!(!dest.exists(), "destination must remain untouched before rename");
         assert!(tmp.exists());
+        let _ = std::fs::remove_file(&tmp);
 
-        let upper_next = format!(".T{:x}", TMP_SEQ.load(Ordering::Relaxed));
-        let upper_dest = dir.join(&upper_next);
-        let tmp2 = write_private_temp_file_from_tier(&dir, &upper_dest, &upper_next, b"{}", 2).unwrap();
-        assert_ne!(tmp2, upper_dest);
+        let mut upper_seq = 1_u64;
+        let upper_dest = dir.join(".T1");
+        let tmp2 = write_private_temp_file_with_seq(&dir, &upper_dest, ".T1", b"{}", 2, || {
+            let cur = upper_seq;
+            upper_seq += 1;
+            cur
+        })
+        .unwrap();
+        assert_eq!(tmp2, dir.join(".t2"));
         assert!(!upper_dest.exists());
         assert!(tmp2.exists());
         let _ = std::fs::remove_dir_all(&dir);
