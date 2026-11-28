@@ -326,21 +326,11 @@ impl Telemetry {
                 }
                 if let Some(path) = self.path() {
                     let _guard = PERSIST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-                    let main_res = match std::fs::remove_file(&path) {
+                    match std::fs::remove_file(&path) {
                         Ok(()) => Ok(()),
                         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-                        Err(e) => Err(e),
-                    };
-                    let tmp_res = if let Some(parent) = path.parent() {
-                        match std::fs::remove_file(temp_file_path(parent, &path)) {
-                            Ok(()) => Ok(()),
-                            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-                            Err(e) => Err(e),
-                        }
-                    } else {
-                        Ok(())
-                    };
-                    main_res.and(tmp_res).map_err(Into::into)
+                        Err(e) => Err(e.into()),
+                    }
                 } else {
                     Ok(())
                 }
@@ -867,10 +857,10 @@ mod tests {
         }
         assert!(dest.exists());
 
-        let own_tmp = temp_file_path(&dir, &dest);
-        let unrelated = dir.join("other.json");
-        std::fs::write(&own_tmp, b"{}").unwrap();
-        std::fs::write(&unrelated, b"{}").unwrap();
+        // A sibling recorder whose buffer happens to match A's temp name must never be deleted by A's denial.
+        let sibling_named_like_tmp = temp_file_path(&dir, &dest);
+        std::fs::write(&sibling_named_like_tmp, b"{\"events\":[]}").unwrap();
+
         let telemetry = Telemetry::new(
             TelemetryConfig {
                 buffer_path: Some(dest.to_string_lossy().into_owned()),
@@ -878,10 +868,34 @@ mod tests {
             },
             Arc::new(crate::sink::NoopSink),
         );
-        telemetry.set_consent(ConsentState::Denied).unwrap();
+
+        // Hold PERSIST_LOCK across a simulated in-flight write+rename to verify set_consent(Denied)
+        // blocks until the write completes and then removes the renamed destination file.
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let guard = PERSIST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let deny_telemetry = Arc::clone(&telemetry);
+        let deny_thread = std::thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            deny_telemetry.set_consent(ConsentState::Denied).unwrap();
+            done_tx.send(()).unwrap();
+        });
+        started_rx.recv().unwrap();
+        assert!(
+            done_rx
+                .recv_timeout(std::time::Duration::from_millis(40))
+                .is_err(),
+            "set_consent(Denied) must wait while PERSIST_LOCK is held by an in-flight persist"
+        );
+        std::fs::write(&dest, b"{\"events\":[]}").unwrap();
+        drop(guard);
+        done_rx
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("set_consent(Denied) should finish once PERSIST_LOCK is released");
+        deny_thread.join().unwrap();
+
         assert!(!dest.exists());
-        assert!(!own_tmp.exists());
-        assert!(unrelated.exists());
+        assert!(sibling_named_like_tmp.exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
