@@ -325,13 +325,22 @@ impl Telemetry {
                     st.unsaved = 0;
                 }
                 if let Some(path) = self.path() {
+                    let _guard = PERSIST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
                     let main_res = match std::fs::remove_file(&path) {
                         Ok(()) => Ok(()),
                         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
                         Err(e) => Err(e),
                     };
-                    let temps_res = remove_sibling_temp_files(&path);
-                    main_res.and(temps_res).map_err(Into::into)
+                    let tmp_res = if let Some(parent) = path.parent() {
+                        match std::fs::remove_file(temp_file_path(parent, &path)) {
+                            Ok(()) => Ok(()),
+                            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                            Err(e) => Err(e),
+                        }
+                    } else {
+                        Ok(())
+                    };
+                    main_res.and(tmp_res).map_err(Into::into)
                 } else {
                     Ok(())
                 }
@@ -417,13 +426,7 @@ impl Telemetry {
         let parent = path
             .parent()
             .ok_or_else(|| Error::Storage("telemetry buffer path has no parent".into()))?;
-        create_private_dir_all(parent)?;
-        let base_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("telemetry");
-        let tmp = write_private_temp_file(parent, &path, base_name, &bytes)?;
-        if let Err(e) = std::fs::rename(&tmp, &path) {
-            let _ = std::fs::remove_file(&tmp);
-            return Err(e.into());
-        }
+        write_private_temp_and_rename(parent, &path, &bytes)?;
         Ok(())
     }
 
@@ -736,115 +739,14 @@ impl Telemetry {
     }
 }
 
-fn base_name_matches(a: &str, b: &str) -> bool {
-    #[cfg(any(windows, target_vendor = "apple"))]
-    {
-        a.eq_ignore_ascii_case(b)
-    }
-    #[cfg(not(any(windows, target_vendor = "apple")))]
-    {
-        a == b
-    }
-}
+static PERSIST_LOCK: Mutex<()> = Mutex::new(());
 
-fn fnv1a_32_base_tag(base_name: &str) -> u32 {
-    let mut h: u32 = 0x811c_9dc5;
-    for b in base_name.bytes() {
-        #[cfg(any(windows, target_vendor = "apple"))]
-        let b = b.to_ascii_lowercase();
-        h ^= u32::from(b);
-        h = h.wrapping_mul(0x0100_0193);
-    }
-    h
-}
-
-fn is_lower_hex_len(s: &str, expected_len: usize) -> bool {
-    s.len() == expected_len
-        && s.bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-}
-
-fn has_pid_and_seq_suffix(rest: &str) -> bool {
-    let Some((pid_str, seq_str)) = rest.split_once('.') else {
-        return false;
-    };
-    !pid_str.is_empty() && pid_str.bytes().all(|b| b.is_ascii_digit()) && is_lower_hex_len(seq_str, 12)
-}
-
-fn is_telemetry_temp_file(name: &str, base_name: &str) -> bool {
-    if base_name_matches(name, base_name) {
-        return false;
-    }
-    let tag32 = fnv1a_32_base_tag(base_name);
-    if let Some(stem) = name.strip_suffix(".tmp") {
-        let tier1_prefix = format!(".aun-tel.{tag32:08x}.");
-        if let Some(rest) = stem.strip_prefix(&tier1_prefix) {
-            return has_pid_and_seq_suffix(rest);
-        }
-        if let Some(after_dot) = stem.strip_prefix('.')
-            && after_dot.len() > base_name.len() + 1
-            && after_dot.is_char_boundary(base_name.len())
-            && base_name_matches(&after_dot[..base_name.len()], base_name)
-            && let Some(rest) = after_dot[base_name.len()..].strip_prefix('.')
-        {
-            return has_pid_and_seq_suffix(rest);
-        }
-        return false;
-    }
-    let tier2_prefix = format!(".t{:04x}", (tag32 & 0xFFFF) as u16);
-    if let Some(hex) = name.strip_prefix(&tier2_prefix) {
-        return is_lower_hex_len(hex, 8);
-    }
-    false
-}
-
-fn remove_sibling_temp_files(path: &std::path::Path) -> std::io::Result<()> {
-    let Some(parent) = path.parent() else {
-        return Ok(());
-    };
-    let dir = if parent.as_os_str().is_empty() {
-        std::path::Path::new(".")
-    } else {
-        parent
-    };
-    let base_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("telemetry");
-    let entries = match std::fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(e),
-    };
-    let mut first_err: Option<std::io::Error> = None;
-    for entry in entries {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(e) => {
-                if first_err.is_none() {
-                    first_err = Some(e);
-                }
-                continue;
-            }
-        };
-        let file_name = entry.file_name();
-        let Some(name) = file_name.to_str() else {
-            continue;
-        };
-        if !is_telemetry_temp_file(name, base_name) {
-            continue;
-        }
-        match std::fs::remove_file(entry.path()) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => {
-                if first_err.is_none() {
-                    first_err = Some(e);
-                }
-            }
-        }
-    }
-    match first_err {
-        Some(e) => Err(e),
-        None => Ok(()),
-    }
+fn temp_file_path(parent: &std::path::Path, dest: &std::path::Path) -> std::path::PathBuf {
+    parent.join(format!(
+        ".{}.{}.tmp",
+        dest.file_name().and_then(|n| n.to_str()).unwrap_or("telemetry"),
+        std::process::id()
+    ))
 }
 
 fn create_private_dir_all(path: &std::path::Path) -> std::io::Result<()> {
@@ -858,113 +760,40 @@ fn create_private_dir_all(path: &std::path::Path) -> std::io::Result<()> {
     builder.create(path)
 }
 
-fn is_name_too_long(err: &std::io::Error) -> bool {
-    err.kind() == std::io::ErrorKind::InvalidFilename || matches!(err.raw_os_error(), Some(36 | 63 | 78))
-}
-
-fn format_temp_name(base_name: &str, pid: u32, seq: u64, tier: u8) -> String {
-    let tag32 = fnv1a_32_base_tag(base_name);
-    let seq48 = seq & 0xFFFF_FFFF_FFFF;
-    match tier {
-        0 => {
-            let suffix = format!(".{pid}.{seq48:012x}.tmp");
-            if base_name.len() + 1 + suffix.len() <= 255 {
-                format!(".{base_name}{suffix}")
-            } else {
-                format!(".aun-tel.{tag32:08x}{suffix}")
-            }
-        }
-        1 => format!(".aun-tel.{tag32:08x}.{pid}.{seq48:012x}.tmp"),
-        // Fits POSIX NAME_MAX = 14 filesystems: ".t" (2) + 4-hex base tag + 8-hex random seq = 14 bytes.
-        _ => format!(
-            ".t{:04x}{:08x}",
-            (tag32 & 0xFFFF) as u16,
-            (seq & 0xFFFF_FFFF) as u32
-        ),
-    }
-}
-
-static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-fn random_temp_seq() -> u64 {
-    use std::sync::atomic::Ordering;
-
-    let n = TMP_SEQ.fetch_add(1, Ordering::Relaxed);
-    let t = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let mut h = std::collections::hash_map::RandomState::new().build_hasher();
-    h.write_u64(n);
-    h.write_u128(t);
-    h.finish()
-}
-
-fn write_private_temp_file(
+fn write_private_temp_and_rename(
     parent: &std::path::Path,
     dest: &std::path::Path,
-    base_name: &str,
     bytes: &[u8],
-) -> std::io::Result<std::path::PathBuf> {
-    write_private_temp_file_with_seq(parent, dest, base_name, bytes, 0, random_temp_seq)
-}
-
-fn write_private_temp_file_with_seq(
-    parent: &std::path::Path,
-    dest: &std::path::Path,
-    base_name: &str,
-    bytes: &[u8],
-    initial_tier: u8,
-    mut next_seq: impl FnMut() -> u64,
-) -> std::io::Result<std::path::PathBuf> {
+) -> std::io::Result<()> {
     use std::io::Write;
 
-    let pid = std::process::id();
-    let dest_name = dest.file_name();
-    let mut tier: u8 = initial_tier;
-    for _ in 0..24 {
-        let seq = next_seq();
-        let file_name = format_temp_name(base_name, pid, seq, tier);
-        if file_name.eq_ignore_ascii_case(base_name)
-            || dest_name
-                .and_then(|d| d.to_str())
-                .is_some_and(|d| d.eq_ignore_ascii_case(&file_name))
-            || dest_name.is_some_and(|d| d == std::ffi::OsStr::new(&file_name))
-        {
-            continue;
-        }
-        let tmp = parent.join(file_name);
-        if tmp == dest {
-            continue;
-        }
-        let mut opts = std::fs::OpenOptions::new();
-        opts.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            opts.mode(0o600);
-        }
-        match opts.open(&tmp) {
-            Ok(mut file) => {
-                if let Err(e) = file.write_all(bytes).and_then(|()| file.sync_data()) {
-                    drop(file);
-                    let _ = std::fs::remove_file(&tmp);
-                    return Err(e);
-                }
-                return Ok(tmp);
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(e) if tier < 2 && is_name_too_long(&e) => {
-                tier += 1;
-                continue;
-            }
-            Err(e) => return Err(e),
-        }
+    let _guard = PERSIST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    create_private_dir_all(parent)?;
+    let tmp = temp_file_path(parent, dest);
+    match std::fs::remove_file(&tmp) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
     }
-    Err(std::io::Error::new(
-        std::io::ErrorKind::AlreadyExists,
-        "could not allocate unique telemetry temp file",
-    ))
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut file = opts.open(&tmp)?;
+    if let Err(e) = file.write_all(bytes).and_then(|()| file.sync_data()) {
+        drop(file);
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    drop(file);
+    if let Err(e) = std::fs::rename(&tmp, dest) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1003,135 +832,56 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn write_private_temp_file_uses_owner_only_mode_and_unique_names() {
+    fn persist_uses_private_dir_and_owner_only_buffer_mode() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join(format!("aun-tel-mode-{}", random_id()));
+        let root = std::env::temp_dir().join(format!("aun-tel-mode-{}", random_id()));
+        let nested = root.join("private");
+        let dest = nested.join("telemetry-buffer.json");
+        write_private_temp_and_rename(&nested, &dest, b"{\"events\":[]}").unwrap();
+        let dir_mode = std::fs::metadata(&nested).unwrap().permissions().mode() & 0o777;
+        let file_mode = std::fs::metadata(&dest).unwrap().permissions().mode() & 0o777;
+        assert_eq!(dir_mode, 0o700);
+        assert_eq!(file_mode, 0o600);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn concurrent_same_process_persists_and_deny_are_serialized() {
+        let dir = std::env::temp_dir().join(format!("aun-tel-conc-{}", random_id()));
         std::fs::create_dir_all(&dir).unwrap();
         let dest = dir.join("telemetry-buffer.json");
-        let a = write_private_temp_file(&dir, &dest, "telemetry-buffer.json", b"{}").unwrap();
-        let b = write_private_temp_file(&dir, &dest, "telemetry-buffer.json", b"{}").unwrap();
-        assert_ne!(a, b);
-        assert!(a.exists() && b.exists());
-        let mode_a = std::fs::metadata(&a).unwrap().permissions().mode() & 0o777;
-        let mode_b = std::fs::metadata(&b).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode_a, 0o600);
-        assert_eq!(mode_b, 0o600);
-        let long_name = "a".repeat(240);
-        let long_dest = dir.join(&long_name);
-        let c = write_private_temp_file(&dir, &long_dest, &long_name, b"{}").unwrap();
-        assert!(c.exists());
-        assert!(c.file_name().unwrap().len() <= 255);
-        for seq in [0_u64, 1_u64 << 48, u64::MAX] {
-            let compact = format_temp_name("telemetry.json", 12345, seq, 2);
-            assert!(
-                compact.len() <= 14,
-                "compact fallback must fit NAME_MAX=14 for seq {seq}: {compact}"
-            );
+        let threads: Vec<_> = (0..4)
+            .map(|i| {
+                let d = dir.clone();
+                let p = dest.clone();
+                std::thread::spawn(move || {
+                    for j in 0..10 {
+                        let body = format!("{{\"t\":{i},\"j\":{j}}}");
+                        write_private_temp_and_rename(&d, &p, body.as_bytes()).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
         }
-        let _ = std::fs::remove_dir_all(&dir);
-    }
+        assert!(dest.exists());
 
-    #[test]
-    fn write_private_temp_file_skips_destination_collision() {
-        let dir = std::env::temp_dir().join(format!("aun-tel-collide-{}", random_id()));
-        std::fs::create_dir_all(&dir).unwrap();
-
-        let mut seq = 0_u64;
-        let colliding = format_temp_name("buffer.json", 12345, 0, 2);
-        let expected_next = format_temp_name("buffer.json", 12345, 1, 2);
-        let dest = dir.join(&colliding);
-        let tmp = write_private_temp_file_with_seq(&dir, &dest, "buffer.json", b"{}", 2, || {
-            let cur = seq;
-            seq += 1;
-            cur
-        })
-        .unwrap();
-        assert_eq!(tmp, dir.join(&expected_next));
-        assert!(!dest.exists(), "destination must remain untouched before rename");
-        assert!(tmp.exists());
-        let _ = std::fs::remove_file(&tmp);
-
-        let mut upper_seq = 1_u64;
-        let upper_colliding = format_temp_name("buffer.json", 12345, 1, 2).to_ascii_uppercase();
-        let expected_third = format_temp_name("buffer.json", 12345, 2, 2);
-        let upper_dest = dir.join(&upper_colliding);
-        let tmp2 = write_private_temp_file_with_seq(&dir, &upper_dest, "buffer.json", b"{}", 2, || {
-            let cur = upper_seq;
-            upper_seq += 1;
-            cur
-        })
-        .unwrap();
-        assert_eq!(tmp2, dir.join(&expected_third));
-        assert!(!upper_dest.exists());
-        assert!(tmp2.exists());
-
-        // Pre-populating stale sequential tier-2 files must not exhaust random compact allocation.
-        for i in 0..32_u64 {
-            let _ = std::fs::write(dir.join(format_temp_name("buffer.json", 12345, i, 2)), b"stale");
-        }
-        let fresh_dest = dir.join("buffer.json");
-        let tmp3 =
-            write_private_temp_file_with_seq(&dir, &fresh_dest, "buffer.json", b"{}", 2, random_temp_seq)
-                .unwrap();
-        assert!(tmp3.exists());
-        assert!(tmp3.file_name().unwrap().len() <= 14);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn deny_consent_purges_orphaned_temp_files_across_all_tiers() {
-        let dir = std::env::temp_dir().join(format!("aun-tel-orphan-{}", random_id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let buffer = dir.join("telemetry-buffer.json");
-        let tier0 = dir.join(format_temp_name("telemetry-buffer.json", 1234, 0xa1b2, 0));
-        let tier1 = dir.join(format_temp_name("telemetry-buffer.json", 1234, 0xc3d4, 1));
-        let tier2 = dir.join(format_temp_name("telemetry-buffer.json", 1234, 0x1234_abcd, 2));
-        let unrelated_short = dir.join(".t123");
-        let unrelated_aun = dir.join(".aun-tel.backup.tmp");
-        let unrelated_buf = dir.join(".telemetry-buffer.json.backup.tmp");
-        let other_tier0 = dir.join(format_temp_name("other.json", 1234, 0xe5f6, 0));
-        let other_tier1 = dir.join(format_temp_name("other.json", 1234, 0xe5f7, 1));
-        let other_tier2 = dir.join(format_temp_name("other.json", 1234, 0x5678_9abc, 2));
-        for file in [
-            &buffer,
-            &tier0,
-            &tier1,
-            &tier2,
-            &unrelated_short,
-            &unrelated_aun,
-            &unrelated_buf,
-            &other_tier0,
-            &other_tier1,
-            &other_tier2,
-        ] {
-            std::fs::write(file, b"{}").unwrap();
-        }
-        #[cfg(any(windows, target_vendor = "apple"))]
-        let cased_tier0 = {
-            let p = dir.join(format_temp_name("Telemetry-Buffer.json", 1234, 0xfeed, 0));
-            std::fs::write(&p, b"{}").unwrap();
-            p
-        };
+        let own_tmp = temp_file_path(&dir, &dest);
+        let unrelated = dir.join("other.json");
+        std::fs::write(&own_tmp, b"{}").unwrap();
+        std::fs::write(&unrelated, b"{}").unwrap();
         let telemetry = Telemetry::new(
             TelemetryConfig {
-                buffer_path: Some(buffer.to_string_lossy().into_owned()),
+                buffer_path: Some(dest.to_string_lossy().into_owned()),
                 ..TelemetryConfig::default()
             },
             Arc::new(crate::sink::NoopSink),
         );
         telemetry.set_consent(ConsentState::Denied).unwrap();
-        assert!(!buffer.exists());
-        assert!(!tier0.exists());
-        assert!(!tier1.exists());
-        assert!(!tier2.exists());
-        #[cfg(any(windows, target_vendor = "apple"))]
-        assert!(!cased_tier0.exists());
-        assert!(unrelated_short.exists());
-        assert!(unrelated_aun.exists());
-        assert!(unrelated_buf.exists());
-        assert!(other_tier0.exists());
-        assert!(other_tier1.exists());
-        assert!(other_tier2.exists());
+        assert!(!dest.exists());
+        assert!(!own_tmp.exists());
+        assert!(unrelated.exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
