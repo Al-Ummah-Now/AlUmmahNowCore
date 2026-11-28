@@ -734,18 +734,29 @@ impl Telemetry {
     }
 }
 
+fn is_name_too_long(err: &std::io::Error) -> bool {
+    err.kind() == std::io::ErrorKind::InvalidFilename || matches!(err.raw_os_error(), Some(36 | 63 | 78))
+}
+
 fn write_private_temp_file(
     parent: &std::path::Path,
     base_name: &str,
     bytes: &[u8],
 ) -> std::io::Result<std::path::PathBuf> {
     use std::io::Write;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
+
     let pid = std::process::id();
-    for _ in 0..8 {
-        let suffix = format!(".{pid}.{}.tmp", random_id());
-        let file_name = if base_name.len() + 1 + suffix.len() <= 255 {
+    let mut use_short_prefix = false;
+    for _ in 0..16 {
+        let seq = TMP_SEQ.fetch_add(1, Ordering::Relaxed);
+        let suffix = format!(".{pid}.{seq:x}.tmp");
+        let file_name = if !use_short_prefix && base_name.len() + 1 + suffix.len() <= 255 {
             format!(".{base_name}{suffix}")
         } else {
+            use_short_prefix = true;
             format!(".aun-tel{suffix}")
         };
         let tmp = parent.join(file_name);
@@ -766,6 +777,10 @@ fn write_private_temp_file(
                 return Ok(tmp);
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) if !use_short_prefix && is_name_too_long(&e) => {
+                use_short_prefix = true;
+                continue;
+            }
             Err(e) => return Err(e),
         }
     }
