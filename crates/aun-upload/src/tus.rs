@@ -31,9 +31,15 @@ impl TusTarget {
     }
 }
 
+/// Validates a TUS 1.0.0 `Upload-Metadata` key: non-empty printable ASCII without whitespace or `,`.
+fn is_valid_metadata_key(key: &str) -> bool {
+    !key.is_empty() && key.bytes().all(|b| b.is_ascii_graphic() && b != b',')
+}
+
 /// `Upload-Metadata`: comma-separated `key base64(value)` pairs, keys sorted for determinism.
 pub fn encode_metadata(meta: &BTreeMap<String, String>) -> String {
     meta.iter()
+        .filter(|(k, _)| is_valid_metadata_key(k))
         .map(|(k, v)| {
             format!(
                 "{k} {}",
@@ -119,6 +125,14 @@ impl TusClient {
             }
             TusTarget::Direct { headers, .. } => {
                 for (k, v) in headers {
+                    if matches!(
+                        k.trim().to_ascii_lowercase().as_str(),
+                        "host" | "cookie" | "content-length" | "transfer-encoding" | "authorization"
+                    ) {
+                        return Err(Error::invalid_input(format!(
+                            "disallowed direct upload header {k}"
+                        )));
+                    }
                     let name = HeaderName::from_bytes(k.as_bytes())
                         .map_err(|_| Error::invalid_input(format!("bad header {k}")))?;
                     let value = HeaderValue::from_str(v)
@@ -139,9 +153,16 @@ impl TusClient {
         metadata: &BTreeMap<String, String>,
     ) -> Result<String> {
         ensure_secure_url(target.endpoint())?;
+        for k in metadata.keys() {
+            if !is_valid_metadata_key(k) {
+                return Err(Error::invalid_input(format!("invalid TUS metadata key {k:?}")));
+            }
+        }
         let mut h = Self::headers(target, bearer)?;
         h.insert("Upload-Length", HeaderValue::from(length));
-        if let Ok(v) = HeaderValue::from_str(&encode_metadata(metadata)) {
+        if !metadata.is_empty() {
+            let v = HeaderValue::from_str(&encode_metadata(metadata))
+                .map_err(|_| Error::invalid_input("invalid TUS Upload-Metadata header".into()))?;
             h.insert("Upload-Metadata", v);
         }
         let resp = self
@@ -316,5 +337,32 @@ mod tests {
         m.insert("tusSessionId".to_string(), "s1".to_string());
         m.insert("filename".to_string(), "درس.mp4".to_string());
         assert_eq!(encode_metadata(&m), "filename 2K/YsdizLm1wNA==,tusSessionId czE=");
+    }
+
+    #[tokio::test]
+    async fn create_rejects_injected_metadata_keys_and_disallowed_direct_headers() {
+        let client = TusClient::new(
+            aun_api::http_client(&aun_api::ApiConfig::new("https://api.example.com")).unwrap(),
+        );
+        for bad_key in ["", "a,b", "a b", "bad\r\nX-Injected"] {
+            let mut m = BTreeMap::new();
+            m.insert(bad_key.to_string(), "v".to_string());
+            let err = client
+                .create(&proxy("https://api.example.com/tus"), Some("t"), 10, &m)
+                .await
+                .unwrap_err();
+            assert!(matches!(err, Error::InvalidInput { .. }), "{bad_key:?}: {err:?}");
+        }
+        let mut bad_headers = BTreeMap::new();
+        bad_headers.insert("Host".to_string(), "evil.example".to_string());
+        let direct = TusTarget::Direct {
+            endpoint: "https://video.example.net/tusupload".into(),
+            headers: bad_headers,
+        };
+        let err = client
+            .create(&direct, None, 10, &BTreeMap::new())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::InvalidInput { .. }), "{err:?}");
     }
 }

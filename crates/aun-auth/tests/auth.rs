@@ -858,3 +858,74 @@ async fn step_up_reads_the_openauth_access_token_when_there_is_no_id_token() {
     assert_eq!(info.user_id, "u1");
     assert_eq!(m.access_token().await.unwrap().as_deref(), Some(access.as_str()));
 }
+
+#[tokio::test]
+async fn discovery_rejects_mismatched_issuer_and_foreign_endpoints() {
+    let server = MockServer::start().await;
+    Mock::given(path("/.well-known/oauth-authorization-server"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "issuer": "https://evil.example",
+            "authorization_endpoint": format!("{}/authorize", server.uri()),
+            "token_endpoint": format!("{}/token", server.uri()),
+        })))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    assert!(matches!(
+        OAuthConfig::discover(&http(), &server.uri(), "tv", "alummahnow://cb", vec![]).await,
+        Err(Error::InvalidInput { .. })
+    ));
+
+    Mock::given(path("/.well-known/oauth-authorization-server"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "issuer": server.uri(),
+            "authorization_endpoint": format!("{}/authorize", server.uri()),
+            "token_endpoint": "https://evil.example/token",
+        })))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    assert!(matches!(
+        OAuthConfig::discover(&http(), &server.uri(), "tv", "alummahnow://cb", vec![]).await,
+        Err(Error::InvalidInput { .. })
+    ));
+}
+
+#[tokio::test]
+async fn exchange_code_checks_state_before_error_and_rejects_duplicate_params() {
+    let server = MockServer::start().await;
+    let oauth = OAuthClient::new(config(&server, false), http());
+    let pending = oauth.authorize(&[]).unwrap();
+
+    // Forged error callback with wrong state must fail as CSRF InvalidInput, not Cancelled.
+    let err = oauth
+        .exchange_code(
+            &pending,
+            "alummahnow://auth/callback?error=access_denied&state=forged",
+            0,
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::InvalidInput { .. }), "{err:?}");
+
+    // Duplicate state/code parameter pollution is refused.
+    let dup = format!(
+        "alummahnow://auth/callback?code=a&state=forged&state={}",
+        pending.state
+    );
+    let err = oauth.exchange_code(&pending, &dup, 0).await.unwrap_err();
+    assert!(matches!(err, Error::InvalidInput { .. }), "{err:?}");
+
+    // Unparseable registered redirect_uri must fail closed rather than skipping validation.
+    let mut bad_pending = pending.clone();
+    bad_pending.redirect_uri = "not a url".into();
+    let err = oauth
+        .exchange_code(
+            &bad_pending,
+            &format!("alummahnow://auth/callback?code=a&state={}", pending.state),
+            0,
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::InvalidInput { .. }), "{err:?}");
+}

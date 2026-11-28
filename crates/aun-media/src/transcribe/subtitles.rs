@@ -26,8 +26,14 @@ impl Default for SubtitleOptions {
 /// Renders a transcript as a WebVTT document.
 pub fn to_webvtt(transcript: &Transcript, options: &SubtitleOptions) -> String {
     let mut out = String::from("WEBVTT\n");
-    if !transcript.language.is_empty() {
-        out.push_str(&format!("Language: {}\n", transcript.language));
+    let language: String = transcript
+        .language
+        .trim()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .collect();
+    if !language.is_empty() {
+        out.push_str(&format!("Language: {language}\n"));
     }
     out.push('\n');
     for segment in cues(transcript) {
@@ -118,7 +124,10 @@ fn word_timed_line(segment: &TranscriptSegment) -> String {
         if index > 0 {
             line.push_str(&format!(" <{}>", vtt_time(word.start_ms)));
         }
-        line.push_str(&escape_vtt(word.text.trim()));
+        // Collapse any embedded newlines/whitespace so a word cannot inject blank lines or
+        // synthetic WebVTT cue/STYLE blocks.
+        let flat = word.text.split_whitespace().collect::<Vec<_>>().join(" ");
+        line.push_str(&escape_vtt(&flat));
     }
     format!("{}\n", mark_rtl(&line))
 }
@@ -362,6 +371,41 @@ mod tests {
         let t = transcript("", vec![]);
         assert_eq!(to_webvtt(&t, &SubtitleOptions::default()), "WEBVTT\n\n");
         assert_eq!(to_srt(&t, &SubtitleOptions::default()), "");
+    }
+
+    #[test]
+    fn webvtt_blocks_header_and_word_cue_injection() {
+        let word = |start_ms, end_ms, text: &str| TranscriptWord {
+            start_ms,
+            end_ms,
+            text: text.to_owned(),
+            confidence: 0.9,
+        };
+        let mut s = segment(0, 2000, "hello world");
+        s.words = vec![
+            word(
+                0,
+                900,
+                "hi\n\nSTYLE\n::cue{color:red}\n\n00:00:00.000 --> 00:00:09.000\nfake",
+            ),
+            word(1000, 2000, "<b>end</b>"),
+        ];
+        let t = transcript(
+            "en\n\nNOTE injected\n\n00:00:00.000 --> 00:00:01.000\nevil",
+            vec![s],
+        );
+        let vtt = to_webvtt(
+            &t,
+            &SubtitleOptions {
+                word_timestamps: true,
+                ..Default::default()
+            },
+        );
+        // Header line has no injected newline or cue.
+        assert!(!vtt.contains("\nNOTE injected"), "{vtt}");
+        assert!(!vtt.contains("\nSTYLE\n"), "{vtt}");
+        assert_eq!(vtt.matches(" --> ").count(), 1, "{vtt}");
+        assert!(vtt.contains("&lt;b&gt;end&lt;/b&gt;"), "{vtt}");
     }
     #[test]
     fn caption_segments_keep_short_cues_and_split_long_ones_at_word_times() {

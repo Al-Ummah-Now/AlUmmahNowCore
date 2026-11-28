@@ -313,7 +313,15 @@ fn check_manifest(m: &Manifest) -> Result<(), String> {
     let public = download_prefix(&m.repo, &m.tag);
     let private = private_prefix(&m.repo, &m.tag);
     for (i, a) in m.artifacts.iter().enumerate() {
-        let ok_url = a.url.starts_with(&public) || (a.url.starts_with(&private) && a.app == "admin");
+        let rest_safe = |rest: &str| {
+            !rest.is_empty()
+                && !rest.contains(['?', '#', '\\'])
+                && rest.split('/').all(|s| !s.is_empty() && s != "." && s != "..")
+        };
+        let ok_public = a.url.strip_prefix(&public).is_some_and(rest_safe)
+            && crate::hosts::allowed_download_url(&a.url, &m.repo);
+        let ok_private = a.app == "admin" && a.url.strip_prefix(&private).is_some_and(rest_safe);
+        let ok_url = ok_public || ok_private;
         let ok_hash = a.sha256.len() == 64
             && a.sha256
                 .chars()

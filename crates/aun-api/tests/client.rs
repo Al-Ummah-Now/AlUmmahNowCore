@@ -525,3 +525,65 @@ async fn raw_responses_include_headers_on_success_and_not_modified() {
     assert!(raw.body.is_empty());
     assert_eq!(raw.header("ETag"), Some(etag));
 }
+
+#[tokio::test]
+async fn refuses_cross_origin_redirect_authority_injection_and_reserved_headers() {
+    let server = MockServer::start().await;
+    let foreign = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/redirect"))
+        .respond_with(
+            ResponseTemplate::new(302).insert_header("Location", format!("{}/steal", foreign.uri())),
+        )
+        .mount(&server)
+        .await;
+    let client = ApiClient::new(config(&server))
+        .unwrap()
+        .with_auth(tokens("secret-tok", None));
+
+    // Cross-origin redirect is refused and never hits the foreign server.
+    let err = client
+        .execute(aun_api::RequestSpec::new(
+            reqwest::Method::GET,
+            "/api/redirect".into(),
+            "test_redirect",
+        ))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::Network(_)), "{err:?}");
+    assert!(foreign.received_requests().await.unwrap().is_empty());
+
+    // Authority/scheme injection in RequestSpec::path is refused before any network I/O.
+    for bad_path in [
+        "@evil.example/steal",
+        "//evil.example/steal",
+        "https://evil.example/steal",
+        "/api/ok\\@evil.example",
+        "/api/bad\r\nX-Inject: 1",
+    ] {
+        let err = client
+            .execute(aun_api::RequestSpec::new(
+                reqwest::Method::GET,
+                bad_path.into(),
+                "test_bad_path",
+            ))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, Error::InvalidInput { .. }), "{bad_path:?}: {err:?}");
+    }
+
+    // Reserved headers are refused even on direct RequestSpec execution (e.g. OfflineQueue replay).
+    for reserved in [
+        "Authorization",
+        "Cookie",
+        "Host",
+        "Content-Length",
+        "Transfer-Encoding",
+        "X-AUN-Client",
+    ] {
+        let mut spec = aun_api::RequestSpec::new(reqwest::Method::GET, "/api/ping".into(), "test_hdr");
+        spec.headers.push((reserved.into(), "evil".into()));
+        let err = client.execute(spec).await.unwrap_err();
+        assert!(matches!(err, Error::InvalidInput { .. }), "{reserved}: {err:?}");
+    }
+}

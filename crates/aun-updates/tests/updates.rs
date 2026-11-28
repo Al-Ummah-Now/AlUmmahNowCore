@@ -314,6 +314,45 @@ fn replay_floor_and_downgrade() {
     ));
 }
 
+#[test]
+fn rejects_traversal_in_artifact_url() {
+    let root = TestKey::new(10);
+    let k = TestKey::new(11);
+    let mut state = UpdateState::default();
+    let l = list_json("AlUmmahNowTools", 1, &[&k], &[], &[]);
+    state
+        .accept_key_list(
+            l.as_bytes(),
+            &root.sign(l.as_bytes()),
+            &[root.public()],
+            "AlUmmahNowTools",
+        )
+        .unwrap();
+    let base = manifest_json("2026.11.24", &[]);
+    for bad_suffix in ["../v2026.11.01/evil.nupkg", "%2e%2e/evil.nupkg", "x.nupkg?sig=1"] {
+        let tampered = base.replace(
+            "releases/download/v2026.11.24/full.nupkg",
+            &format!("releases/download/v2026.11.24/{bad_suffix}"),
+        );
+        assert!(
+            matches!(
+                verify_manifest(
+                    tampered.as_bytes(),
+                    &k.sign(tampered.as_bytes()),
+                    &state.trust(),
+                    &Expect {
+                        repo: "AlUmmahNowTools",
+                        ..Default::default()
+                    }
+                )
+                .unwrap_err(),
+                VerifyError::BadContents(_)
+            ),
+            "{bad_suffix}"
+        );
+    }
+}
+
 fn answer(json: &str) -> UpdateAnswer {
     serde_json::from_str(json).unwrap()
 }

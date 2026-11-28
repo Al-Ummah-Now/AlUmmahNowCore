@@ -812,10 +812,13 @@ impl Inner {
         let same_file = r
             .tus_upload_file_size
             .is_none_or(|size| size as u64 == m.file_size);
-        let upload_url = r
-            .tus_upload_id
-            .filter(|u| same_file && !u.is_empty())
-            .map(|u| format!("{}/{}", endpoint.trim_end_matches('/'), u));
+        let upload_url = match r.tus_upload_id.filter(|u| same_file && !u.is_empty()) {
+            Some(u) => {
+                let encoded = aun_api::client::encode_path(&u)?;
+                Some(format!("{}/{}", endpoint.trim_end_matches('/'), encoded))
+            }
+            None => None,
+        };
         let chunk = self.chunk_size(r.chunk_size as u64);
         self.update(id, |m| {
             m.target = Some(TusTarget::Proxy { endpoint });
