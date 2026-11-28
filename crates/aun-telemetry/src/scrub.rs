@@ -9,6 +9,10 @@
 //!   a word lose their query/fragment (`?[redacted]`), userinfo and secret-looking path segments;
 //!   long opaque secrets (≥ 32 chars of base64/hex, not a UUID) → `[redacted]`; phone-like digit
 //!   runs (≥ 9 digits) → `[phone]`.
+//! - Local file paths keep their shape but lose the account name: `/Users/<name>/…`,
+//!   `/home/<name>/…`, `C:\\Users\\<name>\\…` (either slash, any drive, names with spaces) and
+//!   `file:///…` forms → `[user]`; UNC paths `\\\\server\\share\\…` → `\\\\[host]\\[share]\\…`.
+//!   Shared folders (`Shared`, `Public`, `Default`) stay.
 //!
 //! The rules are deliberately conservative: losing a debugging detail is acceptable, while leaking
 //! an e-mail address or a token is not.
@@ -354,8 +358,161 @@ fn scrub_word(word: &str, pending: &mut Pending, out: &mut String) {
     }
 }
 
+const USER: &str = "[user]";
+
+/// Folder names under a users directory that identify nobody.
+const SHARED_HOME_DIRS: [&str; 3] = ["shared", "public", "default"];
+
+/// Characters that end a path segment besides a separator.
+fn ends_segment(c: char) -> bool {
+    matches!(
+        c,
+        '\'' | '"'
+            | '<'
+            | '>'
+            | '|'
+            | '('
+            | ')'
+            | '['
+            | ']'
+            | '{'
+            | '}'
+            | ','
+            | ';'
+            | ':'
+            | '\n'
+            | '\r'
+            | '\t'
+    )
+}
+
+fn is_separator(c: char) -> bool {
+    c == '/' || c == '\\'
+}
+
+/// Byte length of the separator run (`/`, `\` or an escaped `\\`) at the start of `s`.
+fn separator_len(s: &str) -> usize {
+    if s.starts_with("\\\\") {
+        2
+    } else if s.starts_with(['/', '\\']) {
+        1
+    } else {
+        0
+    }
+}
+
+/// End (byte index into `s`) of the path segment starting at `s[0]`. A space is kept inside the
+/// segment only when another separator follows before the segment would otherwise end
+/// (`John Smith\AppData`), so `C:\Users\alice could not open` stops at `alice`.
+fn segment_end(s: &str) -> usize {
+    let mut end = 0;
+    for (i, c) in s.char_indices() {
+        if is_separator(c) || ends_segment(c) {
+            return i;
+        }
+        if c == ' ' {
+            let rest = &s[i..];
+            let next_stop = rest.find(|ch: char| is_separator(ch) || ends_segment(ch));
+            return match next_stop {
+                Some(j)
+                    if j <= 64
+                        && rest[..j].chars().any(|ch| ch != ' ')
+                        && is_separator(rest[j..].chars().next().unwrap_or(' ')) =>
+                {
+                    i + j
+                }
+                _ => i,
+            };
+        }
+        end = i + c.len_utf8();
+    }
+    end
+}
+
+/// Whether the text before `idx` lets a path start there (not in the middle of a word).
+fn path_can_start(text: &str, idx: usize) -> bool {
+    text[..idx]
+        .chars()
+        .next_back()
+        .is_none_or(|c| !c.is_alphanumeric() && c != '_' && c != '.' && c != '-')
+}
+
+/// Replaces account names in local paths with `[user]` and UNC hosts/shares with `[host]`/`[share]`.
+fn redact_local_paths(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < text.len() {
+        let rest = &text[i..];
+        let sep = separator_len(rest);
+        if sep == 0 {
+            let c = rest.chars().next().unwrap_or(' ');
+            out.push(c);
+            i += c.len_utf8();
+            continue;
+        }
+        // UNC: `\\server\share` where the `\\` does not follow a drive colon or another path part.
+        if rest.starts_with("\\\\") && !rest.starts_with("\\\\\\") {
+            let before = text[..i].chars().next_back();
+            let unc_ok =
+                before.is_none_or(|c| c.is_whitespace() || matches!(c, '\'' | '"' | '(' | '[' | '=' | '<'));
+            let host_end = 2 + segment_end(&rest[2..]);
+            if unc_ok && host_end > 2 && !rest[2..host_end].contains(' ') {
+                out.push_str("\\\\[host]");
+                let after_host = &rest[host_end..];
+                let share_sep = separator_len(after_host);
+                if share_sep > 0 {
+                    let share_end = share_sep + segment_end(&after_host[share_sep..]);
+                    if share_end > share_sep {
+                        out.push_str(&after_host[..share_sep]);
+                        out.push_str("[share]");
+                        i += host_end + share_end;
+                        continue;
+                    }
+                }
+                i += host_end;
+                continue;
+            }
+        }
+        // `/Users/<name>`, `\Users\<name>` (any case), `/home/<name>`.
+        let after_sep = &rest[sep..];
+        let dir_len = if after_sep.len() >= 5
+            && after_sep
+                .get(..5)
+                .is_some_and(|d| d.eq_ignore_ascii_case("users"))
+        {
+            5
+        } else if after_sep.starts_with("home") {
+            4
+        } else {
+            0
+        };
+        if dir_len > 0 && path_can_start(text, i) {
+            let after_dir = &after_sep[dir_len..];
+            let name_sep = separator_len(after_dir);
+            if name_sep > 0 {
+                let name_start = &after_dir[name_sep..];
+                let name_end = segment_end(name_start);
+                let name = &name_start[..name_end];
+                let shared = SHARED_HOME_DIRS.iter().any(|d| name.eq_ignore_ascii_case(d));
+                if name_end > 0 && !shared {
+                    let prefix_len = sep + dir_len + name_sep;
+                    out.push_str(&rest[..prefix_len]);
+                    out.push_str(USER);
+                    i += prefix_len + name_end;
+                    continue;
+                }
+            }
+        }
+        out.push_str(&rest[..sep]);
+        i += sep;
+    }
+    out
+}
+
 /// Scrubs free text (any whitespace separates words).
 pub fn scrub_text(text: &str) -> String {
+    let redacted = redact_local_paths(text);
+    let text = redacted.as_str();
     let mut out = String::with_capacity(text.len());
     let mut pending = Pending::default();
     let mut word_start: Option<usize> = None;
@@ -573,6 +730,72 @@ mod tests {
             let _ = is_sensitive_key(&text);
             state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
         }
+    }
+
+    #[test]
+    fn redacts_user_names_in_local_paths() {
+        let cases = [
+            (
+                "Could not find file '/home/alice/x.txt'",
+                "Could not find file '/home/[user]/x.txt'",
+            ),
+            (
+                "at /Users/alice/Library/App.swift:42",
+                "at /Users/[user]/Library/App.swift:42",
+            ),
+            (
+                r"C:\Users\alice\AppData\Local\a.log",
+                r"C:\Users\[user]\AppData\Local\a.log",
+            ),
+            (r"d:\users\Bob\x", r"d:\users\[user]\x"),
+            ("C:/Users/alice/a.txt", "C:/Users/[user]/a.txt"),
+            (r"C:\\Users\\alice\\a.txt", r"C:\\Users\\[user]\\a.txt"),
+            (
+                r"in C:\Users\John Smith\AppData\x.dll",
+                r"in C:\Users\[user]\AppData\x.dll",
+            ),
+            (
+                r"C:\Users\alice could not open",
+                r"C:\Users\[user] could not open",
+            ),
+            (
+                "file:///Users/alice/Movies/a.mp4",
+                "file:///Users/[user]/Movies/a.mp4",
+            ),
+            ("file:///C:/Users/alice/a.mp4", "file:///C:/Users/[user]/a.mp4"),
+            (
+                r"open \\fileserver\alice$\clip.mp4",
+                r"open \\[host]\[share]\clip.mp4",
+            ),
+            (r"('\\nas\media')", r"('\\[host]\[share]')"),
+            ("(/home/alice)", "(/home/[user])"),
+            ("[/Users/alice/a]", "[/Users/[user]/a]"),
+        ];
+        for (input, want) in cases {
+            assert_eq!(redact_local_paths(input), want, "{input}");
+            assert_eq!(scrub_text(input), want, "{input}");
+        }
+    }
+
+    #[test]
+    fn keeps_paths_that_name_nobody() {
+        for input in [
+            "/usr/lib/libc.so",
+            "/Users/Shared/a.txt",
+            r"C:\Users\Public\x",
+            r"C:\Users\Default\x",
+            "/var/mobile/Containers/Data/x",
+            "/data/user/0/net.alummahnow/files",
+            "see users/alice",
+            "myhome/alice",
+            "/Users/",
+        ] {
+            assert_eq!(redact_local_paths(input), input, "{input}");
+        }
+        assert_eq!(
+            scrub_text("https://a.example/home/x?token=1"),
+            "https://a.example/home/x?[redacted]"
+        );
     }
 
     #[test]
