@@ -742,7 +742,13 @@ fn write_private_temp_file(
     use std::io::Write;
     let pid = std::process::id();
     for _ in 0..8 {
-        let tmp = parent.join(format!(".{base_name}.{pid}.{}.tmp", random_id()));
+        let suffix = format!(".{pid}.{}.tmp", random_id());
+        let file_name = if base_name.len() + 1 + suffix.len() <= 255 {
+            format!(".{base_name}{suffix}")
+        } else {
+            format!(".aun-tel{suffix}")
+        };
+        let tmp = parent.join(file_name);
         let mut opts = std::fs::OpenOptions::new();
         opts.write(true).create_new(true);
         #[cfg(unix)]
@@ -817,6 +823,10 @@ mod tests {
         let mode_b = std::fs::metadata(&b).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode_a, 0o600);
         assert_eq!(mode_b, 0o600);
+        let long_name = "a".repeat(240);
+        let c = write_private_temp_file(&dir, &long_name, b"{}").unwrap();
+        assert!(c.exists());
+        assert!(c.file_name().unwrap().len() <= 255);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
