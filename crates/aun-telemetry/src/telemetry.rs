@@ -416,12 +416,8 @@ impl Telemetry {
             .parent()
             .ok_or_else(|| Error::Storage("telemetry buffer path has no parent".into()))?;
         std::fs::create_dir_all(parent)?;
-        let tmp = parent.join(format!(
-            ".{}.{}.tmp",
-            path.file_name().and_then(|n| n.to_str()).unwrap_or("telemetry"),
-            std::process::id()
-        ));
-        write_private_file(&tmp, &bytes)?;
+        let base_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("telemetry");
+        let tmp = write_private_temp_file(parent, base_name, &bytes)?;
         if let Err(e) = std::fs::rename(&tmp, &path) {
             let _ = std::fs::remove_file(&tmp);
             return Err(e.into());
@@ -738,20 +734,39 @@ impl Telemetry {
     }
 }
 
-fn write_private_file(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+fn write_private_temp_file(
+    parent: &std::path::Path,
+    base_name: &str,
+    bytes: &[u8],
+) -> std::io::Result<std::path::PathBuf> {
     use std::io::Write;
-    let _ = std::fs::remove_file(path);
-    let mut opts = std::fs::OpenOptions::new();
-    opts.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        opts.mode(0o600);
+    let pid = std::process::id();
+    for _ in 0..8 {
+        let tmp = parent.join(format!(".{base_name}.{pid}.{}.tmp", random_id()));
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        match opts.open(&tmp) {
+            Ok(mut file) => {
+                if let Err(e) = file.write_all(bytes).and_then(|()| file.sync_data()) {
+                    drop(file);
+                    let _ = std::fs::remove_file(&tmp);
+                    return Err(e);
+                }
+                return Ok(tmp);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
     }
-    let mut file = opts.open(path)?;
-    file.write_all(bytes)?;
-    file.sync_data()?;
-    Ok(())
+    Err(std::io::Error::new(
+        std::io::ErrorKind::AlreadyExists,
+        "could not allocate unique telemetry temp file",
+    ))
 }
 
 #[cfg(test)]
@@ -790,14 +805,18 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn write_private_file_uses_owner_only_mode() {
+    fn write_private_temp_file_uses_owner_only_mode_and_unique_names() {
         use std::os::unix::fs::PermissionsExt;
         let dir = std::env::temp_dir().join(format!("aun-tel-mode-{}", random_id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let file = dir.join("buf.tmp");
-        write_private_file(&file, b"{}").unwrap();
-        let mode = std::fs::metadata(&file).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode, 0o600);
+        let a = write_private_temp_file(&dir, "telemetry-buffer.json", b"{}").unwrap();
+        let b = write_private_temp_file(&dir, "telemetry-buffer.json", b"{}").unwrap();
+        assert_ne!(a, b);
+        assert!(a.exists() && b.exists());
+        let mode_a = std::fs::metadata(&a).unwrap().permissions().mode() & 0o777;
+        let mode_b = std::fs::metadata(&b).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode_a, 0o600);
+        assert_eq!(mode_b, 0o600);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
